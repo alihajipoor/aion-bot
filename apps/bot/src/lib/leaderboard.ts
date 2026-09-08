@@ -1,10 +1,18 @@
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import {
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize,
-  type Guild,
+  MediaGalleryBuilder, MediaGalleryItemBuilder, type Guild,
 } from 'discord.js';
 import { getDb, activityDaily } from '@aion/db';
 import { isolate } from './text.js';
+
+/** Puts the banner at the top of a card — an image that trails the list reads
+ *  as an afterthought rather than a header. */
+const withArt = (box: ContainerBuilder, file?: string): ContainerBuilder =>
+  file
+    ? box.addMediaGalleryComponents(new MediaGalleryBuilder()
+        .addItems(new MediaGalleryItemBuilder().setURL(`attachment://${file}`)))
+    : box;
 
 export type Metric = 'voice' | 'chat' | 'punishments';
 export type Period = 'today' | 'day' | 'week' | 'month' | 'all';
@@ -58,7 +66,7 @@ const label = (r: Row, m: Metric): string =>
 /** Single-metric board, used for the public top-voice / top-chat posts. */
 export function renderBoard(opts: {
   title: string; icon: string; accent: number; metric: Metric;
-  rows: Row[]; limit?: number; footer: string;
+  rows: Row[]; limit?: number; footer: string; banner?: string;
 }): ContainerBuilder {
   const ranked = opts.rows
     .filter(r => value(r, opts.metric) > 0)
@@ -71,7 +79,7 @@ export function renderBoard(opts: {
       ).join('\n')
     : '*Hanooz data-i sabt nashode.*';
 
-  return new ContainerBuilder().setAccentColor(opts.accent)
+  return withArt(new ContainerBuilder().setAccentColor(opts.accent), opts.banner)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${opts.icon} ${opts.title}`))
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))
@@ -83,17 +91,20 @@ export function renderBoard(opts: {
  * Staff board: one row per admin showing all three metrics together, because
  * judging an admin on voice time alone rewards idling.
  */
-export function renderStaffBoard(guild: Guild, rows: Row[], footer: string): ContainerBuilder {
+export function staffRows(guild: Guild, rows: Row[]): Row[] {
   const staffIds = new Set(
     guild.members.cache
       .filter(m => !m.user.bot && m.roles.cache.some(r => STAFF_ROLE_NAMES.includes(r.name)))
       .map(m => m.id),
   );
-
-  const staff = rows
+  // Voice alone rewards idling, so rank on a weighted blend of all three.
+  return rows
     .filter(r => staffIds.has(r.userId))
-    .sort((a, b) => (b.voice + b.chat * 60 + b.punishments * 300) - (a.voice + a.chat * 60 + a.punishments * 300))
-    .slice(0, 15);
+    .sort((a, b) => (b.voice + b.chat * 60 + b.punishments * 300) - (a.voice + a.chat * 60 + a.punishments * 300));
+}
+
+export function renderStaffBoard(guild: Guild, rows: Row[], footer: string, banner?: string): ContainerBuilder {
+  const staff = staffRows(guild, rows).slice(0, 15);
 
   const body = staff.length
     ? staff.map((r, i) => {
@@ -108,7 +119,7 @@ export function renderStaffBoard(guild: Guild, rows: Row[], footer: string): Con
       }).join('\n\n')
     : '*Hich fa\'aliati az admin-ha sabt nashode.*';
 
-  return new ContainerBuilder().setAccentColor(0xffd700)
+  return withArt(new ContainerBuilder().setAccentColor(0xffd700), banner)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 🛡 Admin Activity'))
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))
@@ -121,7 +132,7 @@ export function renderStaffBoard(guild: Guild, rows: Row[], footer: string): Con
  * Default public board: voice and chat side by side. Showing a single metric
  * makes people think their other activity is not being counted.
  */
-export function renderCombined(rows: Row[], footer: string, limit = 10): ContainerBuilder {
+export function renderCombined(rows: Row[], footer: string, limit = 10, banner?: string): ContainerBuilder {
   const ranked = rows
     .filter(r => r.voice > 0 || r.chat > 0)
     .sort((a, b) => (b.voice + b.chat * 60) - (a.voice + a.chat * 60))
@@ -134,7 +145,7 @@ export function renderCombined(rows: Row[], footer: string, limit = 10): Contain
       ).join('\n')
     : '*Hanooz data-i sabt nashode. Chand daghighe sabr kon.*';
 
-  return new ContainerBuilder().setAccentColor(0xffd700)
+  return withArt(new ContainerBuilder().setAccentColor(0xffd700), banner)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 🏆 Top Active'))
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))

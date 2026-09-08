@@ -9,7 +9,9 @@ import { plainName } from './text.js';
 const log = logger('banner');
 
 // dist/lib -> apps/bot/assets
-const ASSETS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets', 'fonts');
+const ASSETS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets');
+const FONTS = join(ASSETS, 'fonts');
+const ART = join(ASSETS, 'banners');
 
 let fonts: { name: string; data: Buffer; weight: 400 | 700; style: 'normal' }[] | null = null;
 
@@ -17,8 +19,8 @@ let fonts: { name: string; data: Buffer; weight: 400 | 700; style: 'normal' }[] 
 async function loadFonts() {
   if (fonts) return fonts;
   const [regular, bold] = await Promise.all([
-    readFile(join(ASSETS, 'Vazirmatn-Regular.ttf')),
-    readFile(join(ASSETS, 'Vazirmatn-Bold.ttf')),
+    readFile(join(FONTS, 'Vazirmatn-Regular.ttf')),
+    readFile(join(FONTS, 'Vazirmatn-Bold.ttf')),
   ]);
   fonts = [
     { name: 'Vazirmatn', data: regular, weight: 400, style: 'normal' },
@@ -27,73 +29,194 @@ async function loadFonts() {
   return fonts;
 }
 
-export interface BannerRow { name: string; value: string; amount: number }
-
-const MEDAL = ['#ffd700', '#c0c0c0', '#cd7f32'];
-
 /* Satori takes plain objects, so no JSX build step is needed. */
 const el = (type: string, style: Record<string, unknown>, children?: unknown): unknown =>
   ({ type, props: { style, ...(children === undefined ? {} : { children }) } });
+
+/* ── shared AION identity ──────────────────────────────────────── */
+
+/**
+ * One palette and one frame behind every generated image, so a leaderboard,
+ * a welcome banner and a staff report read as the same server rather than as
+ * three unrelated pictures.
+ */
+const BRAND = {
+  ink: '#05060c',
+  text: '#f2f8ff',
+  dim: 'rgba(180,205,235,0.62)',
+  faint: 'rgba(180,205,235,0.34)',
+  blue: '#4aa6ff',
+  track: 'rgba(255,255,255,0.055)',
+} as const;
+
+const WIDTH = 1200;
+const PAD = 56;
+const CONTENT = WIDTH - PAD * 2;
+
+const absolute = { position: 'absolute', display: 'flex' } as const;
+
+/** The light source that every AION image is lit by. */
+const glows = (accent: string) => [
+  el('div', {
+    ...absolute, top: -300, right: -260, width: 820, height: 820, borderRadius: 410,
+    backgroundImage: `radial-gradient(circle, ${accent}3d 0%, ${accent}12 42%, rgba(5,6,12,0) 68%)`,
+  }),
+  el('div', {
+    ...absolute, bottom: -320, left: -220, width: 700, height: 700, borderRadius: 350,
+    backgroundImage: `radial-gradient(circle, ${accent}1f 0%, rgba(5,6,12,0) 66%)`,
+  }),
+];
+
+/** The signature lit rift, used as a divider wherever a rule is needed. */
+const rift = (width: number, accent: string, strong = true) => el('div', {
+  display: 'flex', width, height: strong ? 2 : 1,
+  backgroundImage: `linear-gradient(90deg, ${accent}00 0%, ${accent} 22%, #ffffff 50%, ${accent} 78%, ${accent}00 100%)`,
+  ...(strong ? { boxShadow: `0 0 18px 2px ${accent}80` } : {}),
+});
+
+/** Title block on the left, AION lockup on the right. */
+const header = (opts: { kicker: string; title: string; subtitle: string; accent: string }) =>
+  el('div', {
+    display: 'flex', width: CONTENT, justifyContent: 'space-between', alignItems: 'flex-start',
+  }, [
+    el('div', { display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 820 }, [
+      el('div', {
+        display: 'flex', fontSize: 17, fontWeight: 700, letterSpacing: 7, color: opts.accent,
+      }, opts.kicker),
+      el('div', { display: 'flex', fontSize: 46, fontWeight: 700, color: BRAND.text }, opts.title),
+      el('div', { display: 'flex', fontSize: 20, color: BRAND.dim }, opts.subtitle),
+    ]),
+    el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 7 }, [
+      el('div', {
+        display: 'flex', fontSize: 38, fontWeight: 700, letterSpacing: 11, color: BRAND.text,
+        textShadow: `0 0 30px ${opts.accent}e6`,
+      }, 'AION'),
+      rift(148, opts.accent),
+    ]),
+  ]);
+
+/**
+ * Wraps content in the shared frame. Height is passed in rather than fixed, so
+ * a three-row board does not ship with half a card of empty space.
+ */
+async function frame(opts: {
+  height: number;
+  accent: string;
+  kicker: string;
+  title: string;
+  subtitle: string;
+  footer: string;
+  body: unknown[];
+}): Promise<Buffer> {
+  const tree = el('div', {
+    display: 'flex', flexDirection: 'column', position: 'relative',
+    width: WIDTH, height: opts.height, padding: PAD,
+    background: BRAND.ink, fontFamily: 'Vazirmatn', gap: 26,
+  }, [
+    ...glows(opts.accent),
+    header(opts),
+    rift(CONTENT, opts.accent),
+    el('div', { display: 'flex', flexDirection: 'column', gap: 14, width: CONTENT }, opts.body),
+    el('div', {
+      ...absolute, bottom: 26, left: PAD, width: CONTENT,
+      justifyContent: 'space-between', alignItems: 'center',
+    }, [
+      el('div', { display: 'flex', fontSize: 15, letterSpacing: 4, color: BRAND.faint }, opts.footer),
+      el('div', { display: 'flex', fontSize: 15, letterSpacing: 5, color: BRAND.faint }, 'AION'),
+    ]),
+  ]);
+
+  const svg = await satori(tree as never, { width: WIDTH, height: opts.height, fonts: await loadFonts() });
+  return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } }).render().asPng());
+}
+
+/* ── leaderboards ──────────────────────────────────────────────── */
+
+export interface BannerRow { name: string; value: string; amount: number }
+
+const MEDAL = [
+  { from: '#ffd76a', to: '#f0a500', ink: '#241a00' },
+  { from: '#e6ecf5', to: '#a8b4c6', ink: '#161a22' },
+  { from: '#e2a06a', to: '#b26a2f', ink: '#241203' },
+];
+
+const ROW_H = 62;
 
 export async function renderLeaderboardBanner(opts: {
   title: string;
   subtitle: string;
   accent: string;
   rows: BannerRow[];
+  kicker?: string;
+  footer?: string;
 }): Promise<Buffer | null> {
   try {
     const rows = opts.rows.slice(0, 8);
     const max = Math.max(1, ...rows.map(r => r.amount));
 
+    // badge + gap, so the bars line up under the names rather than the ranks.
+    const BADGE = 52, GAP = 20;
+    const col = CONTENT - BADGE - GAP;
+
     const body = rows.length
-      ? rows.map((r, i) => el('div', {
-          display: 'flex', alignItems: 'center', gap: 18, height: 52, width: 904,
-        }, [
-          el('div', {
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 42, height: 42, minWidth: 42, flexShrink: 0,
-            borderRadius: 12, fontSize: 20, fontWeight: 700,
-            background: i < 3 ? MEDAL[i]! : 'rgba(255,255,255,0.08)',
-            color: i < 3 ? '#0b0d17' : '#8b93a7',
-          }, String(i + 1)),
-          el('div', { display: 'flex', flexDirection: 'column', width: 844, gap: 6 }, [
-            el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: 844 }, [
-              el('div', {
-              fontSize: 24, fontWeight: 700, color: '#e8ecf5',
-              overflow: 'hidden', maxWidth: 600,
-            }, plainName(r.name) || '—'),
-              el('div', { fontSize: 20, fontWeight: 700, color: opts.accent }, r.value),
-            ]),
+      ? rows.map((r, i) => {
+          const medal = MEDAL[i];
+          const width = Math.max(28, Math.round((r.amount / max) * col));
+          return el('div', {
+            display: 'flex', alignItems: 'center', gap: GAP, width: CONTENT, height: ROW_H,
+          }, [
             el('div', {
-              display: 'flex', height: 8, borderRadius: 4,
-              background: 'rgba(255,255,255,0.06)', width: 844,
-            }, [
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: BADGE, height: BADGE, minWidth: BADGE, flexShrink: 0, borderRadius: 16,
+              fontSize: 23, fontWeight: 700,
+              ...(medal
+                ? {
+                    backgroundImage: `linear-gradient(140deg, ${medal.from}, ${medal.to})`,
+                    color: medal.ink,
+                    boxShadow: `0 0 22px ${medal.from}59`,
+                  }
+                : { background: BRAND.track, color: BRAND.faint }),
+            }, String(i + 1)),
+            el('div', { display: 'flex', flexDirection: 'column', width: col, gap: 8 }, [
               el('div', {
-                display: 'flex', height: 8, borderRadius: 4,
-                width: Math.max(24, Math.round((r.amount / max) * 844)),
-                background: `linear-gradient(90deg, ${opts.accent}, ${opts.accent}55)`,
-              }),
+                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', width: col,
+              }, [
+                el('div', {
+                  display: 'flex', fontSize: 25, fontWeight: 700, maxWidth: col - 190,
+                  overflow: 'hidden', color: i === 0 ? BRAND.text : '#dbe4f2',
+                }, plainName(r.name) || '—'),
+                el('div', {
+                  display: 'flex', fontSize: 21, fontWeight: 700, color: opts.accent,
+                }, r.value),
+              ]),
+              el('div', {
+                display: 'flex', height: 9, borderRadius: 5, background: BRAND.track, width: col,
+              }, [
+                el('div', {
+                  display: 'flex', height: 9, borderRadius: 5, width,
+                  backgroundImage: `linear-gradient(90deg, ${opts.accent}, ${opts.accent}59)`,
+                  ...(i === 0 ? { boxShadow: `0 0 16px ${opts.accent}8c` } : {}),
+                }),
+              ]),
             ]),
-          ]),
-        ]))
-      : [el('div', { fontSize: 24, color: '#8b93a7' }, 'Hanooz data-i sabt nashode.')];
+          ]);
+        })
+      : [el('div', {
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: CONTENT, height: 140, borderRadius: 18, background: BRAND.track,
+          fontSize: 23, color: BRAND.dim,
+        }, 'Hanooz kasi sabt nashode — emshab avvalin nafar bash.')];
 
-    const tree = el('div', {
-      display: 'flex', flexDirection: 'column', width: 1000, height: 620,
-      padding: 48, background: '#0b0d17', fontFamily: 'Vazirmatn', gap: 22,
-    }, [
-      el('div', { display: 'flex', flexDirection: 'column', gap: 6 }, [
-        el('div', { fontSize: 46, fontWeight: 700, color: '#ffffff' }, opts.title),
-        el('div', { fontSize: 22, color: '#8b93a7' }, opts.subtitle),
-      ]),
-      el('div', { display: 'flex', height: 3, background: opts.accent, width: 140, borderRadius: 2 }),
-      el('div', { display: 'flex', flexDirection: 'column', gap: 14 }, body),
-    ]);
-
-    const svg = await satori(tree as never, {
-      width: 1000, height: 620, fonts: await loadFonts(),
+    const rowsH = rows.length ? rows.length * ROW_H + (rows.length - 1) * 14 : 140;
+    return await frame({
+      height: 232 + rowsH + 104,
+      accent: opts.accent,
+      kicker: opts.kicker ?? 'LEADERBOARD',
+      title: opts.title,
+      subtitle: opts.subtitle,
+      footer: opts.footer ?? 'TOP ACTIVE',
+      body,
     });
-    return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: 1000 } }).render().asPng());
   } catch (e) {
     // A failed banner must never block the text post.
     log.error('banner render failed', e);
@@ -101,10 +224,52 @@ export async function renderLeaderboardBanner(opts: {
   }
 }
 
-/* ── verify panel banner ───────────────────────────────────────── */
+/* ── staff report ──────────────────────────────────────────────── */
 
-// dist/lib -> apps/bot/assets/banners
-const ART = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets', 'banners');
+export interface StatTile { label: string; value: string; hint?: string }
+
+/** Headline numbers for the weekly admin report, in the same frame. */
+export async function renderStatsBanner(opts: {
+  title: string;
+  subtitle: string;
+  accent: string;
+  kicker?: string;
+  footer?: string;
+  tiles: StatTile[];
+}): Promise<Buffer | null> {
+  try {
+    const tiles = opts.tiles.slice(0, 4);
+    const gap = 18;
+    const w = Math.floor((CONTENT - gap * (tiles.length - 1)) / Math.max(1, tiles.length));
+
+    const body = [el('div', { display: 'flex', gap, width: CONTENT }, tiles.map(t =>
+      el('div', {
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6,
+        width: w, height: 132, padding: 24, borderRadius: 20,
+        background: BRAND.track, borderLeft: `3px solid ${opts.accent}`,
+      }, [
+        el('div', { display: 'flex', fontSize: 15, letterSpacing: 4, color: BRAND.faint }, t.label),
+        el('div', { display: 'flex', fontSize: 38, fontWeight: 700, color: BRAND.text }, t.value),
+        ...(t.hint ? [el('div', { display: 'flex', fontSize: 16, color: BRAND.dim }, t.hint)] : []),
+      ]),
+    ))];
+
+    return await frame({
+      height: 232 + 132 + 104,
+      accent: opts.accent,
+      kicker: opts.kicker ?? 'STAFF REPORT',
+      title: opts.title,
+      subtitle: opts.subtitle,
+      footer: opts.footer ?? 'ADMIN ACTIVITY',
+      body,
+    });
+  } catch (e) {
+    log.error('stats banner render failed', e);
+    return null;
+  }
+}
+
+/* ── verify panel banner ───────────────────────────────────────── */
 
 export interface Art { data: Buffer; name: string }
 
@@ -123,57 +288,36 @@ export async function welcomeBanner(): Promise<Art | null> {
   return data ? { data, name: 'welcome.png' } : null;
 }
 
-const W = 1200, H = 400;
+const HERO_H = 400;
 
 /** Fallback art: the AION wordmark split by a lit rift. */
 async function renderWelcomeBanner(): Promise<Buffer | null> {
   try {
-    const absolute = { position: 'absolute', display: 'flex' } as const;
-
     const tree = el('div', {
-      display: 'flex', position: 'relative', width: W, height: H,
-      background: '#05060c', fontFamily: 'Vazirmatn',
+      display: 'flex', position: 'relative', width: WIDTH, height: HERO_H,
+      background: BRAND.ink, fontFamily: 'Vazirmatn',
     }, [
-      // Light source, off the right edge so the falloff reads as a burst.
+      ...glows(BRAND.blue),
       el('div', {
-        ...absolute, top: -190, right: -220, width: 760, height: 760, borderRadius: 380,
-        backgroundImage: 'radial-gradient(circle, rgba(74,166,255,0.62) 0%, rgba(74,166,255,0.16) 42%, rgba(5,6,12,0) 68%)',
-      }),
-      el('div', {
-        ...absolute, bottom: -260, left: -160, width: 620, height: 620, borderRadius: 310,
-        backgroundImage: 'radial-gradient(circle, rgba(74,166,255,0.22) 0%, rgba(5,6,12,0) 65%)',
-      }),
-
-      // Wordmark
-      el('div', {
-        ...absolute, top: 96, left: 0, width: W, justifyContent: 'center',
-        fontSize: 168, fontWeight: 700, letterSpacing: 26, color: '#f2f8ff',
-        textShadow: '0 0 46px rgba(90,175,255,0.95)',
+        ...absolute, top: 96, left: 0, width: WIDTH, justifyContent: 'center',
+        fontSize: 168, fontWeight: 700, letterSpacing: 26, color: BRAND.text,
+        textShadow: `0 0 46px ${BRAND.blue}f2`,
       }, 'AION'),
-
-      // The rift, drawn over the wordmark
-      el('div', {
-        ...absolute, top: 198, left: 40, width: W - 80, height: 3,
-        backgroundImage: 'linear-gradient(90deg, rgba(120,200,255,0) 0%, #8fd0ff 18%, #ffffff 50%, #8fd0ff 82%, rgba(120,200,255,0) 100%)',
-        boxShadow: '0 0 26px 5px rgba(90,180,255,0.75)',
-      }),
-      el('div', {
-        ...absolute, top: 176, left: 0, width: W, justifyContent: 'center',
-      }, [
+      el('div', { ...absolute, top: 198, left: 40 }, [rift(WIDTH - 80, BRAND.blue)]),
+      el('div', { ...absolute, top: 176, left: 0, width: WIDTH, justifyContent: 'center' }, [
         el('div', {
           display: 'flex', alignItems: 'center', height: 46, paddingLeft: 26, paddingRight: 26,
-          background: '#05060c', fontSize: 24, fontWeight: 700, letterSpacing: 14, color: '#e7f3ff',
+          background: BRAND.ink, fontSize: 24, fontWeight: 700, letterSpacing: 14, color: '#e7f3ff',
         }, 'WELCOME TO'),
       ]),
-
       el('div', {
-        ...absolute, bottom: 40, left: 0, width: W, justifyContent: 'center',
-        fontSize: 22, letterSpacing: 8, color: 'rgba(180,205,235,0.72)',
+        ...absolute, bottom: 40, left: 0, width: WIDTH, justifyContent: 'center',
+        fontSize: 22, letterSpacing: 8, color: BRAND.dim,
       }, 'VERIFY  ·  JOIN  ·  BELONG'),
     ]);
 
-    const svg = await satori(tree as never, { width: W, height: H, fonts: await loadFonts() });
-    return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: W } }).render().asPng());
+    const svg = await satori(tree as never, { width: WIDTH, height: HERO_H, fonts: await loadFonts() });
+    return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } }).render().asPng());
   } catch (e) {
     log.error('welcome banner render failed', e);
     return null;

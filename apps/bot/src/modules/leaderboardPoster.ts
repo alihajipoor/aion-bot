@@ -1,11 +1,10 @@
 import {
-  ChannelType, MessageFlags, AttachmentBuilder, MediaGalleryBuilder,
-  MediaGalleryItemBuilder, type Guild, type TextChannel, type ContainerBuilder,
+  ChannelType, MessageFlags, AttachmentBuilder, type Guild, type TextChannel,
 } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { getDb, guilds } from '@aion/db';
-import { queryActivity, renderBoard, renderStaffBoard, sinceDay, hhmm, type Row } from '../lib/leaderboard.js';
-import { renderLeaderboardBanner } from '../lib/banner.js';
+import { queryActivity, renderBoard, renderStaffBoard, staffRows, sinceDay, hhmm, type Row } from '../lib/leaderboard.js';
+import { renderLeaderboardBanner, renderStatsBanner } from '../lib/banner.js';
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
 import { settings } from '../lib/settings.js';
@@ -48,16 +47,9 @@ function weekKey(d = new Date()): string {
   return `${t.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
-/** Attach a rendered banner into the card, falling back to text-only. */
-async function withBanner(
-  container: ContainerBuilder, file: Buffer | null, name: string,
-): Promise<{ components: ContainerBuilder[]; files?: AttachmentBuilder[] }> {
-  if (!file) return { components: [container] };
-  container.addMediaGalleryComponents(
-    new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${name}`)),
-  );
-  return { components: [container], files: [new AttachmentBuilder(file, { name })] };
-}
+/** Files for a card — empty when a render failed, so the post still goes out. */
+const art = (file: Buffer | null, name: string): { files?: AttachmentBuilder[] } =>
+  file ? { files: [new AttachmentBuilder(file, { name })] } : {};
 
 async function postDaily(guild: Guild): Promise<void> {
   const channel = publicChannel(guild);
@@ -73,25 +65,31 @@ async function postDaily(guild: Guild): Promise<void> {
   const chat = [...rows].filter(r => r.chat > 0).sort((a, b) => b.chat - a.chat).slice(0, 8);
 
   const voiceBanner = await renderLeaderboardBanner({
-    title: 'Top Voice — 24 saat', subtitle, accent: '#4aa8ff',
+    title: 'Top Voice — 24 saat', subtitle, accent: '#4aa6ff',
+    kicker: 'DAILY · VOICE', footer: 'TOP ACTIVE',
     rows: voice.map(r => ({ name: named(r), value: hhmm(r.voice), amount: r.voice })),
   });
   const chatBanner = await renderLeaderboardBanner({
     title: 'Top Chatters — 24 saat', subtitle, accent: '#fee75c',
-    rows: chat.map(r => ({ name: named(r), value: `${r.chat}`, amount: r.chat })),
+    kicker: 'DAILY · CHAT', footer: 'TOP ACTIVE',
+    rows: chat.map(r => ({ name: named(r), value: `${r.chat} pm`, amount: r.chat })),
   });
 
   // Two separate posts, as specified — voice and chat reward different people.
   await channel.send({
-    ...(await withBanner(
-      renderBoard({ title: 'Top Voice', icon: '🎧', accent: 0x3498db, metric: 'voice', rows, footer }),
-      voiceBanner, 'top-voice.png')),
+    components: [renderBoard({
+      title: 'Top Voice', icon: '🎧', accent: 0x4aa6ff, metric: 'voice', rows, footer,
+      banner: voiceBanner ? 'top-voice.png' : undefined,
+    })],
+    ...art(voiceBanner, 'top-voice.png'),
     flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
   });
   await channel.send({
-    ...(await withBanner(
-      renderBoard({ title: 'Top Chatters', icon: '💬', accent: 0xfee75c, metric: 'chat', rows, footer }),
-      chatBanner, 'top-chat.png')),
+    components: [renderBoard({
+      title: 'Top Chatters', icon: '💬', accent: 0xfee75c, metric: 'chat', rows, footer,
+      banner: chatBanner ? 'top-chat.png' : undefined,
+    })],
+    ...art(chatBanner, 'top-chat.png'),
     flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
   });
   log.info('posted daily public leaderboards');
@@ -101,8 +99,30 @@ async function postWeekly(guild: Guild): Promise<void> {
   const channel = staffChannel(guild);
   if (!channel) { log.warn('no admin-active channel found'); return; }
   const rows = await queryActivity(guild.id, sinceDay('week'));
+  const staff = staffRows(guild, rows);
+  const totals = staff.reduce((a, r) => ({
+    voice: a.voice + r.voice, chat: a.chat + r.chat, punish: a.punish + r.punishments,
+  }), { voice: 0, chat: 0, punish: 0 });
+
+  const banner = await renderStatsBanner({
+    title: 'Admin Report — 7 rooz',
+    subtitle: `${guild.name} · hafteye gozashte`,
+    accent: '#ffd76a', kicker: 'WEEKLY · STAFF', footer: 'ADMIN ACTIVITY',
+    tiles: [
+      { label: 'VOICE', value: hhmm(totals.voice), hint: 'majmoo e admin-ha' },
+      { label: 'MESSAGE', value: `${totals.chat}`, hint: 'too hameye channel-ha' },
+      { label: 'PUNISH', value: `${totals.punish}`, hint: 'sabt shode' },
+      { label: 'FA\'AL', value: `${staff.filter(r => r.voice + r.chat + r.punishments > 0).length}`,
+        hint: `az ${staff.length} admin` },
+    ],
+  });
+
   await channel.send({
-    components: [renderStaffBoard(guild, rows, `7 rooze gozashte · <t:${Math.floor(Date.now() / 1000)}:D>`)],
+    components: [renderStaffBoard(
+      guild, rows, `7 rooze gozashte · <t:${Math.floor(Date.now() / 1000)}:D>`,
+      banner ? 'admin-report.png' : undefined,
+    )],
+    ...art(banner, 'admin-report.png'),
     flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
   });
   log.info('posted weekly staff leaderboard');
