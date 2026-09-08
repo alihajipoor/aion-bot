@@ -1,0 +1,21 @@
+{
+  "name": "@aion/bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "npm run build && node --env-file=../../.env dist/index.js",
+    "start": "node dist/index.js",
+    "register": "npm run build && node --env-file=../../.env dist/register.js"
+  },
+  "dependencies": {
+    "@aion/db": "*",
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,100 @@
+name: build & deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 20 to match the VPS exactly — it has no TS type-stripping,
+      # so everything must be compiled here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck & build
+        run: npm run typecheck
+
+      # Reinstall without dev dependencies so the shipped bundle stays small.
+      # The VPS never runs npm: it has 1.9 GB shared with another bot.
+      - name: Prune to production dependencies
+        run: npm ci --omit=dev
+
+      - name: Package
+        run: |
+          tar czf aion.tar.gz \
+            node_modules \
+            package.json package-lock.json \
+            apps/bot/dist apps/bot/package.json \
+            packages/db/dist packages/db/package.json packages/db/migrations \
+            deploy
+          ls -lh aion.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aion-bundle
+          path: aion.tar.gz
+          retention-days: 14
+
+      - name: Deploy over SSH
+        if: ${{ env.HAVE_KEY == 'true' }}
+        env:
+          HAVE_KEY: ${{ secrets.VPS_SSH_KEY != '' }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: echo "configured below"
+
+      - name: Ship to VPS
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          if [ -z "$KEY" ]; then echo "VPS_SSH_KEY not set — artifact built but not deployed."; exit 0; fi
+          mkdir -p ~/.ssh && printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          scp -i ~/.ssh/id_ed25519 aion.tar.gz root@"$HOST":/tmp/aion.tar.gz
+          ssh -i ~/.ssh/id_ed25519 root@"$HOST" bash -s <<'REMOTE'
+            set -euo pipefail
+            APP=/opt/aion
+            mkdir -p "$APP" /opt/aion-releases
+            STAMP=$(date +%Y%m%d-%H%M%S)
+
+            # Keep the previous release so a bad deploy can be rolled back.
+            [ -d "$APP/apps" ] && cp -a "$APP" "/opt/aion-releases/$STAMP" || true
+            ls -1dt /opt/aion-releases/* 2>/dev/null | tail -n +4 | xargs -r rm -rf
+
+            tar xzf /tmp/aion.tar.gz -C "$APP"
+            rm -f /tmp/aion.tar.gz
+
+            install -m 644 "$APP/deploy/systemd/aion-bot.service" /etc/systemd/system/
+            id -u aionbot &>/dev/null || useradd --system --home "$APP" --shell /usr/sbin/nologin aionbot
+            chown -R aionbot:aionbot "$APP"
+            chmod 600 "$APP/.env" 2>/dev/null || true
+
+            # Apply any new migrations before the new code starts.
+            if [ -f "$APP/.env" ]; then
+              sudo -u aionbot env $(grep -v '^#' "$APP/.env" | xargs -d '\n') \
+                node "$APP/packages/db/dist/migrate.js" || echo "migration step skipped/failed"
+            fi
+
+            systemctl daemon-reload
+            systemctl enable aion-bot >/dev/null 2>&1 || true
+            systemctl restart aion-bot
+            sleep 4
+            systemctl is-active aion-bot
+            journalctl -u aion-bot -n 15 --no-pager
+          REMOTE

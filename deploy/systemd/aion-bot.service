@@ -1,0 +1,39 @@
+[Unit]
+Description=AION Discord bot
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aionbot
+Group=aionbot
+WorkingDirectory=/opt/aion/apps/bot
+EnvironmentFile=/opt/aion/.env
+ExecStart=/usr/bin/node dist/index.js
+
+Restart=always
+RestartSec=10s
+StartLimitBurst=5
+
+# Hard ceilings. The box is shared — if this leaks, the kernel kills it
+# rather than taking down the other bot.
+MemoryHigh=320M
+MemoryMax=400M
+CPUQuota=60%
+TasksMax=128
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/aion
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aion-bot
+
+[Install]
+WantedBy=multi-user.target

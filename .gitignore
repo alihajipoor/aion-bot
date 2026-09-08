@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.next/
+*.log
+*.tsbuildinfo
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# regenerable server snapshots (contain live server state)
+docs/server-snapshot*
+docs/reference-snapshot*
+docs/diff.md
+docs/sync-*.txt
+
+.DS_Store
