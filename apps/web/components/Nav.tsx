@@ -11,6 +11,7 @@ const ICONS: Record<string, React.ReactNode> = {
   mic: <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z" />,
   layers: <path d="m12 2 9 5-9 5-9-5 9-5Zm0 8.5L21 15l-9 5-9-5 9-4.5Z" />,
   users: <path d="M16 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-8 0a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-2.7 0-8 1.3-8 4v3h10v-3c0-1 .4-2.2 1.3-3.1A14 14 0 0 0 8 13Zm8 0c-.6 0-1.3 0-2 .2 1.3 1 2 2.2 2 3.8v3h8v-3c0-2.7-5.3-4-8-4Z" />,
+  list: <path d="M4 6h16v2H4V6Zm0 5h16v2H4v-2Zm0 5h10v2H4v-2Z" />,
   cog: <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm9 4a8.8 8.8 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a8.6 8.6 0 0 0-2.2-1.3L16 3H8l-.3 2.4A8.6 8.6 0 0 0 5.5 6.7l-2.4-1-2 3.4 2 1.6a8.9 8.9 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a8.6 8.6 0 0 0 2.2 1.3L8 21h8l.3-2.4a8.6 8.6 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.07-.43.1-.86.1-1.3Z" />,
 };
 
@@ -30,6 +31,7 @@ const GROUPS: { label: string; items: { href: string; label: string; icon: strin
       { href: '/dashboard/announce', label: 'Announcements', icon: 'announce' },
       { href: '/dashboard/cases', label: 'Moderation', icon: 'shield' },
       { href: '/dashboard/verifications', label: 'Verifications', icon: 'check' },
+      { href: '/dashboard/logs', label: 'Logs', icon: 'list' },
     ],
   },
   {

@@ -2,6 +2,7 @@ import { and, eq, gte, sql, inArray } from 'drizzle-orm';
 import { getDb, activityDaily } from '@aion/db';
 import { getMembers } from '@/lib/bot';
 import { env } from '@/lib/env';
+import Link from 'next/link';
 import { Card, EmptyState, Pill } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -54,7 +55,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
             {members.map(m => {
               const a = activity.get(m.id);
               return (
-                <div key={m.id} className="flex items-center gap-4 px-5 py-3">
+                <Link key={m.id} href={`/dashboard/members/${m.id}`} className="flex items-center gap-4 px-5 py-3 transition hover:bg-ink-800/40">
                   <img src={m.avatar} alt="" className="h-9 w-9 shrink-0 rounded-full" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -80,7 +81,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                     <div className="text-mist-200">🎧 {a ? hours(a.voice) : '0m'}</div>
                     <div className="text-mist-400">💬 {a?.chat ?? 0}</div>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>

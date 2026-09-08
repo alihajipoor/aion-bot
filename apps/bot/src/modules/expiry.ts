@@ -3,6 +3,8 @@ import { dueSanctions, clearSanction } from '../lib/cases.js';
 import { resolveSections, type Section } from '../lib/sections.js';
 import { syncVoiceMute, releaseVoiceMute } from '../lib/enforce.js';
 import { logger } from '../lib/log.js';
+import { lt } from 'drizzle-orm';
+import { getDb, logEvents, messageCache } from '@aion/db';
 import { isolate } from '../lib/text.js';
 import type { AionClient } from '../client.js';
 
@@ -47,6 +49,20 @@ export function startExpiryWorker(client: AionClient): NodeJS.Timeout {
       }
     }
   };
+
+  // Log retention: keep 30 days, and message bodies only 24 hours.
+  const sweep = async () => {
+    try {
+      const db = getDb();
+      const logCutoff = new Date(Date.now() - 30 * 86_400_000);
+      const msgCutoff = new Date(Date.now() - 86_400_000);
+      await db.delete(logEvents).where(lt(logEvents.createdAt, logCutoff));
+      await db.delete(messageCache).where(lt(messageCache.createdAt, msgCutoff));
+    } catch (e) { log.warn('retention sweep failed', (e as Error).message); }
+  };
+  void sweep();
+  const sweeper = setInterval(() => void sweep(), 6 * 60 * 60_000);
+  sweeper.unref?.();
 
   void tick();
   const timer = setInterval(() => void tick(), TICK_MS);

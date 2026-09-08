@@ -6,6 +6,7 @@ import {
 import { asciiFold } from './text.js';
 import { logger } from './log.js';
 import { settings } from './settings.js';
+import { getDb, logEvents } from '@aion/db';
 
 const log = logger('logbus');
 
@@ -110,8 +111,37 @@ const breaker = new Map<string, number>();
  * message -- Components V2 allows multiple containers per message, so richer
  * output does not cost extra requests.
  */
+/**
+ * Persisted alongside the Discord message. Rows are buffered and inserted in
+ * one statement so a raid does not turn into one INSERT per event.
+ */
+interface Persisted { guildId: string; type: string; body: string; userIds: string[]; channelIds: string[]; avatar: string | null }
+const toStore: Persisted[] = [];
+let storeTimer: NodeJS.Timeout | null = null;
+
+const idsIn = (text: string, prefix: '@' | '#'): string[] => {
+  const re = prefix === '@' ? /<@!?(\d{15,25})>/g : /<#(\d{15,25})>/g;
+  return [...new Set([...text.matchAll(re)].map(m => m[1]!))];
+};
+
+async function flushStore(): Promise<void> {
+  storeTimer = null;
+  if (!toStore.length) return;
+  const rows = toStore.splice(0, toStore.length);
+  try { await getDb().insert(logEvents).values(rows); }
+  catch (e) { log.warn('could not persist log events', (e as Error).message); }
+}
+
 export function emitLog(guild: Guild, type: LogType, text: string, avatar?: string): void {
   if (settings().logging.disabledEvents.includes(type)) return;
+
+  toStore.push({
+    guildId: guild.id, type, body: text,
+    userIds: idsIn(text, '@'), channelIds: idsIn(text, '#'),
+    avatar: avatar ?? null,
+  });
+  if (!storeTimer) { storeTimer = setTimeout(() => void flushStore(), 2_000); storeTimer.unref?.(); }
+
   const channel = resolveChannel(guild, type);
   if (!channel) return;
 

@@ -241,3 +241,23 @@ export const backups = pgTable('backups', {
   error:     text('error'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Durable copy of every log line. Discord channels cannot be searched across
+ * event types or filtered by person, which is the whole point of keeping this.
+ * `userIds` holds every account mentioned in the line so "everything about X"
+ * is a single indexed containment query.
+ */
+export const logEvents = pgTable('log_events', {
+  id:        serial('id').primaryKey(),
+  guildId:   snowflake('guild_id').notNull(),
+  type:      text('type').notNull(),
+  body:      text('body').notNull(),
+  userIds:   text('user_ids').array().notNull().default([]),
+  channelIds: text('channel_ids').array().notNull().default([]),
+  avatar:    text('avatar'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  index('log_events_guild_time_idx').on(t.guildId, t.createdAt),
+  index('log_events_type_idx').on(t.guildId, t.type),
+]);
