@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { getDb, activityDaily } from '@aion/db';
 import { Events, type Message } from 'discord.js';
 import { logger } from '../lib/log.js';
+import { config } from '../config.js';
 import type { AionClient } from '../client.js';
 
 const log = logger('activity');
@@ -55,7 +56,9 @@ async function flush(): Promise<void> {
  * the end.
  */
 function sampleVoice(client: AionClient): void {
-  for (const guild of client.guilds.cache.values()) {
+  const guild = client.guilds.cache.get(config.guildId);
+  if (!guild) return;
+  {
     for (const vs of guild.voiceStates.cache.values()) {
       const member = vs.member;
       if (!member || member.user.bot || !vs.channelId) continue;
@@ -71,6 +74,7 @@ function sampleVoice(client: AionClient): void {
 export function startActivityTracking(client: AionClient): void {
   client.on(Events.MessageCreate, (message: Message) => {
     if (!message.guild || message.author.bot) return;
+    if (message.guild.id !== config.guildId) return;
     const key = `${message.guild.id}:${message.author.id}`;
     const last = lastMessage.get(key) ?? 0;
     if (Date.now() - last < MSG_DEBOUNCE_MS) return;

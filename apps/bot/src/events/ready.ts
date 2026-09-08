@@ -21,6 +21,10 @@ const handler: EventHandler = {
     log.info(`logged in as ${client.user?.tag}`);
     log.info(`serving ${client.guilds.cache.size} guild(s)` + (g ? ` — ${g.name} (${g.memberCount} members)` : ''));
     if (g) {
+      // Counters and role lookups read from the member cache, which is empty
+      // until fetched even with the GuildMembers intent.
+      await g.members.fetch().then(m => log.info(`cached ${m.size} members`))
+        .catch(e => log.warn('member fetch failed', e));
       const sections = resolveSections(g, true);
       for (const [key, s] of sections) {
         const missing = [

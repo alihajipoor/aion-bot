@@ -1,5 +1,6 @@
 import { ChannelType, type Guild, type VoiceChannel } from 'discord.js';
 import { logger } from '../lib/log.js';
+import { config } from '../config.js';
 import type { AionClient } from '../client.js';
 
 const log = logger('counters');
@@ -14,7 +15,16 @@ const CYCLE_MS = 6 * 60_000;
 interface CounterSpec { match: RegExp; value: (g: Guild) => number }
 
 const COUNTERS: CounterSpec[] = [
-  { match: /^a\s*i\s*o\s*n\s*[•·]/i, value: g => g.members.cache.filter(m => !m.user.bot).size || g.memberCount },
+  {
+    match: /^a\s*i\s*o\s*n\s*[•·]/i,
+    // memberCount is authoritative; the cache can be partial right after boot
+    // and would otherwise publish a wildly wrong number.
+    value: g => {
+      const cached = g.members.cache;
+      const bots = cached.filter(m => m.user.bot).size;
+      return cached.size >= g.memberCount ? g.memberCount - bots : g.memberCount;
+    },
+  },
   { match: /^m\s*i\s*c\s*[•·]/i,     value: g => g.voiceStates.cache.filter(v => v.channelId && !v.member?.user.bot).size },
 ];
 
@@ -24,7 +34,8 @@ function renamed(current: string, n: number): string {
 }
 
 async function tick(client: AionClient): Promise<void> {
-  for (const guild of client.guilds.cache.values()) {
+  const guild = client.guilds.cache.get(config.guildId);
+  if (guild) {
     for (const spec of COUNTERS) {
       const channel = [...guild.channels.cache.values()].find(
         c => c.type === ChannelType.GuildVoice && spec.match.test(c.name)) as VoiceChannel | undefined;
