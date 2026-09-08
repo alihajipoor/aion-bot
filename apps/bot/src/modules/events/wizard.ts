@@ -151,7 +151,7 @@ function esmScreen(d: Draft) {
 
   box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
     new StringSelectMenuBuilder().setCustomId(enc('e', 'columns'))
-      .setPlaceholder('Sotoon ha').setMinValues(2).setMaxValues(Math.min(8, ESM_COLUMNS.length))
+      .setPlaceholder('Sotoon ha (max 5)').setMinValues(2).setMaxValues(5)
       .addOptions(ESM_COLUMNS.map(c => new StringSelectMenuOptionBuilder()
         .setLabel(c).setValue(c).setDefault(d.esm.columns.includes(c))))));
 

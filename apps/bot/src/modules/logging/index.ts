@@ -11,6 +11,7 @@ import { logger } from '../../lib/log.js';
 import { and, eq, desc, sql } from 'drizzle-orm';
 import { getDb, memberJoins } from '@aion/db';
 import type { AionClient } from '../../client.js';
+import { isCounterChannel } from '../counters.js';
 
 const log = logger('logging');
 
@@ -266,6 +267,9 @@ export function installLogging(client: AionClient): void {
   client.on(Events.ChannelUpdate, (before, after) => {
     if (!('guild' in after) || !after.guild) return;
     const b = before as GuildChannel, a = after as GuildChannel;
+    // Counter channels rename themselves every few minutes; logging that
+    // floods the channel and buries the edits a person actually made.
+    if (isCounterChannel(a.name) || isCounterChannel(b.name)) return;
     const lines = diffLines([
       ['name', b.name, a.name],
       ['topic', (b as { topic?: string }).topic, (a as { topic?: string }).topic],

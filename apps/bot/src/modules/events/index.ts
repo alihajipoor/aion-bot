@@ -21,6 +21,8 @@ import {
   mergeState, recentEvents, type EventRow, type PastEvent,
 } from './store.js';
 import { startMafia, endMafia, mafiaComponent, mafiaModal, MAFIA_ID } from './mafia.js';
+import { startEsmFamil, endEsmFamil, esmComponent, esmModal, ESM_ID } from './esmfamil.js';
+import { startSoali, endSoali, soaliComponent, soaliModal, SOALI_ID } from './soali.js';
 import type { AionClient } from '../../client.js';
 
 const log = logger('events');
@@ -465,10 +467,10 @@ async function start(i: ButtonInteraction, ev: EventRow): Promise<void> {
   }
 
   let fresh = (await getEvent(ev.id))!;
-  if (ev.game === 'mafia') {
-    await startMafia(guild, fresh);
-    fresh = (await getEvent(ev.id))!;
-  }
+  if (ev.game === 'mafia') await startMafia(guild, fresh);
+  else if (ev.game === 'esmfamil') await startEsmFamil(guild, fresh);
+  else if (ev.game === 'bistsoali') await startSoali(guild, fresh);
+  fresh = (await getEvent(ev.id))!;
 
   await refreshCard(guild, fresh);
   await refreshSignup(guild, fresh);
@@ -487,6 +489,8 @@ async function end(i: ButtonInteraction, ev: EventRow): Promise<void> {
   const guild = i.guild!;
 
   if (ev.game === 'mafia') await endMafia(guild, ev).catch(e => log.warn('mafia teardown', e));
+  else if (ev.game === 'esmfamil') await endEsmFamil(guild, ev).catch(() => {});
+  else if (ev.game === 'bistsoali') await endSoali(guild, ev).catch(() => {});
 
   const roster = await players(ev.id);
   const minutes = ev.startedAt ? Math.max(1, Math.round((Date.now() - ev.startedAt.getTime()) / 60_000)) : 0;
@@ -594,6 +598,10 @@ async function history(i: ButtonInteraction): Promise<void> {
 export function installEvents(client: AionClient): void {
   client.on(Events.InteractionCreate, async (i) => {
     try {
+      if (i.isButton() && i.customId.startsWith(`${ESM_ID}|`)) { await esmComponent(i); return; }
+      if (i.isModalSubmit() && i.customId.startsWith(`${ESM_ID}|`)) { await esmModal(i); return; }
+      if (i.isButton() && i.customId.startsWith(`${SOALI_ID}|`)) { await soaliComponent(i); return; }
+      if (i.isModalSubmit() && i.customId.startsWith(`${SOALI_ID}|`)) { await soaliModal(i); return; }
       if (i.isButton() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaComponent(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaComponent(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaModal(i); return; }

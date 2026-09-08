@@ -24,7 +24,24 @@ const findChannel = (g: Guild, re: RegExp): TextChannel | null =>
 const publicChannel = (g: Guild) => findChannel(g, /𝚃𝙾𝙿-𝙰𝙲𝚃𝙸𝚅𝙴|top-active/i);
 const staffChannel  = (g: Guild) => findChannel(g, /ᴀᴅᴍɪɴ-ᴀᴄᴛɪᴠᴇ|admin-active/i);
 
-interface Marks { lastDaily?: string; lastWeekly?: string }
+interface Marks {
+  lastDaily?: string;
+  lastWeekly?: string;
+  /** Message ids of the last boards, so a new post can retire the old one. */
+  dailyIds?: string[];
+  weeklyIds?: string[];
+}
+
+/**
+ * A leaderboard is a snapshot, not a log — three days of stale boards above
+ * the current one is just noise. Ids are tracked rather than sweeping the
+ * channel, so nothing else the bot posted there is ever caught in it.
+ */
+async function retire(guild: Guild, channel: TextChannel, ids: string[] | undefined): Promise<void> {
+  for (const id of ids ?? []) {
+    await channel.messages.delete(id).catch(() => {});   // already gone is fine
+  }
+}
 
 async function readMarks(guildId: string, name: string): Promise<Marks> {
   const [row] = await getDb().select().from(guilds).where(eq(guilds.guildId, guildId)).limit(1);
@@ -75,8 +92,11 @@ async function postDaily(guild: Guild): Promise<void> {
     rows: chat.map(r => ({ name: named(r), value: `${r.chat} pm`, amount: r.chat })),
   });
 
+  const before = await readMarks(guild.id, guild.name);
+  await retire(guild, channel, before.dailyIds);
+
   // Two separate posts, as specified — voice and chat reward different people.
-  await channel.send({
+  const voiceMsg = await channel.send({
     components: [renderBoard({
       title: 'Top Voice', icon: '🎧', accent: 0x4aa6ff, metric: 'voice', rows, footer,
       banner: voiceBanner ? 'top-voice.png' : undefined,
@@ -84,13 +104,19 @@ async function postDaily(guild: Guild): Promise<void> {
     ...art(voiceBanner, 'top-voice.png'),
     flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
   });
-  await channel.send({
+  const chatMsg = await channel.send({
     components: [renderBoard({
       title: 'Top Chatters', icon: '💬', accent: 0xfee75c, metric: 'chat', rows, footer,
       banner: chatBanner ? 'top-chat.png' : undefined,
     })],
     ...art(chatBanner, 'top-chat.png'),
     flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
+  });
+
+  // Re-read: the tick may have written its own marks while this was posting.
+  await writeMarks(guild.id, {
+    ...(await readMarks(guild.id, guild.name)),
+    dailyIds: [voiceMsg.id, chatMsg.id],
   });
   log.info('posted daily public leaderboards');
 }
@@ -117,13 +143,21 @@ async function postWeekly(guild: Guild): Promise<void> {
     ],
   });
 
-  await channel.send({
+  const before = await readMarks(guild.id, guild.name);
+  await retire(guild, channel, before.weeklyIds);
+
+  const msg = await channel.send({
     components: [renderStaffBoard(
       guild, rows, `7 rooze gozashte · <t:${Math.floor(Date.now() / 1000)}:D>`,
       banner ? 'admin-report.png' : undefined,
     )],
     ...art(banner, 'admin-report.png'),
     flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
+  });
+
+  await writeMarks(guild.id, {
+    ...(await readMarks(guild.id, guild.name)),
+    weeklyIds: [msg.id],
   });
   log.info('posted weekly staff leaderboard');
 }
@@ -139,16 +173,20 @@ async function tick(client: AionClient): Promise<void> {
     let changed = false;
 
     const lb = settings().leaderboard;
-    if (lb.dailyEnabled && now.getUTCHours() >= lb.dailyHourUtc && marks.lastDaily !== today) {
-      await postDaily(guild);
-      marks.lastDaily = today; changed = true;
-    }
     const wk = weekKey(now);
-    if (lb.weeklyEnabled && now.getUTCDay() === lb.weeklyDayOfWeek && now.getUTCHours() >= lb.dailyHourUtc && marks.lastWeekly !== wk) {
-      await postWeekly(guild);
-      marks.lastWeekly = wk; changed = true;
-    }
+    const doDaily = lb.dailyEnabled && now.getUTCHours() >= lb.dailyHourUtc && marks.lastDaily !== today;
+    const doWeekly = lb.weeklyEnabled && now.getUTCDay() === lb.weeklyDayOfWeek
+      && now.getUTCHours() >= lb.dailyHourUtc && marks.lastWeekly !== wk;
+
+    // The date marks are written first and the posts write their own message
+    // ids afterwards. Doing it the other way round dropped the ids and left
+    // yesterday's boards undeletable.
+    if (doDaily) { marks.lastDaily = today; changed = true; }
+    if (doWeekly) { marks.lastWeekly = wk; changed = true; }
     if (changed) await writeMarks(guild.id, marks);
+
+    if (doDaily) await postDaily(guild);
+    if (doWeekly) await postWeekly(guild);
   } catch (e) {
     log.error('leaderboard tick failed', e);
   }

@@ -29,6 +29,15 @@ const COUNTERS: CounterSpec[] = [
   { match: /^m\s*i\s*c\s*[•·]/i,     value: g => g.voiceStates.cache.filter(v => v.channelId && !v.member?.user.bot).size },
 ];
 
+/**
+ * True for a channel the counter worker owns. The logger uses this to stay
+ * quiet: these rename every few minutes by design, and logging each one buries
+ * the channel edits a human actually made.
+ */
+export function isCounterChannel(name: string): boolean {
+  return COUNTERS.some(c => c.match.test(name));
+}
+
 /** Replace the trailing number, keeping whatever prefix and spacing exists. */
 function renamed(current: string, n: number): string {
   return /\d+\s*$/.test(current) ? current.replace(/\d+\s*$/, String(n)) : `${current} ${n}`;
