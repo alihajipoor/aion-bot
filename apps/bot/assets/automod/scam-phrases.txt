@@ -1,0 +1,22 @@
+# Scam and advertising phrases. Deletes, alerts, and times the poster out for
+# five minutes — the accounts posting these are not here to talk.
+# Link shapes are handled by regex in tools/setup/automod.mjs, not here.
+
+free nitro
+nitro gift
+discord nitro free
+airdrop
+free crypto
+guaranteed profit
+signal channel
+ایردراپ
+ایر دراپ
+سود تضمینی
+سیگنال رایگان
+کانال سیگنال
+ربات ترید
+فالوور رایگان
+ممبر رایگان
+شارژ رایگان
+هک تلگرام
+هک اینستاگرام

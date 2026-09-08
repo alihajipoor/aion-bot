@@ -63,6 +63,21 @@ export async function saveSettings(_prev: SaveResult | null, form: FormData): Pr
       disabledEvents: form.getAll('disabledEvents').map(String),
       batchMs: num(form, 'batchMs', d.logging.batchMs),
     },
+    voiceGuard: {
+      enabled: bool(form, 'vgEnabled'),
+      events: num(form, 'vgEvents', d.voiceGuard.events),
+      windowSec: num(form, 'vgWindowSec', d.voiceGuard.windowSec),
+      timeoutSec: num(form, 'vgTimeoutSec', d.voiceGuard.timeoutSec),
+      maxTimeoutSec: num(form, 'vgMaxTimeoutSec', d.voiceGuard.maxTimeoutSec),
+      countSoundboard: bool(form, 'vgSoundboard'),
+      exemptRoles: list(form, 'vgExemptRoles'),
+    },
+    alerts: {
+      enabled: bool(form, 'alertsEnabled'),
+      recipients: list(form, 'alertRecipients'),
+      heartbeatStaleSec: num(form, 'heartbeatStaleSec', d.alerts.heartbeatStaleSec),
+      diskWarnPercent: num(form, 'diskWarnPercent', d.alerts.diskWarnPercent),
+    },
     backup: {
       enabled: bool(form, 'backupEnabled'),
       hourUtc: num(form, 'backupHourUtc', d.backup.hourUtc),

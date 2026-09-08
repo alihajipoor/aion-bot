@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the AION watchdog every five minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=aion-watchdog.service
+
+[Install]
+WantedBy=timers.target

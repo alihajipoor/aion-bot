@@ -14,6 +14,11 @@ resource, so anything Discord can do natively should be done natively.
 
 These are things the server used to have, or never had and needs.
 
+> **Items 1–3 shipped on 2026-09-08.** AutoMod rules are live and owned by
+> `tools/setup/automod.mjs`; the voice guard runs in `modules/voiceguard.ts`;
+> the watchdog runs from `aion-watchdog.timer` every five minutes. Item 4, the
+> warn tier, is still open.
+
 ### 1. There is no spam or raid protection at all
 
 ProBot was removed and nothing replaced its automod. Right now a single

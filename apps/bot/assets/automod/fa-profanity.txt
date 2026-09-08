@@ -1,0 +1,48 @@
+# Persian profanity, Perso-Arabic script and Finglish.
+# Starter list — extend it as you see what actually shows up.
+# Deletes the message and alerts staff. No timeout: false positives are cheap
+# to undo, a wrongly silenced member is not.
+
+# ── Perso-Arabic ──
+کیر
+کس کش
+کسکش
+کصکش
+کون
+کونی
+جنده
+جاکش
+مادرجنده
+خارکسده
+خارکسته
+حرومزاده
+حرام زاده
+بیناموس
+بی ناموس
+بیشرف
+بی شرف
+پفیوز
+لاشی
+عوضی
+گوه
+گاییدم
+میگام
+مرتیکه
+دیوث
+
+# ── Finglish ──
+koskesh
+kesafat
+jakesh
+jende
+haromzade
+haromzadeh
+madarjende
+kharkose
+bishraf
+binamoos
+pofyooz
+lashi
+avazi
+dayoos
+gooh

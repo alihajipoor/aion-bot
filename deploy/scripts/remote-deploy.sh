@@ -23,6 +23,10 @@ rm -f "$BUNDLE"
 
 install -m 644 "$APP/deploy/systemd/aion-bot.service" /etc/systemd/system/
 [ -f "$APP/deploy/systemd/aion-web.service" ] && install -m 644 "$APP/deploy/systemd/aion-web.service" /etc/systemd/system/
+install -m 644 "$APP/deploy/systemd/aion-watchdog.service" /etc/systemd/system/
+install -m 644 "$APP/deploy/systemd/aion-watchdog.timer" /etc/systemd/system/
+# The bot writes its heartbeat here and the watchdog reads it.
+mkdir -p "$APP/run"
 
 # The web bundle ships as webdist/ and is swapped in atomically.
 if [ -d "$APP/webdist" ]; then
@@ -44,6 +48,7 @@ fi
 
 systemctl daemon-reload
 systemctl enable aion-bot >/dev/null 2>&1 || true
+systemctl enable --now aion-watchdog.timer >/dev/null 2>&1 || true
 systemctl restart aion-bot
 if [ -d "$APP/web" ]; then
   systemctl enable aion-web >/dev/null 2>&1 || true

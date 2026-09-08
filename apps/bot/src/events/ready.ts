@@ -9,8 +9,10 @@ import { installTempVoice, sweepTempChannels, ensureInterfacePanel } from '../mo
 import { startLeaderboardPoster } from '../modules/leaderboardPoster.js';
 import { startApi } from '../modules/api.js';
 import { startVoicePresence } from '../modules/voicepresence.js';
+import { installVoiceGuard } from '../modules/voiceguard.js';
 import { ensureGuide } from '../commands/guide.js';
 import { startBackupWorker } from '../modules/backup.js';
+import { startHeartbeat } from '../modules/heartbeat.js';
 import { startSettingsRefresh, loadSettings } from '../lib/settings.js';
 import { resolveSections } from '../lib/sections.js';
 import { config } from '../config.js';
@@ -59,6 +61,7 @@ const handler: EventHandler = {
     installTempVoice(client);
     startApi(client);
     startVoicePresence(client);
+    installVoiceGuard(client);
     startCounters(client);
     if (config.databaseUrl) {
       await loadSettings(true);
@@ -67,6 +70,7 @@ const handler: EventHandler = {
       startActivityTracking(client);
       startLeaderboardPoster(client);
       startBackupWorker(client);
+      await startHeartbeat(client);
       if (g) { await sweepTempChannels(g); await ensureInterfacePanel(g); await ensureGuide(g); }
     }
 

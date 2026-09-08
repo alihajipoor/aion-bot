@@ -1,0 +1,15 @@
+[Unit]
+Description=AION host watchdog
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/aion
+EnvironmentFile=/opt/aion/.env
+ExecStart=/usr/bin/node /opt/aion/deploy/scripts/watchdog.mjs
+# It only reads state and sends mail; a failure here must never cascade.
+TimeoutStartSec=60
+MemoryMax=120M
+
+[Install]
+WantedBy=multi-user.target

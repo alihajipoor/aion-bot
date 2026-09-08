@@ -46,6 +46,24 @@ export interface AionSettings {
     disabledEvents: string[];
     batchMs: number;
   };
+  voiceGuard: {
+    enabled: boolean;
+    /** State changes allowed inside the window before it counts as a flood. */
+    events: number;
+    windowSec: number;
+    /** First offence. Repeats inside the hour double it, up to maxTimeoutSec. */
+    timeoutSec: number;
+    maxTimeoutSec: number;
+    countSoundboard: boolean;
+    exemptRoles: string[];
+  };
+  alerts: {
+    enabled: boolean;
+    /** Falls back to the backup recipients when empty. */
+    recipients: string[];
+    heartbeatStaleSec: number;
+    diskWarnPercent: number;
+  };
   backup: {
     enabled: boolean;
     hourUtc: number;
@@ -94,6 +112,22 @@ export const DEFAULT_SETTINGS: AionSettings = {
     messageDebounceSec: 3,
   },
   logging: { disabledEvents: [], batchMs: 1000 },
+  voiceGuard: {
+    enabled: true,
+    // Six moves in twenty seconds is nobody looking for a room.
+    events: 6,
+    windowSec: 20,
+    timeoutSec: 60,
+    maxTimeoutSec: 900,
+    countSoundboard: true,
+    exemptRoles: ['Consultant', 'PowerAdmin', 'Dev'],
+  },
+  alerts: {
+    enabled: true,
+    recipients: [],
+    heartbeatStaleSec: 300,
+    diskWarnPercent: 85,
+  },
   backup: {
     enabled: true,
     hourUtc: 3,
@@ -168,6 +202,24 @@ export function sanitise(s: AionSettings): AionSettings {
       hourUtc: clamp(s.backup.hourUtc, 0, 23, 3),
       keepLocal: clamp(s.backup.keepLocal, 1, 60, 7),
       recipients: s.backup.recipients
+        .map(r => r.trim())
+        .filter(r => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r))
+        .slice(0, 10),
+    },
+    voiceGuard: {
+      ...s.voiceGuard,
+      events: clamp(s.voiceGuard.events, 3, 40, 6),
+      windowSec: clamp(s.voiceGuard.windowSec, 5, 300, 20),
+      // Discord caps a timeout at 28 days; nothing here should come close.
+      timeoutSec: clamp(s.voiceGuard.timeoutSec, 10, 3600, 60),
+      maxTimeoutSec: clamp(s.voiceGuard.maxTimeoutSec, 60, 86400, 900),
+      exemptRoles: s.voiceGuard.exemptRoles.slice(0, 15),
+    },
+    alerts: {
+      ...s.alerts,
+      heartbeatStaleSec: clamp(s.alerts.heartbeatStaleSec, 60, 3600, 300),
+      diskWarnPercent: clamp(s.alerts.diskWarnPercent, 50, 99, 85),
+      recipients: s.alerts.recipients
         .map(r => r.trim())
         .filter(r => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r))
         .slice(0, 10),

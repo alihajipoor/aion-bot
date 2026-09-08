@@ -111,6 +111,51 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
+        <Group title="Voice guard"
+          hint="Discord's AutoMod never sees voice. This catches the abuse that lives there: hopping between channels to spam the join sound, and soundboard spam.">
+          <Toggle name="vgEnabled" label="Guard voice channels" defaultChecked={s.voiceGuard.enabled} />
+          <Field label="Allowed moves" htmlFor="vgEvents"
+            hint="Channel changes inside the window before it counts as a flood.">
+            <Num name="vgEvents" defaultValue={s.voiceGuard.events} min={3} max={40} suffix="moves" />
+          </Field>
+          <Field label="Window" htmlFor="vgWindowSec">
+            <Num name="vgWindowSec" defaultValue={s.voiceGuard.windowSec} min={5} max={300} suffix="seconds" />
+          </Field>
+          <Field label="First timeout" htmlFor="vgTimeoutSec"
+            hint="A repeat inside the hour doubles it. A clean hour resets it.">
+            <Num name="vgTimeoutSec" defaultValue={s.voiceGuard.timeoutSec} min={10} max={3600} suffix="seconds" />
+          </Field>
+          <Field label="Longest timeout" htmlFor="vgMaxTimeoutSec">
+            <Num name="vgMaxTimeoutSec" defaultValue={s.voiceGuard.maxTimeoutSec} min={60} max={86400} suffix="seconds" />
+          </Field>
+          <Toggle name="vgSoundboard" label="Count soundboard clips"
+            defaultChecked={s.voiceGuard.countSoundboard} />
+          <Field label="Never guard these roles" htmlFor="vgExemptRoles"
+            hint="Comma-separated role names. Anyone who can time others out is already exempt.">
+            <input id="vgExemptRoles" name="vgExemptRoles" className={inputCls}
+              defaultValue={s.voiceGuard.exemptRoles.join(', ')} />
+          </Field>
+        </Group>
+
+        <Group title="Alerts"
+          hint="A watchdog outside the bot emails when something breaks and again when it recovers — nothing in between.">
+          <Toggle name="alertsEnabled" label="Send alerts" defaultChecked={s.alerts.enabled} />
+          <Field label="Email alerts to" htmlFor="alertRecipients"
+            hint="Comma-separated. Empty falls back to the backup recipients.">
+            <input id="alertRecipients" name="alertRecipients" className={inputCls}
+              defaultValue={s.alerts.recipients.join(', ')} placeholder="you@example.com" />
+          </Field>
+          <Field label="Heartbeat considered stale after" htmlFor="heartbeatStaleSec"
+            hint="The bot writes one every minute. Longer than this and it is treated as down.">
+            <Num name="heartbeatStaleSec" defaultValue={s.alerts.heartbeatStaleSec} min={60} max={3600} suffix="seconds" />
+          </Field>
+          <Field label="Warn when the disk passes" htmlFor="diskWarnPercent">
+            <Num name="diskWarnPercent" defaultValue={s.alerts.diskWarnPercent} min={50} max={99} suffix="%" />
+          </Field>
+        </Group>
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <Group title="Backups" hint="Nightly database dump plus the full server structure, encrypted before it leaves the box.">
           <Toggle name="backupEnabled" label="Automatic backups" defaultChecked={s.backup.enabled} />
           <Field label="Run at (UTC hour)" htmlFor="backupHourUtc">
