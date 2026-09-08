@@ -31,3 +31,7 @@ export function diffLines(changes: [label: string, before: unknown, after: unkno
     .map(([label, b, a]) => `  • **${label}**: \`${String(b ?? '—')}\` → \`${String(a ?? '—')}\``)
     .join('\n');
 }
+
+/** Avatar URL for a log card thumbnail, or undefined when unavailable. */
+export const av = (user: { displayAvatarURL?: (o?: object) => string } | null | undefined): string | undefined =>
+  user?.displayAvatarURL?.({ extension: 'png', size: 128 });

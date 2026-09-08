@@ -1,4 +1,8 @@
-import { ChannelType, type Guild, type TextChannel } from 'discord.js';
+import {
+  ChannelType, MessageFlags, ContainerBuilder, TextDisplayBuilder,
+  SectionBuilder, ThumbnailBuilder,
+  type Guild, type TextChannel,
+} from 'discord.js';
 import { asciiFold } from './text.js';
 import { logger } from './log.js';
 
@@ -30,6 +34,22 @@ const ROUTES: Record<LogType, string> = {
   webhookUpdate: 'webhooks', integrationUpdate: 'webhooks',
   emojiUpdate: 'server', stickerUpdate: 'server', threadUpdate: 'server',
   guildUpdate: 'server', automod: 'server',
+};
+
+/** Accent colour per event family, so a channel reads at a glance. */
+const ACCENT: Record<LogType, number> = {
+  memberJoin: 0x57f287, memberLeave: 0x99aab5, memberKick: 0xed4245,
+  memberBan: 0xed4245, memberUnban: 0x57f287, memberTimeout: 0xfaa61a,
+  memberUpdate: 0x5865f2, memberBoost: 0xf47fff,
+  roleCreate: 0x9b59b6, roleDelete: 0x9b59b6, roleUpdate: 0x9b59b6,
+  channelCreate: 0x1abc9c, channelDelete: 0x1abc9c, channelUpdate: 0x1abc9c,
+  overwriteUpdate: 0xffd700,
+  voiceJoin: 0x3498db, voiceLeave: 0x3498db, voiceSwitch: 0x3498db, voiceState: 0x3498db,
+  messageEdit: 0xfee75c, messageDelete: 0xfee75c, messageBulkDelete: 0xfee75c,
+  inviteCreate: 0x00bcd4, inviteDelete: 0x00bcd4,
+  webhookUpdate: 0xe74c3c, integrationUpdate: 0xe74c3c,
+  emojiUpdate: 0x95a5a6, stickerUpdate: 0x95a5a6, threadUpdate: 0x95a5a6,
+  guildUpdate: 0x95a5a6, automod: 0xe74c3c,
 };
 
 const channelCache = new Map<string, string | null>();   // `${guildId}:${type}` -> channelId
@@ -72,19 +92,24 @@ export function isIgnored(key: string): boolean {
 
 /* ── batching + circuit breaker ────────────────────────────────── */
 
-const MAX_CHARS = 1900;          // headroom under Discord's 2000
+const MAX_CHARS = 1200;          // per card
+const CARDS_PER_MESSAGE = 5;     // stays well under the 40-component limit
 const FLUSH_MS = 1_000;
 const BREAKER_MS = 2 * 60_000;
 
-interface Buffer { lines: string[]; timer: NodeJS.Timeout | null }
+interface Pending { type: LogType; text: string; avatar?: string }
+interface Buffer { items: Pending[]; timer: NodeJS.Timeout | null }
+
 const buffers = new Map<string, Buffer>();
 const breaker = new Map<string, number>();
 
 /**
- * A raid can produce dozens of events per second. Lines are batched per channel
- * so a burst becomes roughly one message per second rather than one per event.
+ * Events are batched per channel so a burst becomes a few messages rather than
+ * dozens. Each entry renders as its own card, and several cards ship in one
+ * message -- Components V2 allows multiple containers per message, so richer
+ * output does not cost extra requests.
  */
-export function emitLog(guild: Guild, type: LogType, line: string): void {
+export function emitLog(guild: Guild, type: LogType, text: string, avatar?: string): void {
   const channel = resolveChannel(guild, type);
   if (!channel) return;
 
@@ -92,8 +117,8 @@ export function emitLog(guild: Guild, type: LogType, line: string): void {
   if (until && until > Date.now()) return;
 
   let buf = buffers.get(channel.id);
-  if (!buf) { buf = { lines: [], timer: null }; buffers.set(channel.id, buf); }
-  buf.lines.push(line);
+  if (!buf) { buf = { items: [], timer: null }; buffers.set(channel.id, buf); }
+  buf.items.push({ type, text, avatar });
 
   if (!buf.timer) {
     buf.timer = setTimeout(() => void flush(channel), FLUSH_MS);
@@ -101,25 +126,40 @@ export function emitLog(guild: Guild, type: LogType, line: string): void {
   }
 }
 
+function card(item: Pending): ContainerBuilder {
+  const body = item.text.length > MAX_CHARS ? `${item.text.slice(0, MAX_CHARS - 1)}…` : item.text;
+  const container = new ContainerBuilder().setAccentColor(ACCENT[item.type] ?? 0x5865f2);
+
+  // A thumbnail only exists inside a Section, so fall back to plain text when
+  // there is no avatar to show.
+  if (item.avatar) {
+    container.addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))
+        .setThumbnailAccessory(new ThumbnailBuilder().setURL(item.avatar)),
+    );
+  } else {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
+  }
+  return container;
+}
+
 async function flush(channel: TextChannel): Promise<void> {
   const buf = buffers.get(channel.id);
   if (!buf) return;
   buf.timer = null;
-  if (!buf.lines.length) return;
+  if (!buf.items.length) return;
 
-  const chunks: string[] = [];
-  let current = '';
-  for (const line of buf.lines) {
-    const piece = line.length > MAX_CHARS ? `${line.slice(0, MAX_CHARS - 1)}…` : line;
-    if (current.length + piece.length + 1 > MAX_CHARS) { chunks.push(current); current = piece; }
-    else current = current ? `${current}\n${piece}` : piece;
-  }
-  if (current) chunks.push(current);
-  buf.lines = [];
+  const items = buf.items.splice(0, buf.items.length);
 
-  for (const content of chunks) {
+  for (let i = 0; i < items.length; i += CARDS_PER_MESSAGE) {
+    const slice = items.slice(i, i + CARDS_PER_MESSAGE);
     try {
-      await channel.send({ content, allowedMentions: { parse: [] } });
+      await channel.send({
+        components: slice.map(card),
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [] },
+      });
     } catch (e) {
       const code = (e as { code?: number }).code;
       // Missing Access / Missing Permissions: back off rather than burn the

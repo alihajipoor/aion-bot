@@ -5,7 +5,7 @@ import {
 } from 'discord.js';
 import { emitLog, isIgnored } from '../../lib/logbus.js';
 import { recordAudit, waitForAudit, findAudit, countDelta, COUNTED_ACTIONS } from '../../lib/audit.js';
-import { now, u, byWhom, ch, chName, snippet, diffLines } from './format.js';
+import { now, u, byWhom, ch, chName, snippet, diffLines, av } from './format.js';
 import { isolate } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
 import type { AionClient } from '../../client.js';
@@ -104,7 +104,7 @@ export function installLogging(client: AionClient): void {
     } catch { /* ManageGuild missing */ }
 
     emitLog(member.guild, 'memberJoin',
-      `${now()} 📥 ${u(member.user)} joined · account created ${created}${via}`);
+      `${now()} 📥 ${u(member.user)} joined · account created ${created}${via}`, av(member.user));
   });
 
   client.on(Events.GuildMemberRemove, async (member: GuildMember | PartialGuildMember) => {
@@ -114,9 +114,9 @@ export function installLogging(client: AionClient): void {
     if (kick) {
       emitLog(member.guild, 'memberKick',
         `${now()} 🚫 ${u(member.user)} was **kicked**${byWhom(kick.executorId)}` +
-        `${kick.reason ? ` — ${isolate(kick.reason)}` : ''}`);
+        `${kick.reason ? ` — ${isolate(kick.reason)}` : ''}`, av(member.user));
     } else {
-      emitLog(member.guild, 'memberLeave', `${now()} 📤 ${u(member.user)} left`);
+      emitLog(member.guild, 'memberLeave', `${now()} 📤 ${u(member.user)} left`, av(member.user));
     }
   });
 
@@ -125,12 +125,12 @@ export function installLogging(client: AionClient): void {
     const rec = await waitForAudit(AuditLogEvent.MemberBanAdd, ban.user.id);
     emitLog(ban.guild, 'memberBan',
       `${now()} ⛔ ${u(ban.user)} was **banned**${byWhom(rec?.executorId)}` +
-      `${rec?.reason ? ` — ${isolate(rec.reason)}` : ''}`);
+      `${rec?.reason ? ` — ${isolate(rec.reason)}` : ''}`, av(ban.user));
   });
 
   client.on(Events.GuildBanRemove, async (ban) => {
     const rec = await waitForAudit(AuditLogEvent.MemberBanRemove, ban.user.id);
-    emitLog(ban.guild, 'memberUnban', `${now()} ✅ ${u(ban.user)} was **unbanned**${byWhom(rec?.executorId)}`);
+    emitLog(ban.guild, 'memberUnban', `${now()} ✅ ${u(ban.user)} was **unbanned**${byWhom(rec?.executorId)}`, av(ban.user));
   });
 
   client.on(Events.GuildMemberUpdate, async (before: GuildMember | PartialGuildMember, after: GuildMember) => {
@@ -138,7 +138,7 @@ export function installLogging(client: AionClient): void {
       const rec = findAudit(AuditLogEvent.MemberUpdate, after.id);
       emitLog(after.guild, 'memberUpdate',
         `${now()} ✏️ ${u(after.user)} nickname \`${isolate(before.nickname ?? '—')}\` → ` +
-        `\`${isolate(after.nickname ?? '—')}\`${byWhom(rec?.executorId)}`);
+        `\`${isolate(after.nickname ?? '—')}\`${byWhom(rec?.executorId)}`, av(after.user));
     }
 
     const gained = after.roles.cache.filter(r => !before.roles.cache.has(r.id));
@@ -149,7 +149,7 @@ export function installLogging(client: AionClient): void {
         gained.size ? `**+** ${gained.map(r => isolate(r.name)).join(', ')}` : '',
         lost.size ? `**−** ${lost.map(r => isolate(r.name)).join(', ')}` : '',
       ].filter(Boolean).join('  ');
-      emitLog(after.guild, 'memberUpdate', `${now()} 🎭 ${u(after.user)} ${parts}${byWhom(rec?.executorId)}`);
+      emitLog(after.guild, 'memberUpdate', `${now()} 🎭 ${u(after.user)} ${parts}${byWhom(rec?.executorId)}`, av(after.user));
     }
 
     const bt = before.communicationDisabledUntilTimestamp;
@@ -158,13 +158,13 @@ export function installLogging(client: AionClient): void {
       const rec = findAudit(AuditLogEvent.MemberUpdate, after.id);
       emitLog(after.guild, 'memberTimeout', at && at > Date.now()
         ? `${now()} ⏳ ${u(after.user)} timed out until <t:${Math.floor(at / 1000)}:f>${byWhom(rec?.executorId)}`
-        : `${now()} ⌛ ${u(after.user)} timeout removed${byWhom(rec?.executorId)}`);
+        : `${now()} ⌛ ${u(after.user)} timeout removed${byWhom(rec?.executorId)}`, av(after.user));
     }
 
     if (!before.premiumSince && after.premiumSince) {
-      emitLog(after.guild, 'memberBoost', `${now()} 💎 ${u(after.user)} **boosted** the server`);
+      emitLog(after.guild, 'memberBoost', `${now()} 💎 ${u(after.user)} **boosted** the server`, av(after.user));
     } else if (before.premiumSince && !after.premiumSince) {
-      emitLog(after.guild, 'memberBoost', `${now()} 💔 ${u(after.user)} stopped boosting`);
+      emitLog(after.guild, 'memberBoost', `${now()} 💔 ${u(after.user)} stopped boosting`, av(after.user));
     }
   });
 
@@ -246,11 +246,11 @@ export function installLogging(client: AionClient): void {
     if (!user || user.bot) return;
 
     if (!before.channelId && after.channelId)
-      emitLog(guild, 'voiceJoin', `${now()} 🔼 ${u(user)} joined ${ch(after.channel)}`);
+      emitLog(guild, 'voiceJoin', `${now()} 🔼 ${u(user)} joined ${ch(after.channel)}`, av(user));
     else if (before.channelId && !after.channelId)
-      emitLog(guild, 'voiceLeave', `${now()} 🔽 ${u(user)} left ${ch(before.channel)}`);
+      emitLog(guild, 'voiceLeave', `${now()} 🔽 ${u(user)} left ${ch(before.channel)}`, av(user));
     else if (before.channelId !== after.channelId)
-      emitLog(guild, 'voiceSwitch', `${now()} 🔂 ${u(user)} moved ${ch(before.channel)} → ${ch(after.channel)}`);
+      emitLog(guild, 'voiceSwitch', `${now()} 🔂 ${u(user)} moved ${ch(before.channel)} → ${ch(after.channel)}`, av(user));
 
     const flags: string[] = [];
     if (before.serverMute !== after.serverMute) flags.push(after.serverMute ? 'server-muted' : 'server-unmuted');
@@ -260,7 +260,7 @@ export function installLogging(client: AionClient): void {
     if (before.selfVideo !== after.selfVideo) flags.push(after.selfVideo ? 'camera on' : 'camera off');
     if (before.streaming !== after.streaming) flags.push(after.streaming ? 'started streaming' : 'stopped streaming');
     if (flags.length)
-      emitLog(guild, 'voiceState', `${now()} 🔇 ${u(user)} ${flags.join(', ')} in ${ch(after.channel ?? before.channel)}`);
+      emitLog(guild, 'voiceState', `${now()} 🔇 ${u(user)} ${flags.join(', ')} in ${ch(after.channel ?? before.channel)}`, av(user));
   });
 
   /* ── messages ──────────────────────────────────────────────────── */
@@ -269,7 +269,7 @@ export function installLogging(client: AionClient): void {
     if (before.content === after.content) return;      // embed load, pin, etc.
     emitLog(after.guild, 'messageEdit',
       `${now()} 📝 Message edited by ${u(after.author)} in ${ch(after.channel)} [jump](${after.url})\n` +
-      `  **before:** ${snippet(before.content)}\n  **after:** ${snippet(after.content)}`);
+      `  **before:** ${snippet(before.content)}\n  **after:** ${snippet(after.content)}`, av(after.author));
   });
 
   client.on(Events.MessageDelete, async (message: Message | PartialMessage) => {
@@ -280,7 +280,7 @@ export function installLogging(client: AionClient): void {
     const who = rec?.executorId ? ` · deleted by <@${rec.executorId}>` : ' · deleted by author';
     emitLog(message.guild, 'messageDelete',
       `${now()} 🗑 Message from ${u(message.author)} deleted in ${ch(message.channel)}${who}\n` +
-      `  ${message.content === null ? '*(not cached — content unavailable)*' : snippet(message.content)}`);
+      `  ${message.content === null ? '*(not cached — content unavailable)*' : snippet(message.content)}`, av(message.author));
   });
 
   client.on(Events.MessageBulkDelete, (messages) => {
