@@ -1,7 +1,11 @@
-import { ChannelType, MessageFlags, type Guild, type TextChannel } from 'discord.js';
+import {
+  ChannelType, MessageFlags, AttachmentBuilder, MediaGalleryBuilder,
+  MediaGalleryItemBuilder, type Guild, type TextChannel, type ContainerBuilder,
+} from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { getDb, guilds } from '@aion/db';
-import { queryActivity, renderBoard, renderStaffBoard, sinceDay } from '../lib/leaderboard.js';
+import { queryActivity, renderBoard, renderStaffBoard, sinceDay, hhmm, type Row } from '../lib/leaderboard.js';
+import { renderLeaderboardBanner } from '../lib/banner.js';
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
 import type { AionClient } from '../client.js';
@@ -43,19 +47,50 @@ function weekKey(d = new Date()): string {
   return `${t.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
+/** Attach a rendered banner into the card, falling back to text-only. */
+async function withBanner(
+  container: ContainerBuilder, file: Buffer | null, name: string,
+): Promise<{ components: ContainerBuilder[]; files?: AttachmentBuilder[] }> {
+  if (!file) return { components: [container] };
+  container.addMediaGalleryComponents(
+    new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${name}`)),
+  );
+  return { components: [container], files: [new AttachmentBuilder(file, { name })] };
+}
+
 async function postDaily(guild: Guild): Promise<void> {
   const channel = publicChannel(guild);
   if (!channel) { log.warn('no top-active channel found'); return; }
   const rows = await queryActivity(guild.id, sinceDay('day'));
-  const footer = `24 saate gozashte · <t:${Math.floor(Date.now() / 1000)}:D>`;
+  const stamp = `<t:${Math.floor(Date.now() / 1000)}:D>`;
+  const footer = `24 saate gozashte · ${stamp}`;
+  const subtitle = `${guild.name} · ${new Date().toUTCString().slice(5, 16)}`;
+
+  const named = (r: Row) => guild.members.cache.get(r.userId)?.displayName ?? r.userId;
+
+  const voice = [...rows].filter(r => r.voice > 0).sort((a, b) => b.voice - a.voice).slice(0, 8);
+  const chat = [...rows].filter(r => r.chat > 0).sort((a, b) => b.chat - a.chat).slice(0, 8);
+
+  const voiceBanner = await renderLeaderboardBanner({
+    title: 'Top Voice — 24 saat', subtitle, accent: '#4aa8ff',
+    rows: voice.map(r => ({ name: named(r), value: hhmm(r.voice), amount: r.voice })),
+  });
+  const chatBanner = await renderLeaderboardBanner({
+    title: 'Top Chatters — 24 saat', subtitle, accent: '#fee75c',
+    rows: chat.map(r => ({ name: named(r), value: `${r.chat}`, amount: r.chat })),
+  });
 
   // Two separate posts, as specified — voice and chat reward different people.
   await channel.send({
-    components: [renderBoard({ title: 'Top Voice', icon: '🎧', accent: 0x3498db, metric: 'voice', rows, footer })],
+    ...(await withBanner(
+      renderBoard({ title: 'Top Voice', icon: '🎧', accent: 0x3498db, metric: 'voice', rows, footer }),
+      voiceBanner, 'top-voice.png')),
     flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
   });
   await channel.send({
-    components: [renderBoard({ title: 'Top Chatters', icon: '💬', accent: 0xfee75c, metric: 'chat', rows, footer })],
+    ...(await withBanner(
+      renderBoard({ title: 'Top Chatters', icon: '💬', accent: 0xfee75c, metric: 'chat', rows, footer }),
+      chatBanner, 'top-chat.png')),
     flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
   });
   log.info('posted daily public leaderboards');

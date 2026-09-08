@@ -38,7 +38,7 @@ jobs:
           tar czf aion.tar.gz \
             node_modules \
             package.json package-lock.json \
-            apps/bot/dist apps/bot/package.json \
+            apps/bot/dist apps/bot/package.json apps/bot/assets \
             packages/db/dist packages/db/package.json packages/db/migrations \
             deploy
           ls -lh aion.tar.gz

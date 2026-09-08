@@ -147,3 +147,28 @@ export function asciiFold(input: string): string {
   const mapped = [...input].map(c => FROM_SMALL_CAPS[c] ?? c).join('');
   return mapped.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
+
+/**
+ * Fold a styled nickname back to plain readable text for image rendering.
+ * Vazirmatn -- like almost every font -- has no glyphs for Mathematical
+ * Alphanumeric Symbols, small capitals, or decorative brackets, so a styled
+ * nickname would render as empty space on a banner.
+ */
+export function plainName(input: string): string {
+  let hadSmallCaps = false;
+  const mapped = [...input].map(c => {
+    const ascii = FROM_SMALL_CAPS[c];
+    if (ascii) { hadSmallCaps = true; return ascii; }
+    return c;
+  }).join('');
+  const out = mapped
+    .normalize('NFKC')                        // 𝗔𝗿𝗺𝗮𝗻 -> Arman
+    .replace(/[\u{A4B0}\u{A4B1}]/gu, '')      // ꒰ ꒱ decorative wrapper
+    .replace(/[\u{2066}-\u{2069}\u{200E}\u{200F}\u{061C}]/gu, '')  // bidi controls
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Small caps fold to lowercase; restore title case so it reads as a name.
+  return hadSmallCaps
+    ? out.replace(/\b[a-z]/g, m => m.toUpperCase())
+    : out;
+}

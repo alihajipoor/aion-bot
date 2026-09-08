@@ -116,3 +116,28 @@ export function renderStaffBoard(guild: Guild, rows: Row[], footer: string): Con
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       `-# 🎧 voice · 💬 messages · ⚖️ punishments — ${footer}`));
 }
+
+/**
+ * Default public board: voice and chat side by side. Showing a single metric
+ * makes people think their other activity is not being counted.
+ */
+export function renderCombined(rows: Row[], footer: string, limit = 10): ContainerBuilder {
+  const ranked = rows
+    .filter(r => r.voice > 0 || r.chat > 0)
+    .sort((a, b) => (b.voice + b.chat * 60) - (a.voice + a.chat * 60))
+    .slice(0, limit);
+
+  const body = ranked.length
+    ? ranked.map((r, i) =>
+        `${MEDALS[i] ?? `\`${String(i + 1).padStart(2, ' ')}\``}  <@${r.userId}>\n` +
+        `　　🎧 ${hhmm(r.voice)}　💬 ${r.chat}`,
+      ).join('\n')
+    : '*Hanooz data-i sabt nashode. Chand daghighe sabr kon.*';
+
+  return new ContainerBuilder().setAccentColor(0xffd700)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 🏆 Top Active'))
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(`-# 🎧 voice · 💬 messages — ${footer}`));
+}
