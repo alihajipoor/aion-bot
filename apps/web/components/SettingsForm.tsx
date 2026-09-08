@@ -169,6 +169,67 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
+        <Group title="Events and games"
+          hint="What the setup wizard opens with. A host can still change any of it per event.">
+          <Toggle name="eventsEnabled" label="Events enabled" defaultChecked={s.events.enabled} />
+          <Field label="Default Mafia scenario" htmlFor="defaultScenario">
+            <select id="defaultScenario" name="defaultScenario" defaultValue={s.events.defaultScenario} className={inputCls}>
+              <option value="godfather">پدرخوانده — Godfather</option>
+              <option value="nights">شب‌های مافیا — Nights</option>
+              <option value="classic">ساده — Classic</option>
+            </select>
+          </Field>
+          <Toggle name="autoMuteNight" label="Mute everyone at night" defaultChecked={s.events.autoMuteNight} />
+          <Toggle name="deadStayMuted" label="Dead players stay muted"
+            hint="The rule a human narrator cannot enforce by voice alone."
+            defaultChecked={s.events.deadStayMuted} />
+          <Toggle name="revealOnDeath" label="Reveal role on death" defaultChecked={s.events.revealOnDeath} />
+          <Toggle name="mafiaRoom" label="Private room for the mafia team" defaultChecked={s.events.mafiaRoom} />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Night" htmlFor="nightSeconds">
+              <Num name="nightSeconds" defaultValue={s.events.nightSeconds} min={15} max={600} suffix="s" />
+            </Field>
+            <Field label="Day" htmlFor="daySeconds">
+              <Num name="daySeconds" defaultValue={s.events.daySeconds} min={30} max={1800} suffix="s" />
+            </Field>
+            <Field label="Defence" htmlFor="defenseSeconds">
+              <Num name="defenseSeconds" defaultValue={s.events.defenseSeconds} min={10} max={300} suffix="s" />
+            </Field>
+            <Field label="Vote" htmlFor="voteSeconds">
+              <Num name="voteSeconds" defaultValue={s.events.voteSeconds} min={10} max={300} suffix="s" />
+            </Field>
+          </div>
+          <Field label="Esm Famil columns" htmlFor="esmColumns"
+            hint="Comma-separated, five at most — a Discord modal takes five inputs.">
+            <input id="esmColumns" name="esmColumns" className={inputCls}
+              defaultValue={s.events.esmColumns.join('، ')} dir="auto" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Rounds" htmlFor="esmRounds">
+              <Num name="esmRounds" defaultValue={s.events.esmRounds} min={1} max={20} />
+            </Field>
+            <Field label="Seconds per round" htmlFor="esmRoundSeconds">
+              <Num name="esmRoundSeconds" defaultValue={s.events.esmRoundSeconds} min={30} max={600} suffix="s" />
+            </Field>
+          </div>
+          <Field label="Letter pool" htmlFor="esmLetterPool"
+            hint="Letters a round can draw. Leave out ones nothing starts with.">
+            <input id="esmLetterPool" name="esmLetterPool" className={inputCls}
+              defaultValue={s.events.esmLetterPool} dir="auto" />
+          </Field>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="20 Soali questions" htmlFor="soaliQuestions">
+              <Num name="soaliQuestions" defaultValue={s.events.soaliQuestions} min={5} max={50} />
+            </Field>
+            <Field label="Hints" htmlFor="soaliHints">
+              <Num name="soaliHints" defaultValue={s.events.soaliHints} min={0} max={10} />
+            </Field>
+            <Field label="Guesses" htmlFor="soaliGuesses">
+              <Num name="soaliGuesses" defaultValue={s.events.soaliGuesses} min={1} max={10} />
+            </Field>
+          </div>
+        </Group>
+
         <Group title="Backups" hint="Nightly database dump plus the full server structure, encrypted before it leaves the box.">
           <Toggle name="backupEnabled" label="Automatic backups" defaultChecked={s.backup.enabled} />
           <Field label="Run at (UTC hour)" htmlFor="backupHourUtc">

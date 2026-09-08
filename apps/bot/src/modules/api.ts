@@ -12,6 +12,7 @@ import { liftByTarget, liftSanction, createCase, type PunishAction } from '../li
 import { resolveSections, type Section } from '../lib/sections.js';
 import { queryActivity, sinceDay, hhmm, staffRows } from '../lib/leaderboard.js';
 import { renderLeaderboardBanner, renderStatsBanner } from '../lib/banner.js';
+import { panelList, panelAction, panelCreate } from './events/index.js';
 import { releaseVoiceMute, syncVoiceMute, ejectFromSection } from '../lib/enforce.js';
 import type { AionSettings } from '@aion/db';
 import type { AionClient } from '../client.js';
@@ -380,6 +381,44 @@ export function startApi(client: AionClient): void {
 
         // Renders exactly what the scheduled job would post, from live data,
         // so the settings page can show the artwork instead of describing it.
+        if (req.method === 'GET' && url.pathname === '/events') {
+          return json(res, 200, await panelList(guild.id));
+        }
+
+        if (req.method === 'POST' && url.pathname === '/events/create') {
+          const body = await readBody(req);
+          const title = String(body.title ?? '').trim().slice(0, 60);
+          const game = String(body.game ?? 'custom');
+          if (!title) return json(res, 400, { error: 'title required' });
+          if (!['mafia', 'esmfamil', 'bistsoali', 'custom'].includes(game)) {
+            return json(res, 400, { error: 'unknown game' });
+          }
+          const out = await panelCreate(guild, {
+            game: game as 'mafia' | 'esmfamil' | 'bistsoali' | 'custom',
+            title,
+            capacity: Math.max(0, Math.min(99, Number(body.capacity) || 0)),
+            minutes: Math.max(0, Math.min(10080, Number(body.minutes) || 0)),
+            hostId: String(body.hostId ?? guild.ownerId),
+            hostTag: String(body.hostTag ?? 'panel'),
+            config: (body.config ?? undefined) as Record<string, unknown> | undefined,
+          });
+          return json(res, 200, out);
+        }
+
+        if (req.method === 'POST' && url.pathname === '/events/action') {
+          const body = await readBody(req);
+          const id = Number(body.id);
+          const action = String(body.action ?? '');
+          if (!['announce', 'start', 'end', 'cancel', 'delete'].includes(action)) {
+            return json(res, 400, { error: 'unknown action' });
+          }
+          const out = await panelAction(
+            guild, id, action as 'announce' | 'start' | 'end' | 'cancel' | 'delete',
+            String(body.actorId ?? 'panel'),
+          );
+          return json(res, out.ok ? 200 : 400, out);
+        }
+
         if (req.method === 'GET' && url.pathname === '/banner/preview') {
           const kind = url.searchParams.get('kind') ?? 'voice';
           const days = kind === 'staff' ? 'week' : 'day';

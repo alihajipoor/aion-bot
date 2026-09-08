@@ -18,7 +18,8 @@ import { logger } from '../../lib/log.js';
 import { emitLog } from '../../lib/logbus.js';
 import {
   createEvent, getEvent, liveEvents, patchEvent, players, addPlayer, removePlayer,
-  mergeState, recentEvents, type EventRow, type PastEvent,
+  mergeState, recentEvents, removeEvent, LIVE as LIVE_STATUSES,
+  type EventRow, type PastEvent,
 } from './store.js';
 import { startMafia, endMafia, mafiaComponent, mafiaModal, MAFIA_ID } from './mafia.js';
 import { startEsmFamil, endEsmFamil, esmComponent, esmModal, ESM_ID } from './esmfamil.js';
@@ -395,9 +396,12 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
 
 async function announce(i: ButtonInteraction, ev: EventRow): Promise<void> {
   await i.deferUpdate();
-  const guild = i.guild!;
+  await doAnnounce(i.guild!, ev);
+}
+
+async function doAnnounce(guild: Guild, ev: EventRow): Promise<void> {
   const news = newsChannel(guild);
-  if (!news) { await i.followUp({ content: 'EVENT-NEWS peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
+  if (!news) throw new Error('EVENT-NEWS channel not found');
 
   const msg = await news.send(await signupCard(ev));
 
@@ -430,7 +434,10 @@ async function announce(i: ButtonInteraction, ev: EventRow): Promise<void> {
 
 async function start(i: ButtonInteraction, ev: EventRow): Promise<void> {
   await i.deferUpdate();
-  const guild = i.guild!;
+  await doStart(i.guild!, ev);
+}
+
+async function doStart(guild: Guild, ev: EventRow): Promise<void> {
   const roster = await players(ev.id);
 
   // Reuse the permanent room when it is free; only make one when it is not.
@@ -486,7 +493,10 @@ async function start(i: ButtonInteraction, ev: EventRow): Promise<void> {
 
 async function end(i: ButtonInteraction, ev: EventRow): Promise<void> {
   await i.deferUpdate();
-  const guild = i.guild!;
+  await doEnd(i.guild!, ev);
+}
+
+async function doEnd(guild: Guild, ev: EventRow): Promise<void> {
 
   if (ev.game === 'mafia') await endMafia(guild, ev).catch(e => log.warn('mafia teardown', e));
   else if (ev.game === 'esmfamil') await endEsmFamil(guild, ev).catch(() => {});
@@ -541,7 +551,10 @@ async function end(i: ButtonInteraction, ev: EventRow): Promise<void> {
 
 async function cancel(i: ButtonInteraction, ev: EventRow): Promise<void> {
   await i.deferUpdate();
-  const guild = i.guild!;
+  await doCancel(i.guild!, ev);
+}
+
+async function doCancel(guild: Guild, ev: EventRow): Promise<void> {
   await patchEvent(ev.id, { status: 'cancelled', endedAt: new Date() });
 
   if (ev.announceChannelId && ev.announceMessageId) {
@@ -616,4 +629,82 @@ export function installEvents(client: AionClient): void {
     }
   });
   log.info('events installed');
+}
+
+/* ── panel control ─────────────────────────────────────────────── */
+
+/**
+ * The lifecycle steps, callable without an interaction, so the web panel
+ * drives exactly the same code the Discord buttons do. Anything else would be
+ * two implementations of one workflow waiting to disagree.
+ */
+export async function panelAction(
+  guild: Guild, id: number, action: 'announce' | 'start' | 'end' | 'cancel' | 'delete',
+  actorId: string,
+): Promise<{ ok: boolean; message: string }> {
+  const ev = await getEvent(id);
+  if (!ev) return { ok: false, message: 'Event not found.' };
+
+  try {
+    if (action === 'announce') {
+      if (ev.status !== 'draft') return { ok: false, message: `Already ${ev.status}.` };
+      await doAnnounce(guild, ev);
+      return { ok: true, message: 'Announced.' };
+    }
+    if (action === 'start') {
+      if (ev.status !== 'announced') return { ok: false, message: `Cannot start a ${ev.status} event.` };
+      await doStart(guild, ev);
+      return { ok: true, message: 'Started.' };
+    }
+    if (action === 'end') {
+      if (ev.status !== 'running') return { ok: false, message: `Not running.` };
+      await doEnd(guild, ev);
+      return { ok: true, message: 'Ended.' };
+    }
+    if (action === 'cancel') {
+      await doCancel(guild, ev);
+      return { ok: true, message: 'Cancelled.' };
+    }
+    // delete: only for events that own nothing any more.
+    if (LIVE_STATUSES.includes(ev.status)) await doCancel(guild, ev);
+    await removeEvent(id);
+    await ensureEventPanel(guild);
+    return { ok: true, message: 'Deleted.' };
+  } catch (e) {
+    log.error(`panel action ${action} on #${id} by ${actorId} failed`, e);
+    return { ok: false, message: (e as Error).message };
+  }
+}
+
+export async function panelList(guildId: string) {
+  const [live, past] = await Promise.all([
+    liveEvents(guildId).catch(() => []),
+    recentEvents(guildId, 15).catch(() => []),
+  ]);
+  const withRoster = await Promise.all(live.map(async e => ({
+    id: e.id, title: e.title, game: e.game, status: e.status,
+    hostId: e.hostId, hostTag: e.hostTag, capacity: e.capacity,
+    scheduledFor: e.scheduledFor?.toISOString() ?? null,
+    players: (await players(e.id).catch(() => [])).map(p => ({ id: p.userId, tag: p.userTag })),
+    config: (e.state as { config?: Record<string, unknown> }).config ?? {},
+  })));
+  return { live: withRoster, past };
+}
+
+export async function panelCreate(
+  guild: Guild, v: { game: GameKey; title: string; capacity: number; minutes: number;
+                     hostId: string; hostTag: string; config?: Record<string, unknown> },
+) {
+  const ev = await createEvent({
+    guildId: guild.id, game: v.game, title: v.title, capacity: v.capacity,
+    hostId: v.hostId, hostTag: v.hostTag,
+    scheduledFor: v.minutes > 0 ? new Date(Date.now() + v.minutes * 60_000) : null,
+  });
+  if (v.config) await mergeState(ev.id, { config: v.config });
+
+  const ch = interfaceChannel(guild);
+  const card = await ch?.send(await controlCard((await getEvent(ev.id))!)).catch(() => null);
+  if (card) await patchEvent(ev.id, { panelMessageId: card.id });
+  await ensureEventPanel(guild);
+  return { ok: true, id: ev.id };
 }

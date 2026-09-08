@@ -94,3 +94,10 @@ export async function recentEvents(guildId: string, limit = 8): Promise<PastEven
     .orderBy(desc(events.id)).limit(limit);
   return rows as PastEvent[];
 }
+
+/** Removes an event and its roster. Channels must already be gone. */
+export async function removeEvent(id: number): Promise<void> {
+  const db = getDb();
+  await db.delete(eventPlayers).where(eq(eventPlayers.eventId, id));
+  await db.delete(events).where(eq(events.id, id));
+}

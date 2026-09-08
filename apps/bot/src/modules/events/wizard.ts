@@ -9,6 +9,7 @@ import {
   MAFIA_DEFAULTS, ESM_DEFAULTS, ESM_COLUMNS, SOALI_DEFAULTS,
   type GameKey, type MafiaConfig, type EsmFamilConfig, type SoaliConfig,
 } from './games.js';
+import { settings } from '../../lib/settings.js';
 
 export const WZ = 'wz';
 const enc = (...p: (string | number)[]) => [WZ, ...p].join('|');
@@ -41,12 +42,37 @@ export function draftFor(userId: string, game?: GameKey): Draft {
     existing.touched = Date.now();
     return existing;
   }
+  // Seeded from the panel's settings, so a host opens the wizard on the
+  // server's house rules rather than on whatever was compiled in.
+  const e = settings().events;
   const fresh: Draft = {
     game: game ?? 'mafia',
     players: 9,
-    mafia: { ...MAFIA_DEFAULTS, optionalRoles: [] },
-    esm: { ...ESM_DEFAULTS, columns: [...ESM_DEFAULTS.columns] },
-    soali: { ...SOALI_DEFAULTS },
+    mafia: {
+      ...MAFIA_DEFAULTS,
+      scenario: e.defaultScenario || MAFIA_DEFAULTS.scenario,
+      optionalRoles: [...e.optionalRoles],
+      autoMuteNight: e.autoMuteNight,
+      deadStayMuted: e.deadStayMuted,
+      revealOnDeath: e.revealOnDeath,
+      mafiaRoom: e.mafiaRoom,
+      nightSeconds: e.nightSeconds,
+      daySeconds: e.daySeconds,
+      defenseSeconds: e.defenseSeconds,
+      voteSeconds: e.voteSeconds,
+    },
+    esm: {
+      ...ESM_DEFAULTS,
+      columns: e.esmColumns.length ? [...e.esmColumns] : [...ESM_DEFAULTS.columns],
+      rounds: e.esmRounds,
+      roundSeconds: e.esmRoundSeconds,
+      letterPool: e.esmLetterPool || ESM_DEFAULTS.letterPool,
+    },
+    soali: {
+      questionLimit: e.soaliQuestions,
+      hintsAllowed: e.soaliHints,
+      guessLimit: e.soaliGuesses,
+    },
     touched: Date.now(),
   };
   drafts.set(userId, fresh);

@@ -70,6 +70,27 @@ export interface AionSettings {
     heartbeatStaleSec: number;
     diskWarnPercent: number;
   };
+  events: {
+    enabled: boolean;
+    /** Defaults the setup wizard opens with; a host can still override them. */
+    defaultScenario: string;
+    optionalRoles: string[];
+    autoMuteNight: boolean;
+    deadStayMuted: boolean;
+    revealOnDeath: boolean;
+    mafiaRoom: boolean;
+    nightSeconds: number;
+    daySeconds: number;
+    defenseSeconds: number;
+    voteSeconds: number;
+    esmColumns: string[];
+    esmRounds: number;
+    esmRoundSeconds: number;
+    esmLetterPool: string;
+    soaliQuestions: number;
+    soaliHints: number;
+    soaliGuesses: number;
+  };
   backup: {
     enabled: boolean;
     hourUtc: number;
@@ -136,6 +157,27 @@ export const DEFAULT_SETTINGS: AionSettings = {
     recipients: [],
     heartbeatStaleSec: 300,
     diskWarnPercent: 85,
+  },
+  events: {
+    enabled: true,
+    defaultScenario: 'godfather',
+    optionalRoles: [],
+    autoMuteNight: true,
+    deadStayMuted: true,
+    revealOnDeath: false,
+    mafiaRoom: true,
+    nightSeconds: 60,
+    daySeconds: 300,
+    defenseSeconds: 45,
+    voteSeconds: 60,
+    esmColumns: ['اسم', 'فامیل', 'شهر', 'کشور', 'غذا'],
+    esmRounds: 5,
+    esmRoundSeconds: 90,
+    // Letters that actually start Persian words; ژ and friends kill a round.
+    esmLetterPool: 'ابپتثجچحخدرزسشصطعغفقکگلمنوهی',
+    soaliQuestions: 20,
+    soaliHints: 2,
+    soaliGuesses: 3,
   },
   backup: {
     enabled: true,
@@ -207,6 +249,22 @@ export function sanitise(s: AionSettings): AionSettings {
     activity: {
       ...s.activity,
       messageDebounceSec: clamp(s.activity.messageDebounceSec, 0, 60, 3),
+    },
+    events: {
+      ...s.events,
+      nightSeconds: clamp(s.events.nightSeconds, 15, 600, 60),
+      daySeconds: clamp(s.events.daySeconds, 30, 1800, 300),
+      defenseSeconds: clamp(s.events.defenseSeconds, 10, 300, 45),
+      voteSeconds: clamp(s.events.voteSeconds, 10, 300, 60),
+      // A Discord modal holds five text inputs, so five columns is the ceiling.
+      esmColumns: s.events.esmColumns.map(c => c.trim()).filter(Boolean).slice(0, 5),
+      esmRounds: clamp(s.events.esmRounds, 1, 20, 5),
+      esmRoundSeconds: clamp(s.events.esmRoundSeconds, 30, 600, 90),
+      esmLetterPool: (s.events.esmLetterPool || 'ابپتثجچحخدرزسشصطعغفقکگلمنوهی').slice(0, 40),
+      soaliQuestions: clamp(s.events.soaliQuestions, 5, 50, 20),
+      soaliHints: clamp(s.events.soaliHints, 0, 10, 2),
+      soaliGuesses: clamp(s.events.soaliGuesses, 1, 10, 3),
+      optionalRoles: s.events.optionalRoles.slice(0, 10),
     },
     backup: {
       ...s.backup,

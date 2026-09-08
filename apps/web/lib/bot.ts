@@ -80,9 +80,30 @@ export interface PanelMember {
 export const getMembers = (q = '', limit = 60) =>
   call<{ total: number; members: PanelMember[] }>(`/members?q=${encodeURIComponent(q)}&limit=${limit}`);
 
+export interface PanelEvent {
+  id: number; title: string; game: string; status: string;
+  hostId: string; hostTag: string | null; capacity: number;
+  scheduledFor: string | null;
+  players: { id: string; tag: string | null }[];
+  config: Record<string, unknown>;
+}
+export interface PastEvent {
+  id: number; title: string; game: string; status: string;
+  hostId: string; endedAt: string | null; playerCount: number;
+}
+
+export const getEvents = () => call<{ live: PanelEvent[]; past: PastEvent[] }>('/events');
+
 type Act = { ok: boolean; message: string };
 const post = (path: string, body: unknown) =>
   call<Act>(path, { method: 'POST', body: JSON.stringify(body) });
+
+export const eventAction = (id: number, action: string, actorId: string) =>
+  post('/events/action', { id, action, actorId });
+export const eventCreate = (v: {
+  game: string; title: string; capacity: number; minutes: number;
+  hostId: string; hostTag: string;
+}) => post('/events/create', v);
 
 export const memberMove = (userId: string, channelId: string) => post('/member/move', { userId, channelId });
 export const memberDisconnect = (userId: string) => post('/member/disconnect', { userId });
