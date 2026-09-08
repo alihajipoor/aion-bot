@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
-import { ChannelType, MessageFlags, PermissionFlagsBits, ContainerBuilder, TextDisplayBuilder, type TextChannel, type GuildChannel } from 'discord.js';
+import { ChannelType, MessageFlags, PermissionFlagsBits, ContainerBuilder, TextDisplayBuilder, type TextChannel, type GuildChannel, type GuildMember } from 'discord.js';
 import { logger } from '../lib/log.js';
+import { asciiFold } from '../lib/text.js';
 import { config } from '../config.js';
 import { settings, loadSettings, saveSettings } from '../lib/settings.js';
 import { emitLog } from '../lib/logbus.js';
@@ -244,14 +245,16 @@ export function startApi(client: AionClient): void {
         }
 
         if (req.method === 'GET' && url.pathname === '/members') {
-          const q = (url.searchParams.get('q') ?? '').toLowerCase().trim();
+          // Verified members all carry styled nicknames (𝙺𝚒𝚊𝚗, ᴘᴀʀsᴀ). toLowerCase
+          // does not touch those code points, so searching anyone by the name
+          // actually shown in Discord matched nothing. Fold both sides.
+          const q = asciiFold((url.searchParams.get('q') ?? '').trim()).toLowerCase();
           const limit = Math.min(200, Number(url.searchParams.get('limit') ?? 60));
           const all = [...guild.members.cache.values()].filter(m => !m.user.bot);
+          const hay = (m: GuildMember) =>
+            asciiFold(`${m.user.username} ${m.nickname ?? ''} ${m.displayName}`).toLowerCase();
           const matched = (q
-            ? all.filter(m =>
-                m.user.username.toLowerCase().includes(q) ||
-                (m.nickname ?? '').toLowerCase().includes(q) ||
-                m.id === q)
+            ? all.filter(m => hay(m).includes(q) || m.id === q)
             : all
           ).slice(0, limit);
           return json(res, 200, {

@@ -18,14 +18,23 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   return (
     <main className="grid min-h-dvh place-items-center px-6">
       <div className="rise w-full max-w-md">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl
-                          bg-gradient-to-br from-brand-500 to-sky-glow text-2xl font-bold text-white
-                          shadow-[0_16px_40px_-12px_rgba(88,101,242,0.6)]">
-            A
+        {/* The same lockup the bot renders on every banner: wordmark, lit rift,
+            kicker. One server should not have two visual languages. */}
+        <div className="mb-9 text-center">
+          <div className="text-5xl font-bold tracking-[0.28em] text-mist-50
+                          [text-shadow:0_0_46px_rgba(74,168,255,0.85)]">
+            AION
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">AION Panel</h1>
-          <p className="mt-1.5 text-sm text-mist-400">Control panel for the AION Discord server</p>
+          <div className="relative mx-auto mt-3 h-px w-full max-w-sm
+                          bg-gradient-to-r from-transparent via-white to-transparent
+                          shadow-[0_0_18px_2px_rgba(74,168,255,0.6)]">
+            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
+                             bg-ink-950 px-3 text-[10px] font-semibold uppercase
+                             tracking-[0.32em] text-mist-200">
+              Control panel
+            </span>
+          </div>
+          <p className="mt-6 text-sm text-mist-400">Sign in with the Discord account that holds your staff role.</p>
         </div>
 
         {error ? (

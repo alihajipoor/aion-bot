@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireSession } from '@/lib/auth';
-import { Nav } from '@/components/Nav';
+import { Nav, MobileNav } from '@/components/Nav';
+import { CommandPalette, PaletteHint } from '@/components/CommandPalette';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
@@ -14,12 +15,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="mx-auto flex min-h-dvh max-w-7xl gap-8 px-6 py-8">
       <aside className="hidden w-56 shrink-0 flex-col md:flex">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br
-                          from-brand-500 to-sky-glow text-sm font-bold text-white">A</div>
-          <div className="text-sm font-semibold tracking-tight">AION Panel</div>
+        <div className="mb-7">
+          <div className="text-base font-bold tracking-[0.38em] text-mist-50
+                          [text-shadow:0_0_24px_rgba(74,168,255,0.55)]">AION</div>
+          {/* The same lit rift the bot draws under the wordmark. */}
+          <div className="mt-1.5 h-px w-32 bg-gradient-to-r from-transparent via-sky-glow to-transparent
+                          shadow-[0_0_10px_1px_rgba(74,168,255,0.5)]" />
+          <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-mist-400/70">Control panel</div>
         </div>
 
+        <PaletteHint />
         <Nav />
 
         <div className="mt-auto rounded-xl border border-ink-700/70 bg-ink-850/60 p-3">
@@ -42,7 +47,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 rise">{children}</main>
+      <main className="min-w-0 flex-1">
+        <MobileNav />
+        <div className="rise">{children}</div>
+      </main>
+      <CommandPalette />
     </div>
   );
 }

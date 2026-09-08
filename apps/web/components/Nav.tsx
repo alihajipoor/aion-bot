@@ -44,6 +44,33 @@ const GROUPS: { label: string; items: { href: string; label: string; icon: strin
   },
 ];
 
+/** Below md the sidebar is hidden, which used to leave phones with no
+ *  navigation at all. Admins moderate from a phone more than from a desk. */
+export function MobileNav() {
+  const path = usePathname();
+  const items = GROUPS.flatMap(g => g.items);
+
+  return (
+    <nav className="-mx-6 mb-6 flex gap-1 overflow-x-auto px-6 pb-1 md:hidden [scrollbar-width:none]
+                    [&::-webkit-scrollbar]:hidden">
+      {items.map(item => {
+        const active = path === item.href;
+        return (
+          <Link key={item.href} href={item.href}
+            aria-current={active ? 'page' : undefined}
+            className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs transition
+              ${active ? 'bg-brand-500/15 font-medium text-mist-50' : 'bg-ink-850/70 text-mist-400'}`}>
+            <svg viewBox="0 0 24 24" aria-hidden className="h-3.5 w-3.5" fill="currentColor">
+              {ICONS[item.icon]}
+            </svg>
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function Nav() {
   const path = usePathname();
 
