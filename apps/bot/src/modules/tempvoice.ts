@@ -2,13 +2,15 @@ import {
   ChannelType, Events, MessageFlags, PermissionFlagsBits,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize,
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder,
-  TextInputStyle, UserSelectMenuBuilder,
+  TextInputStyle, UserSelectMenuBuilder, MediaGalleryBuilder,
+  MediaGalleryItemBuilder, AttachmentBuilder,
   type ButtonInteraction, type ModalSubmitInteraction, type UserSelectMenuInteraction,
   type Guild, type GuildMember, type VoiceChannel, type VoiceState, type MessageCreateOptions,
 } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { getDb, tempChannels, tempPrefs } from '@aion/db';
 import { isolate } from '../lib/text.js';
+import { renderHeaderBanner } from '../lib/banner.js';
 import { logger } from '../lib/log.js';
 import type { AionClient } from '../client.js';
 
@@ -55,54 +57,77 @@ const isStaff = (m: GuildMember) =>
 
 /* ── control panel ─────────────────────────────────────────────── */
 
+const controls = () => new ActionRowBuilder<ButtonBuilder>().addComponents(
+  new ButtonBuilder().setCustomId(enc('name')).setLabel('Esm').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
+  new ButtonBuilder().setCustomId(enc('limit')).setLabel('Zarfiat').setEmoji('👥').setStyle(ButtonStyle.Secondary),
+  new ButtonBuilder().setCustomId(enc('lock')).setLabel('Ghofl').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
+  new ButtonBuilder().setCustomId(enc('kick')).setLabel('Kick').setEmoji('🚪').setStyle(ButtonStyle.Danger),
+  new ButtonBuilder().setCustomId(enc('claim')).setLabel('Claim').setEmoji('👑').setStyle(ButtonStyle.Primary),
+);
+
+/** Posted inside a room. No banner here — rooms are created constantly and a
+ *  render per room is not worth the CPU on a shared box. */
 function panel(ownerId: string, name: string): MessageCreateOptions {
-  const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(enc('name')).setLabel('Esm').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(enc('limit')).setLabel('Zarfiat').setEmoji('👥').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(enc('lock')).setLabel('Ghofl').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(enc('kick')).setLabel('Kick').setEmoji('🚪').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId(enc('claim')).setLabel('Claim').setEmoji('👑').setStyle(ButtonStyle.Primary),
-  );
   return {
     components: [
-      new ContainerBuilder().setAccentColor(0x5865f2)
-        .addTextDisplayComponents(new TextDisplayBuilder().setContent(`### 🎧 ${isolate(name)}`))
+      new ContainerBuilder().setAccentColor(0x9b6cff)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🎧 ${isolate(name)}`))
+        .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+          `**Sahebe room**  <@${ownerId}>`,
+          '',
+          '✏️ Esm  ·  👥 Zarfiat  ·  🔒 Ghofl  ·  🚪 Kick  ·  👑 Claim',
+        ].join('\n')))
+        .addActionRowComponents(controls())
         .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
         .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-          `Sahebe room: <@${ownerId}>\nBa dokme-ha room et ro control kon.`))
-        .addActionRowComponents(row1),
+          '-# Tanzimatet zakhire mishe · room ba raftane akharin nafar pak mishe')),
     ],
     flags: MessageFlags.IsComponentsV2,
   };
 }
 
 /** Shared panel for the interface channel; acts on whichever room you own. */
-export function interfacePanel(): MessageCreateOptions {
-  const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(enc('name')).setLabel('Esm').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(enc('limit')).setLabel('Zarfiat').setEmoji('👥').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(enc('lock')).setLabel('Ghofl').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(enc('kick')).setLabel('Kick').setEmoji('🚪').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId(enc('claim')).setLabel('Claim').setEmoji('👑').setStyle(ButtonStyle.Primary),
-  );
+export async function interfacePanel(): Promise<MessageCreateOptions> {
+  const banner = await renderHeaderBanner({
+    kicker: 'PRIVATE VOICE', title: 'Room e Khodet', accent: '#9b6cff',
+    subtitle: 'Room e shakhsiye khodet — esm, zarfiat va dastresi dast e toe.',
+    tags: ['ESM', 'ZARFIAT', 'GHOFL', 'KICK', 'CLAIM'],
+  });
+
+  const box = new ContainerBuilder().setAccentColor(0x9b6cff);
+  if (banner) {
+    box.addMediaGalleryComponents(new MediaGalleryBuilder()
+      .addItems(new MediaGalleryItemBuilder().setURL('attachment://voice-panel.png')));
+  }
+
+  box
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '### 🚀 Chetori ye room besazam?',
+      'Bia too **🅟 ─ PRIVET DRIVE** — hamoon lahze ye room baraye khodet sakhte mishe va khodkar minday toosh.',
+    ].join('\n')))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '### 🎛 Dokme-ha chikar mikonan?',
+      '✏️ **Esm** — esme room ro avaz kon',
+      '👥 **Zarfiat** — chand nafar betoonan bian tu (`0` = bi nahayat)',
+      '🔒 **Ghofl** — dar ro beband, faghat kesi ke ejaze dadi mia tu',
+      '🚪 **Kick** — yeki ro az room bendaz biroon',
+      '👑 **Claim** — age sahebe room rafte, room ro bardar',
+    ].join('\n')))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '### 💾 Nokte',
+      '> Tanzimatet zakhire mishe — dafeye bad ke room misazi khodkar emal mishe.',
+      '> Vaghti akharin nafar biroon bere, room khodesh pak mishe.',
+      '> Dokme-ha rooye room e khodet kar mikonan, pas aval bia too voice.',
+    ].join('\n')))
+    .addActionRowComponents(controls());
+
   return {
-    components: [
-      new ContainerBuilder().setAccentColor(0x9b59b6)
-        .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 🎧 Room e khodet'))
-        .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-        .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-          'Bia too **🅟 ─ PRIVET DRIVE** ta yek room baraye khodet sakhte beshe.',
-          'Bad ba in dokme-ha az hamin ja control esh kon:',
-          '',
-          '**Esm** esme room  ·  **Zarfiat** chand nafar',
-          '**Ghofl** kesi natoone bia tu  ·  **Kick** birone kardan',
-          '**Claim** vaghti saheb e room rafte bashe',
-          '',
-          '-# Tanzimatet zakhire mishe va dafeye bad khodkar emal mishe.',
-        ].join('\n')))
-        .addActionRowComponents(row1),
-    ],
+    components: [box],
     flags: MessageFlags.IsComponentsV2,
+    ...(banner ? { files: [new AttachmentBuilder(banner, { name: 'voice-panel.png' })] } : {}),
   };
 }
 
@@ -116,7 +141,7 @@ export async function ensureInterfacePanel(guild: Guild): Promise<void> {
     const mine = recent.filter(m => m.author.id === guild.client.user?.id);
     if (mine.size === 1) return;                       // already correct
     for (const m of mine.values()) await m.delete().catch(() => {});
-    await ch.send(interfacePanel());
+    await ch.send(await interfacePanel());
     log.info('temp voice interface panel posted');
   } catch (e) { log.warn('could not post interface panel', (e as Error).message); }
 }

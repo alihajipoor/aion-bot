@@ -269,6 +269,70 @@ export async function renderStatsBanner(opts: {
   }
 }
 
+/* ── panel headers ─────────────────────────────────────────────── */
+
+const HEAD_H = 330;
+
+/**
+ * A hero strip for any panel that is posted once and lived with — the temp
+ * voice interface, the admin guide. Same ground as the leaderboards, so a
+ * member meets one server rather than a set of unrelated cards.
+ */
+export async function renderHeaderBanner(opts: {
+  kicker: string;
+  title: string;
+  subtitle: string;
+  accent?: string;
+  tags?: string[];
+}): Promise<Buffer | null> {
+  try {
+    const accent = opts.accent ?? BRAND.blue;
+    const tree = el('div', {
+      display: 'flex', position: 'relative', width: WIDTH, height: HEAD_H,
+      background: BRAND.ink, fontFamily: 'Vazirmatn',
+    }, [
+      ...glows(accent),
+      el('div', {
+        ...absolute, top: 56, left: PAD, width: CONTENT,
+        justifyContent: 'space-between', alignItems: 'flex-start',
+      }, [
+        el('div', { display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 820 }, [
+          el('div', {
+            display: 'flex', fontSize: 17, fontWeight: 700, letterSpacing: 7, color: accent,
+          }, opts.kicker),
+          el('div', {
+            display: 'flex', fontSize: 62, fontWeight: 700, color: BRAND.text,
+            textShadow: `0 0 38px ${accent}59`,
+          }, opts.title),
+          el('div', { display: 'flex', fontSize: 21, color: BRAND.dim }, opts.subtitle),
+        ]),
+        el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 7 }, [
+          el('div', {
+            display: 'flex', fontSize: 38, fontWeight: 700, letterSpacing: 11, color: BRAND.text,
+            textShadow: `0 0 30px ${accent}e6`,
+          }, 'AION'),
+          rift(148, accent),
+        ]),
+      ]),
+      el('div', { ...absolute, bottom: 62, left: PAD }, [rift(CONTENT, accent)]),
+      el('div', {
+        ...absolute, bottom: 26, left: PAD, width: CONTENT,
+        justifyContent: 'space-between', alignItems: 'center',
+      }, [
+        el('div', { display: 'flex', gap: 26 }, (opts.tags ?? []).slice(0, 5).map(t =>
+          el('div', { display: 'flex', fontSize: 15, letterSpacing: 4, color: BRAND.faint }, t))),
+        el('div', { display: 'flex', fontSize: 15, letterSpacing: 5, color: BRAND.faint }, 'AION'),
+      ]),
+    ]);
+
+    const svg = await satori(tree as never, { width: WIDTH, height: HEAD_H, fonts: await loadFonts() });
+    return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } }).render().asPng());
+  } catch (e) {
+    log.error('header banner render failed', e);
+    return null;
+  }
+}
+
 /* ── verify panel banner ───────────────────────────────────────── */
 
 export interface Art { data: Buffer; name: string }

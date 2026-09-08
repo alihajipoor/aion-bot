@@ -1,5 +1,6 @@
 import {
   SlashCommandBuilder, MessageFlags, ContainerBuilder, TextDisplayBuilder,
+  SectionBuilder, ThumbnailBuilder,
   SeparatorBuilder, SeparatorSpacingSize, ActionRowBuilder, StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
   ButtonBuilder, ButtonStyle, type ButtonInteraction,
@@ -233,16 +234,19 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
     const when = minutes > 0 ? humanDuration(minutes) : 'hamishegi';
     const announce = new ContainerBuilder().setAccentColor(act === 'ban' ? ACCENT.bad : 0xfee75c)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        `### ${act === 'ban' ? '⛔' : '🔇'} ${act === 'ban' ? 'Ban' : 'Mute'} — ${cfg.emoji} ${cfg.label}`))
+        `## ${act === 'ban' ? '⛔' : '🔇'} ${act === 'ban' ? 'Ban' : 'Mute'}  ·  ${cfg.emoji} ${cfg.label}`))
+      .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addSectionComponents(new SectionBuilder()
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`<@${target.id}>  ${isolate(target.user.tag)}`),
+          new TextDisplayBuilder().setContent(
+            `⏳  **${when}**${expiresAt ? `  ·  tamoom mishe <t:${Math.floor(expiresAt.getTime() / 1000)}:R>` : ''}`),
+          new TextDisplayBuilder().setContent(`📝  ${isolate(reason)}`))
+        .setThumbnailAccessory(new ThumbnailBuilder()
+          .setURL(target.user.displayAvatarURL({ extension: 'png', size: 256 }))))
       .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-        `**User**  <@${target.id}>  ${isolate(target.user.tag)}`,
-        `**Moddat**  ${when}${expiresAt ? `  ·  <t:${Math.floor(expiresAt.getTime() / 1000)}:R>` : ''}`,
-        `**Dalil**  ${isolate(reason)}`,
-        `**Tavassote**  <@${invoker.id}>`,
-        ...(kicked ? ['-# Az voice disconnect shod.'] : []),
-        `-# Case #${caseNumber}`,
-      ].join('\n')))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `-# Case #${caseNumber}  ·  tavassote <@${invoker.id}>${kicked ? '  ·  az voice disconnect shod' : ''}`))
       .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setCustomId(enc('lift', target.id, sec, act))
@@ -320,13 +324,13 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
       components: [
         new ContainerBuilder().setAccentColor(ACCENT.ok)
           .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-            `### 🔓 ${act === 'ban' ? 'Unban' : 'Unmute'} — ${cfg.emoji} ${cfg.label}`))
+            `## 🔓 ${act === 'ban' ? 'Unban' : 'Unmute'}  ·  ${cfg.emoji} ${cfg.label}`))
+          .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+          .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            `<@${targetId}> azad shod  ·  tavassote <@${i.user.id}>`))
           .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-          .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-            `**User**  <@${targetId}>`,
-            `**Bardashte shod tavassote**  <@${i.user.id}>`,
-            row?.caseNumber ? `-# Case #${row.caseNumber} — baste shod` : '-# baste shod',
-          ].join('\n'))),
+          .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            row?.caseNumber ? `-# Case #${row.caseNumber} — baste shod` : '-# baste shod')),
       ],
       flags: MessageFlags.IsComponentsV2,
     });

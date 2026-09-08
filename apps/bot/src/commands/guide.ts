@@ -1,10 +1,12 @@
 import {
   SlashCommandBuilder, MessageFlags, PermissionFlagsBits, ChannelType,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize,
+  MediaGalleryBuilder, MediaGalleryItemBuilder, AttachmentBuilder,
   type TextChannel,
 } from 'discord.js';
 import { settings } from '../lib/settings.js';
 import { humanDuration } from '../lib/text.js';
+import { renderHeaderBanner } from '../lib/banner.js';
 import type { Command } from '../types.js';
 
 const GUIDE_CHANNEL = /ᴀɪᴏɴ-ɢᴜɪᴅᴇ|aion-guide/i;
@@ -147,6 +149,23 @@ const command: Command = {
       const mine = old.filter(m => m.author.id === guild.client.user?.id);
       for (const m of mine.values()) await m.delete().catch(() => {});
     } catch { /* missing history permission is not fatal */ }
+
+    // The cover carries the branding; the pages below it stay dense on purpose.
+    const cover = await renderHeaderBanner({
+      kicker: 'ADMIN · RAHNAMA', title: 'Rahnamaye Admin', accent: '#4aa6ff',
+      subtitle: 'Hameye emkanate bot, ba mesal — khodkar az rooye tanzimate zende.',
+      tags: ['PUNISH', 'VERIFY', 'LEADERBOARD', 'TEMP VOICE', 'PANEL'],
+    });
+    if (cover) {
+      await target.send({
+        components: [new ContainerBuilder().setAccentColor(0x4aa6ff)
+          .addMediaGalleryComponents(new MediaGalleryBuilder()
+            .addItems(new MediaGalleryItemBuilder().setURL('attachment://guide.png')))],
+        files: [new AttachmentBuilder(cover, { name: 'guide.png' })],
+        flags: MessageFlags.IsComponentsV2,
+      });
+      await new Promise(r => setTimeout(r, 400));
+    }
 
     for (const p of pages()) {
       await target.send({ components: [p], flags: MessageFlags.IsComponentsV2 });
