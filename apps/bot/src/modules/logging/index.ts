@@ -8,6 +8,8 @@ import { recordAudit, waitForAudit, findAudit, findVoiceAction } from '../../lib
 import { now, u, byWhom, ch, chName, snippet, diffLines, av, quote, title } from './format.js';
 import { isolate } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
+import { and, eq, desc, sql } from 'drizzle-orm';
+import { getDb, memberJoins } from '@aion/db';
 import type { AionClient } from '../../client.js';
 
 const log = logger('logging');
@@ -77,6 +79,9 @@ export function installLogging(client: AionClient): void {
   client.on(Events.GuildMemberAdd, async (member: GuildMember) => {
     const created = `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`;
     let via = '';
+    let inviteCode: string | null = null;
+    let inviterId: string | null = null;
+
     try {
       const before = inviteUses.get(member.guild.id);
       const after = await member.guild.invites.fetch();
@@ -84,7 +89,9 @@ export function installLogging(client: AionClient): void {
         for (const inv of after.values()) {
           const prev = before.get(inv.code);
           if (prev && (inv.uses ?? 0) > prev.uses) {
-            via = ` · invite \`${inv.code}\`${inv.inviterId ? ` from <@${inv.inviterId}>` : ''}`;
+            inviteCode = inv.code;
+            inviterId = inv.inviterId ?? null;
+            via = ` · invite \`${inv.code}\`${inviterId ? ` from <@${inviterId}>` : ''}`;
             break;
           }
         }
@@ -92,10 +99,43 @@ export function installLogging(client: AionClient): void {
       const m = new Map<string, { uses: number; inviter: string | null }>();
       for (const inv of after.values()) m.set(inv.code, { uses: inv.uses ?? 0, inviter: inv.inviterId ?? null });
       inviteUses.set(member.guild.id, m);
-    } catch { /* ManageGuild missing */ }
+    } catch { /* needs ManageGuild */ }
 
-    emitLog(member.guild, 'memberJoin',
-      [title('📥','Member joined'), u(member.user), `Account created ${created}${via}`, `-# ${now()}`].join('\n'), av(member.user));
+    // Recorded so a later leave can still say who brought them in.
+    try {
+      await getDb().insert(memberJoins).values({
+        guildId: member.guild.id, userId: member.id, inviteCode, inviterId,
+      });
+    } catch { /* not fatal */ }
+
+    emitLog(member.guild, 'memberJoin', [
+      title('📥', 'Member joined'), u(member.user),
+      `Account created ${created}${via}`, `-# ${now()}`,
+    ].join('\n'), av(member.user));
+
+    // Also to the invite channel, with the inviter's running total — this is
+    // what the invite tracker used to provide.
+    if (inviterId) {
+      let total = 0;
+      try {
+        const [row] = await getDb()
+          .select({ n: sql<number>`count(*)::int` }).from(memberJoins)
+          .where(and(eq(memberJoins.guildId, member.guild.id), eq(memberJoins.inviterId, inviterId)));
+        total = row?.n ?? 0;
+      } catch { /* not fatal */ }
+      emitLog(member.guild, 'inviteCreate', [
+        title('🎟', 'Joined via invite'),
+        `${u(member.user)} was invited by <@${inviterId}>`,
+        `Invite \`${inviteCode}\` · they now have **${total}** invite${total === 1 ? '' : 's'}`,
+        `-# ${now()}`,
+      ].join('\n'), av(member.user));
+    } else {
+      emitLog(member.guild, 'inviteCreate', [
+        title('🎟', 'Joined'), u(member.user),
+        member.user.bot ? 'Added through OAuth' : 'Invite could not be determined',
+        `-# ${now()}`,
+      ].join('\n'), av(member.user));
+    }
   });
 
   client.on(Events.GuildMemberRemove, async (member: GuildMember | PartialGuildMember) => {
@@ -107,7 +147,18 @@ export function installLogging(client: AionClient): void {
         `${now()} 🚫 ${u(member.user)} was **kicked**${byWhom(kick.executorId)}` +
         `${kick.reason ? ` — ${isolate(kick.reason)}` : ''}`, av(member.user));
     } else {
-      emitLog(member.guild, 'memberLeave', [title('📤','Member left'), u(member.user), `-# ${now()}`].join('\n'), av(member.user));
+      let invitedBy = '';
+      try {
+        const [row] = await getDb().select({ inviterId: memberJoins.inviterId }).from(memberJoins)
+          .where(and(eq(memberJoins.guildId, member.guild.id), eq(memberJoins.userId, member.id)))
+          .orderBy(desc(memberJoins.id)).limit(1);
+        if (row?.inviterId) invitedBy = `Was invited by <@${row.inviterId}>`;
+      } catch { /* not fatal */ }
+
+      emitLog(member.guild, 'memberLeave', [
+        title('📤', 'Member left'), u(member.user),
+        ...(invitedBy ? [invitedBy] : []), `-# ${now()}`,
+      ].join('\n'), av(member.user));
     }
   });
 
