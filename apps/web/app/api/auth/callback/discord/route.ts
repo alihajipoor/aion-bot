@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
-import { createSession, setSessionCookie, fetchMemberRoles, isAllowed } from '@/lib/auth';
+import { createSession, setSessionCookie, fetchMemberRoles, canAccess } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code');
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   // Authorisation comes from the live guild roles, never from the OAuth scope.
   const roles = await fetchMemberRoles(user.id);
   if (!roles) return NextResponse.redirect(`${env.baseUrl()}/?error=notmember`);
-  if (!isAllowed(roles)) return NextResponse.redirect(`${env.baseUrl()}/?error=forbidden`);
+  if (!await canAccess(user.id, roles)) return NextResponse.redirect(`${env.baseUrl()}/?error=forbidden`);
 
   await setSessionCookie(await createSession({
     id: user.id, username: user.username, avatar: user.avatar, roles,

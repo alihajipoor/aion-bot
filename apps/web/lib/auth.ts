@@ -69,11 +69,37 @@ export async function fetchMemberRoles(userId: string): Promise<string[] | null>
 export const isAllowed = (roles: string[]): boolean =>
   roles.some(r => GATE_ROLES.includes(r));
 
+let ownerId: string | null = null;
+let ownerFetchedAt = 0;
+
+/**
+ * The server owner always has access. They can grant themselves any role in
+ * Discord anyway, so gating them out protects nothing -- it just locks the one
+ * person who cannot be locked out of the server itself out of its panel.
+ */
+async function guildOwnerId(): Promise<string | null> {
+  if (ownerId && Date.now() - ownerFetchedAt < 300_000) return ownerId;
+  const res = await fetch(`https://discord.com/api/v10/guilds/${env.guildId()}`, {
+    headers: { Authorization: `Bot ${env.botToken()}` }, cache: 'no-store',
+  });
+  if (!res.ok) return ownerId;
+  const guild = await res.json() as { owner_id: string };
+  ownerId = guild.owner_id;
+  ownerFetchedAt = Date.now();
+  return ownerId;
+}
+
+/** Gate check: a listed role, or the server owner. */
+export async function canAccess(userId: string, roles: string[]): Promise<boolean> {
+  return isAllowed(roles) || userId === await guildOwnerId();
+}
+
 /** Re-checks Discord on every request; returns null when access is revoked. */
 export async function requireSession(): Promise<Session | null> {
   const session = await readSession();
   if (!session) return null;
   const roles = await fetchMemberRoles(session.id);
-  if (!roles || !isAllowed(roles)) return null;
+  if (!roles) return null;
+  if (!await canAccess(session.id, roles)) return null;
   return { ...session, roles };
 }
