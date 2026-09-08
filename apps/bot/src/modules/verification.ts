@@ -193,6 +193,60 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
 
 /* ── staff decisions ───────────────────────────────────────────── */
 
+export interface DecisionResult { ok: boolean; message: string }
+
+/**
+ * Core approve/decline path, shared by the Discord buttons and the web panel so
+ * the two can never drift apart.
+ */
+export async function decideVerification(
+  guild: Guild, id: number, staffId: string, staffTag: string,
+  approve: boolean, reason?: string,
+): Promise<DecisionResult> {
+  const row = await getRequest(id);
+  if (!row) return { ok: false, message: 'Request not found.' };
+  if (row.status !== 'pending') return { ok: false, message: `Already ${row.status}.` };
+
+  const member = await guild.members.fetch(row.userId).catch(() => null);
+  if (!member) {
+    await decide(id, { status: 'declined', reviewerId: staffId, reviewerTag: staffTag, declineReason: 'user left' });
+    return { ok: false, message: 'That member has left the server.' };
+  }
+
+  if (approve) {
+    const role = guild.roles.cache.find(r => r.name === ROLE[row.gender as Gender]);
+    const nick = styleNickname(row.name, settings().verification.nickStyle);
+    if (role) await member.roles.add(role, `verified by ${staffTag}`);
+    await member.setNickname(nick, `verified by ${staffTag}`).catch(e =>
+      log.warn(`could not set nickname for ${member.user.tag}: ${e.message}`));
+    await decide(id, { status: 'approved', reviewerId: staffId, reviewerTag: staffTag, appliedNick: nick });
+
+    await logChannel(guild)?.send({
+      components: [new ContainerBuilder().setAccentColor(C.ok)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          `✅ **Approve** — <@${member.id}> (${isolate(row.name)}) tayid shod tavassote <@${staffId}>.\n-# Request #${id} · nick: ${nick}`))],
+      flags: MessageFlags.IsComponentsV2,
+    }).catch(() => {});
+    if (settings().verification.dmOnDecision) {
+      await member.send(`Verify shodi ✅ Khosh oomadi be AION!\nEsmet shod: ${nick}`).catch(() => {});
+    }
+    return { ok: true, message: `Approved. Nickname set to ${nick}.` };
+  }
+
+  const why = (reason ?? '').trim() || 'No reason given.';
+  await decide(id, { status: 'declined', reviewerId: staffId, reviewerTag: staffTag, declineReason: why });
+  await logChannel(guild)?.send({
+    components: [new ContainerBuilder().setAccentColor(C.bad)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `✖️ **Decline** — <@${row.userId}> rad shod tavassote <@${staffId}>.\n**Dalil:** ${isolate(why)}\n-# Request #${id}`))],
+    flags: MessageFlags.IsComponentsV2,
+  }).catch(() => {});
+  if (settings().verification.dmOnDecision) {
+    await member.send(`Darkhaste verify e to rad shod.\n**Dalil:** ${why}`).catch(() => {});
+  }
+  return { ok: true, message: 'Declined.' };
+}
+
 async function handleDecision(i: ButtonInteraction, step: 'ok' | 'no', id: number): Promise<void> {
   const staff = i.member as GuildMember;
   if (!isStaff(staff)) {

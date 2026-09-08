@@ -1,6 +1,7 @@
 import { desc } from 'drizzle-orm';
 import { getDb, verifications } from '@aion/db';
 import { Card, Pill, EmptyState } from '@/components/ui';
+import { VerifyActions } from '@/components/RowActions';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,11 +39,11 @@ export default async function VerificationsPage() {
                     {v.declineReason ? ` · ${v.declineReason}` : ''}
                   </div>
                 </div>
-                <div className="text-right">
-                  <Pill tone={v.status === 'approved' ? 'good' : v.status === 'declined' ? 'bad' : 'warn'}>
-                    {v.status}
-                  </Pill>
-                  <div className="mt-1 text-[11px] text-mist-400">{when(v.decidedAt ?? v.createdAt)}</div>
+                <div className="flex flex-col items-end gap-1.5 text-right">
+                  {v.status === 'pending' ? <VerifyActions id={v.id} /> : (
+                    <Pill tone={v.status === 'approved' ? 'good' : 'bad'}>{v.status}</Pill>
+                  )}
+                  <div className="text-[11px] text-mist-400">{when(v.decidedAt ?? v.createdAt)}</div>
                 </div>
               </div>
             ))}

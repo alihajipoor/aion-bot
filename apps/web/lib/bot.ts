@@ -51,3 +51,31 @@ export interface VoiceRoom {
   members: { id: string; name: string; muted: boolean; deafened: boolean; streaming: boolean }[];
 }
 export const getVoice = () => call<{ rooms: VoiceRoom[] }>('/voice');
+
+export const decideVerification = (body: { id: number; approve: boolean; staffId: string; staffTag: string; reason?: string }) =>
+  call<{ ok: boolean; message: string }>('/verify/decide', { method: 'POST', body: JSON.stringify(body) });
+
+export const liftSanction = (body: { userId: string; section: string; type: string; byId: string }) =>
+  call<{ ok: boolean; message: string }>('/moderation/lift', { method: 'POST', body: JSON.stringify(body) });
+
+export interface PanelMember {
+  id: string; username: string; nickname: string | null; avatar: string;
+  joinedAt: number | null; inVoice: boolean;
+  roles: { id: string; name: string; color: string }[];
+}
+export const getMembers = (q = '', limit = 60) =>
+  call<{ total: number; members: PanelMember[] }>(`/members?q=${encodeURIComponent(q)}&limit=${limit}`);
+
+type Act = { ok: boolean; message: string };
+const post = (path: string, body: unknown) =>
+  call<Act>(path, { method: 'POST', body: JSON.stringify(body) });
+
+export const memberMove = (userId: string, channelId: string) => post('/member/move', { userId, channelId });
+export const memberDisconnect = (userId: string) => post('/member/disconnect', { userId });
+export const memberVoiceMute = (userId: string, mute: boolean) => post('/member/voicemute', { userId, mute });
+export const memberDeafen = (userId: string, deaf: boolean) => post('/member/deafen', { userId, deaf });
+export const memberRole = (userId: string, roleId: string, add: boolean) => post('/member/role', { userId, roleId, add });
+export const memberTimeout = (userId: string, minutes: number) => post('/member/timeout', { userId, minutes });
+export const memberPunish = (b: {
+  userId: string; section: string; type: string; minutes: number; reason: string; byId: string; byTag: string;
+}) => post('/member/punish', b);

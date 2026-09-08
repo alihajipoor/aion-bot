@@ -4,6 +4,10 @@ import { ChannelType, MessageFlags, ContainerBuilder, TextDisplayBuilder, type T
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
 import { settings, loadSettings, saveSettings } from '../lib/settings.js';
+import { decideVerification } from './verification.js';
+import { liftByTarget, liftSanction, createCase, type PunishAction } from '../lib/cases.js';
+import { resolveSections, type Section } from '../lib/sections.js';
+import { releaseVoiceMute, syncVoiceMute, ejectFromSection } from '../lib/enforce.js';
 import type { AionSettings } from '@aion/db';
 import type { AionClient } from '../client.js';
 
@@ -70,6 +74,149 @@ export function startApi(client: AionClient): void {
               channels: guild.channels.cache.size,
               boostTier: guild.premiumTier,
             },
+          });
+        }
+
+        /* ── member actions, all used by the live voice view ── */
+        if (req.method === 'POST' && url.pathname.startsWith('/member/')) {
+          const body = await readBody(req);
+          const userId = String(body.userId ?? '');
+          const member = userId ? await guild.members.fetch(userId).catch(() => null) : null;
+          if (!member) return json(res, 404, { ok: false, message: 'Member not found.' });
+          const what = url.pathname.slice('/member/'.length);
+
+          try {
+            switch (what) {
+              case 'move': {
+                const channelId = String(body.channelId ?? '');
+                const target = guild.channels.cache.get(channelId);
+                if (!target?.isVoiceBased()) return json(res, 400, { ok: false, message: 'Not a voice channel.' });
+                if (!member.voice.channelId) return json(res, 400, { ok: false, message: 'Not connected to voice.' });
+                await member.voice.setChannel(target, 'moved from panel');
+                return json(res, 200, { ok: true, message: `Moved to ${target.name}.` });
+              }
+              case 'disconnect': {
+                if (!member.voice.channelId) return json(res, 400, { ok: false, message: 'Not connected.' });
+                await member.voice.disconnect('disconnected from panel');
+                return json(res, 200, { ok: true, message: 'Disconnected.' });
+              }
+              case 'voicemute': {
+                if (!member.voice.channelId) return json(res, 400, { ok: false, message: 'Not connected.' });
+                const mute = body.mute === true;
+                await member.voice.setMute(mute, 'panel');
+                return json(res, 200, { ok: true, message: mute ? 'Server muted.' : 'Server unmuted.' });
+              }
+              case 'deafen': {
+                if (!member.voice.channelId) return json(res, 400, { ok: false, message: 'Not connected.' });
+                const deaf = body.deaf === true;
+                await member.voice.setDeaf(deaf, 'panel');
+                return json(res, 200, { ok: true, message: deaf ? 'Deafened.' : 'Undeafened.' });
+              }
+              case 'role': {
+                const roleId = String(body.roleId ?? '');
+                const role = guild.roles.cache.get(roleId);
+                if (!role) return json(res, 404, { ok: false, message: 'Role not found.' });
+                if (role.position >= (guild.members.me?.roles.highest.position ?? 0)) {
+                  return json(res, 400, { ok: false, message: 'That role sits above the bot.' });
+                }
+                if (body.add === true) await member.roles.add(role, 'panel');
+                else await member.roles.remove(role, 'panel');
+                return json(res, 200, { ok: true, message: `${body.add ? 'Added' : 'Removed'} ${role.name}.` });
+              }
+              case 'timeout': {
+                const minutes = Number(body.minutes ?? 0);
+                // Discord caps timeouts at 28 days.
+                const ms = Math.min(Math.max(0, minutes), 40320) * 60_000;
+                await member.timeout(ms || null, 'panel');
+                return json(res, 200, { ok: true, message: ms ? `Timed out for ${minutes}m.` : 'Timeout cleared.' });
+              }
+              case 'punish': {
+                const section = String(body.section ?? '') as Section;
+                const type = String(body.type ?? 'mute') as PunishAction;
+                const minutes = Number(body.minutes ?? 0);
+                const reason = String(body.reason ?? 'From panel').slice(0, 400);
+                const cfg = resolveSections(guild).get(section);
+                const roleId = type === 'ban' ? cfg?.bannedRoleId : cfg?.mutedRoleId;
+                if (!roleId) return json(res, 400, { ok: false, message: 'Section not configured.' });
+
+                await member.roles.add(roleId, `${type} from panel: ${reason}`);
+                const created = await createCase({
+                  guildId: guild.id, section, action: type,
+                  targetId: member.id, targetTag: member.user.tag,
+                  moderatorId: String(body.byId ?? ''), moderatorTag: String(body.byTag ?? 'panel'),
+                  reason, minutes, roleId,
+                });
+                if (type === 'ban') await ejectFromSection(member, cfg?.categoryId ?? null, reason);
+                else await syncVoiceMute(member, `panel ${type}`);
+                return json(res, 200, { ok: true, message: `Case #${created.caseNumber} created.` });
+              }
+              default:
+                return json(res, 404, { ok: false, message: 'Unknown action.' });
+            }
+          } catch (e) {
+            return json(res, 400, { ok: false, message: (e as Error).message });
+          }
+        }
+
+        if (req.method === 'POST' && url.pathname === '/verify/decide') {
+          const body = await readBody(req);
+          const id = Number(body.id);
+          const approve = body.approve === true;
+          const result = await decideVerification(
+            guild, id, String(body.staffId ?? ''), String(body.staffTag ?? 'panel'),
+            approve, body.reason ? String(body.reason) : undefined,
+          );
+          return json(res, result.ok ? 200 : 400, result);
+        }
+
+        if (req.method === 'POST' && url.pathname === '/moderation/lift') {
+          const body = await readBody(req);
+          const userId = String(body.userId ?? '');
+          const section = String(body.section ?? '') as Section;
+          const type = String(body.type ?? '') as PunishAction;
+          const byId = String(body.byId ?? '');
+          if (!userId || !section || !type) return json(res, 400, { error: 'userId, section and type required' });
+
+          const row = await liftByTarget(guild.id, userId, section, type);
+          const cfg = resolveSections(guild).get(section);
+          const roleId = type === 'ban' ? cfg?.bannedRoleId : cfg?.mutedRoleId;
+          const member = await guild.members.fetch(userId).catch(() => null);
+
+          if (!row && !(member && roleId && member.roles.cache.has(roleId))) {
+            return json(res, 400, { ok: false, message: 'Nothing active to lift.' });
+          }
+          if (member && roleId && member.roles.cache.has(roleId)) {
+            await member.roles.remove(roleId, `lifted from panel by ${byId}`);
+          }
+          if (row) await liftSanction(row.sanctionId, row.caseId, byId);
+          if (member) { await releaseVoiceMute(member, 'AION: lifted from panel'); await syncVoiceMute(member); }
+          return json(res, 200, { ok: true, message: 'Lifted.' });
+        }
+
+        if (req.method === 'GET' && url.pathname === '/members') {
+          const q = (url.searchParams.get('q') ?? '').toLowerCase().trim();
+          const limit = Math.min(200, Number(url.searchParams.get('limit') ?? 60));
+          const all = [...guild.members.cache.values()].filter(m => !m.user.bot);
+          const matched = (q
+            ? all.filter(m =>
+                m.user.username.toLowerCase().includes(q) ||
+                (m.nickname ?? '').toLowerCase().includes(q) ||
+                m.id === q)
+            : all
+          ).slice(0, limit);
+          return json(res, 200, {
+            total: all.length,
+            members: matched.map(m => ({
+              id: m.id,
+              username: m.user.username,
+              nickname: m.nickname,
+              avatar: m.displayAvatarURL({ extension: 'png', size: 64 }),
+              joinedAt: m.joinedTimestamp,
+              roles: m.roles.cache.filter(r => r.name !== '@everyone')
+                .sort((a, b) => b.position - a.position)
+                .map(r => ({ id: r.id, name: r.name, color: r.hexColor })),
+              inVoice: !!m.voice.channelId,
+            })),
           });
         }
 

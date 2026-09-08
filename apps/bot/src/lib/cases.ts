@@ -122,3 +122,11 @@ export async function liftSanction(sanctionId: number, caseId: number | null, by
       .where(eq(cases.id, caseId));
   }
 }
+
+/** Lift a sanction from anywhere (Discord button, /unpunish, or the panel). */
+export async function liftByTarget(
+  guildId: string, userId: string, section: Section, type: PunishAction,
+): Promise<ActiveSanctionRow | null> {
+  const rows = await activeSanctionsFor(guildId, userId);
+  return rows.find(r => r.section === section && r.type === type) ?? null;
+}

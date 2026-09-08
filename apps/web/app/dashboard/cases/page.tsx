@@ -1,6 +1,7 @@
 import { desc } from 'drizzle-orm';
 import { getDb, cases } from '@aion/db';
 import { Card, Pill, EmptyState } from '@/components/ui';
+import { LiftAction } from '@/components/RowActions';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,9 +32,11 @@ export default async function CasesPage() {
                     {c.reason ? ` · ${c.reason}` : ''}
                   </div>
                 </div>
-                <div className="text-right">
-                  <Pill tone={c.active ? 'warn' : 'good'}>{c.active ? 'active' : 'closed'}</Pill>
-                  <div className="mt-1 text-[11px] text-mist-400">{when(c.createdAt)}</div>
+                <div className="flex flex-col items-end gap-1.5 text-right">
+                  {c.active && c.section && (c.type === 'ban' || c.type === 'mute')
+                    ? <LiftAction userId={c.targetId} section={c.section} type={c.type} />
+                    : <Pill tone={c.active ? 'warn' : 'good'}>{c.active ? 'active' : 'closed'}</Pill>}
+                  <div className="text-[11px] text-mist-400">{when(c.createdAt)}</div>
                 </div>
               </div>
             ))}
