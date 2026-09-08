@@ -79,3 +79,9 @@ export const memberTimeout = (userId: string, minutes: number) => post('/member/
 export const memberPunish = (b: {
   userId: string; section: string; type: string; minutes: number; reason: string; byId: string; byTag: string;
 }) => post('/member/punish', b);
+
+export const memberNickname = (userId: string, nickname: string, byTag: string) =>
+  post('/member/nickname', { userId, nickname, byTag });
+export const memberKick = (userId: string, reason: string) => post('/member/kick', { userId, reason });
+export const memberGuildBan = (userId: string, reason: string, deleteDays: number) =>
+  post('/member/guildban', { userId, reason, deleteDays });

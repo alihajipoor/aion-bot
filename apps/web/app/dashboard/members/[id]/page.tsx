@@ -2,11 +2,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { getDb, cases, sanctions, activityDaily, verifications, logEvents } from '@aion/db';
-import { getMembers } from '@/lib/bot';
+import { getMembers, getRoles, getCategories } from '@/lib/bot';
 import { env } from '@/lib/env';
 import { Card, Stat, SectionTitle, Pill, EmptyState } from '@/components/ui';
 import { AreaChart, type Point } from '@/components/Chart';
 import { LiftAction } from '@/components/RowActions';
+import { MemberActions } from '@/components/MemberActions';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +25,13 @@ function lastDays(n: number): string[] {
 
 export default async function MemberPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const data = await getMembers(id, 5);
+  const [data, roleData, catData] = await Promise.all([getMembers(id, 5), getRoles(), getCategories()]);
   const member = data?.members.find(m => m.id === id) ?? null;
+
+  const voiceChannels = (catData?.categories ?? []).flatMap(c =>
+    c.channels.filter(ch => ch.type === 'GuildVoice' || ch.type === 'GuildStageVoice')
+      .map(ch => ({ id: ch.id, name: `${c.name.replace(/[^\p{L}\p{N} ]/gu, '').trim().slice(0, 14)} › ${ch.name}` })));
+  const assignable = (roleData?.roles ?? []).filter(r => r.members < 500).slice(0, 80);
 
   let history: Awaited<ReturnType<typeof loadCases>> = [];
   let active: Awaited<ReturnType<typeof loadActive>> = [];
@@ -153,6 +159,12 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         </div>
 
         <div className="space-y-6">
+          <div>
+            <SectionTitle sub="Everything applies immediately">Manage</SectionTitle>
+            <MemberActions userId={id} inVoice={!!member?.inVoice}
+              roles={assignable} voiceChannels={voiceChannels} sections={['public', 'game', 'entertainment']} />
+          </div>
+
           <div>
             <SectionTitle sub="From the verify gate">Verification</SectionTitle>
             <Card className="p-5 text-sm">

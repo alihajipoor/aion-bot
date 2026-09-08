@@ -124,6 +124,25 @@ export function startApi(client: AionClient): void {
                 else await member.roles.remove(role, 'panel');
                 return json(res, 200, { ok: true, message: `${body.add ? 'Added' : 'Removed'} ${role.name}.` });
               }
+              case 'nickname': {
+                const nick = String(body.nickname ?? '').slice(0, 32);
+                await member.setNickname(nick || null, `panel by ${String(body.byTag ?? '')}`);
+                return json(res, 200, { ok: true, message: nick ? `Nickname set to ${nick}.` : 'Nickname cleared.' });
+              }
+              case 'kick': {
+                if (!member.kickable) return json(res, 400, { ok: false, message: 'That member outranks the bot.' });
+                await member.kick(String(body.reason ?? 'Kicked from panel'));
+                return json(res, 200, { ok: true, message: 'Kicked from the server.' });
+              }
+              case 'guildban': {
+                if (!member.bannable) return json(res, 400, { ok: false, message: 'That member outranks the bot.' });
+                const days = Math.min(7, Math.max(0, Number(body.deleteDays ?? 0)));
+                await guild.bans.create(member.id, {
+                  reason: String(body.reason ?? 'Banned from panel'),
+                  deleteMessageSeconds: days * 86_400,
+                });
+                return json(res, 200, { ok: true, message: 'Banned from the server.' });
+              }
               case 'timeout': {
                 const minutes = Number(body.minutes ?? 0);
                 // Discord caps timeouts at 28 days.
