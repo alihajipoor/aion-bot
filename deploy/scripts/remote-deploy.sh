@@ -67,7 +67,7 @@ if systemctl is-active --quiet aion-bot; then
 else
   echo "!! aion-bot failed to start"
 fi
-journalctl -u aion-bot -n 15 --no-pager
+journalctl -u aion-bot -n 45 --no-pager
 
 echo '-- watchdog --'
 systemctl is-active aion-watchdog.timer || echo '!! watchdog timer is not running'
