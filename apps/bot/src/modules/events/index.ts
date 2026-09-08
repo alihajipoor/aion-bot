@@ -22,7 +22,7 @@ import {
   type EventRow, type PastEvent,
 } from './store.js';
 import { startMafia, endMafia, mafiaComponent, mafiaModal, MAFIA_ID } from './mafia.js';
-import { startEsmFamil, endEsmFamil, esmComponent, esmModal, ESM_ID } from './esmfamil.js';
+import { startEsmFamil, endEsmFamil, esmComponent, esmModal, esmSelect, ESM_ID } from './esmfamil.js';
 import { startSoali, endSoali, soaliComponent, soaliModal, SOALI_ID } from './soali.js';
 import type { AionClient } from '../../client.js';
 
@@ -612,6 +612,7 @@ export function installEvents(client: AionClient): void {
   client.on(Events.InteractionCreate, async (i) => {
     try {
       if (i.isButton() && i.customId.startsWith(`${ESM_ID}|`)) { await esmComponent(i); return; }
+      if (i.isStringSelectMenu() && i.customId.startsWith(`${ESM_ID}|`)) { await esmSelect(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${ESM_ID}|`)) { await esmModal(i); return; }
       if (i.isButton() && i.customId.startsWith(`${SOALI_ID}|`)) { await soaliComponent(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${SOALI_ID}|`)) { await soaliModal(i); return; }

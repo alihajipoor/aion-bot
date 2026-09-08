@@ -33,13 +33,30 @@ interface Marks {
 }
 
 /**
- * A leaderboard is a snapshot, not a log — three days of stale boards above
- * the current one is just noise. Ids are tracked rather than sweeping the
- * channel, so nothing else the bot posted there is ever caught in it.
+ * A leaderboard is a snapshot, not a log — a stack of stale boards above the
+ * current one is just noise.
+ *
+ * Tracked ids alone were not enough: the first run has none, so every board
+ * posted before this existed would have survived forever. These channels carry
+ * nothing but boards, so anything the bot itself posted there is fair game.
  */
-async function retire(guild: Guild, channel: TextChannel, ids: string[] | undefined): Promise<void> {
+async function retire(channel: TextChannel, ids: string[] | undefined): Promise<void> {
   for (const id of ids ?? []) {
     await channel.messages.delete(id).catch(() => {});   // already gone is fine
+  }
+
+  const me = channel.client.user?.id;
+  if (!me) return;
+  try {
+    const recent = await channel.messages.fetch({ limit: 50 });
+    for (const msg of recent.values()) {
+      if (msg.author.id !== me) continue;              // never touch anyone else's
+      if (ids?.includes(msg.id)) continue;             // already handled above
+      if (!msg.components.length) continue;            // only rendered boards
+      await msg.delete().catch(() => {});
+    }
+  } catch (e) {
+    log.warn('could not sweep old boards', (e as Error).message);
   }
 }
 
@@ -93,7 +110,7 @@ async function postDaily(guild: Guild): Promise<void> {
   });
 
   const before = await readMarks(guild.id, guild.name);
-  await retire(guild, channel, before.dailyIds);
+  await retire(channel, before.dailyIds);
 
   // Two separate posts, as specified — voice and chat reward different people.
   const voiceMsg = await channel.send({
@@ -144,7 +161,7 @@ async function postWeekly(guild: Guild): Promise<void> {
   });
 
   const before = await readMarks(guild.id, guild.name);
-  await retire(guild, channel, before.weeklyIds);
+  await retire(channel, before.weeklyIds);
 
   const msg = await channel.send({
     components: [renderStaffBoard(

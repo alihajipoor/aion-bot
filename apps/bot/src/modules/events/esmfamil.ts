@@ -1,7 +1,9 @@
 import {
   MessageFlags, ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize,
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle,
-  type ButtonInteraction, type ModalSubmitInteraction, type Guild, type TextChannel,
+  StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
+  type ButtonInteraction, type ModalSubmitInteraction, type StringSelectMenuInteraction,
+  type Guild, type TextChannel,
 } from 'discord.js';
 import { normalizePersian, isolate } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
@@ -16,6 +18,26 @@ const dec = (s: string) => s.split('|').slice(1);
 const C = { play: 0x4aa6ff, done: 0x57f287, wait: 0xfee75c } as const;
 
 interface Answers { [userId: string]: Record<string, string> }
+
+/** What a scored round awarded, kept so a challenge can undo exactly it. */
+interface LastRound {
+  round: number;
+  letter: string;
+  answers: Answers;
+  /** column -> userId -> points */
+  awarded: Record<string, Record<string, number>>;
+  voided: string[];          // `${userId}:${column}`
+}
+
+interface Challenge {
+  targetId: string;
+  column: string;
+  answer: string;
+  byId: string;
+  votes: Record<string, 'y' | 'n'>;
+  messageId?: string;
+}
+
 interface State {
   config?: Partial<EsmFamilConfig>;
   round?: number;
@@ -24,6 +46,8 @@ interface State {
   scores?: Record<string, number>;
   phase?: 'idle' | 'collecting' | 'scored';
   roundMessageId?: string;
+  lastRound?: LastRound;
+  challenge?: Challenge | null;
 }
 
 const cfgOf = (ev: EventRow): EsmFamilConfig =>
@@ -164,20 +188,26 @@ async function closeRound(guild: Guild, eventId: number): Promise<void> {
   const name = (id: string) => roster.find(p => p.userId === id)?.userTag ?? id;
 
   const totals: Record<string, number> = { ...(st.scores ?? {}) };
+  const awarded: Record<string, Record<string, number>> = {};
   const lines: string[] = [];
 
   for (const col of cfg.columns) {
     const scores = scoreColumn(col, answers);
     if (!scores.length) continue;
+    awarded[col] = {};
     lines.push(`**${col}**`);
     for (const s of scores.sort((a, b) => b.points - a.points)) {
       totals[s.userId] = (totals[s.userId] ?? 0) + s.points;
+      awarded[col]![s.userId] = s.points;
       lines.push(`-# ${s.points === 0 ? '—' : `\`+${s.points}\``} <@${s.userId}> ${s.raw ? `· ${isolate(s.raw)}` : ''}`);
     }
     lines.push('');
   }
 
-  await mergeState(ev.id, { phase: 'scored', scores: totals });
+  await mergeState(ev.id, {
+    phase: 'scored', scores: totals, challenge: null,
+    lastRound: { round: st.round ?? 1, letter: st.letter ?? '', answers, awarded, voided: [] },
+  });
 
   const board = Object.entries(totals).sort((a, b) => b[1] - a[1]);
   const done = (st.round ?? 1) >= cfg.rounds;
@@ -250,13 +280,198 @@ export async function esmComponent(i: ButtonInteraction): Promise<void> {
   }
 
   if (step === 'void') {
-    if (!host) { await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral }); return; }
+    const st2 = ev.state as State;
+    const last = st2.lastRound;
+    if (!last) { await i.reply({ content: 'Hanooz dasti emtiaz nagerefte.', flags: MessageFlags.Ephemeral }); return; }
+    if (st2.challenge) { await i.reply({ content: 'Ye etraz hanooz baze — aval oon ro tamoom konid.', flags: MessageFlags.Ephemeral }); return; }
+
+    // Everything still standing from the last round, minus what is already void.
+    const options = Object.entries(last.answers).flatMap(([userId, cols]) =>
+      Object.entries(cols)
+        .filter(([col, raw]) => raw.trim() && !last.voided.includes(`${userId}:${col}`))
+        .map(([col, raw]) => ({ userId, col, raw })));
+
+    if (!options.length) { await i.reply({ content: 'Chizi baraye etraz nist.', flags: MessageFlags.Ephemeral }); return; }
+
+    const roster = await players(ev.id);
+    const tagOf = (id: string) => roster.find(p => p.userId === id)?.userTag ?? id;
+
     await i.reply({
-      content: 'Baraye hazf e yek javab, esm e bazikon va sotoon ro too chat begoo — '
-        + 'in ghesmat too nabard e badi ba ray giri jaygozin mishe.',
-      flags: MessageFlags.Ephemeral,
+      components: [new ContainerBuilder().setAccentColor(C.wait)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          '### ⚖️ Etraz\nBe kodoom javab etraz dari? Jam ray midan.'))
+        .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          new StringSelectMenuBuilder().setCustomId(enc('pick', ev.id))
+            .setPlaceholder('Javab ro entekhab kon')
+            .addOptions(options.slice(0, 25).map(o =>
+              new StringSelectMenuOptionBuilder()
+                .setLabel(`${o.col}: ${o.raw}`.slice(0, 100))
+                .setDescription(String(tagOf(o.userId)).slice(0, 100))
+                .setValue(`${o.userId}|${o.col}`)))))],
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
     });
+    return;
   }
+
+  if (step === 'vote') {
+    const st2 = ev.state as State;
+    const ch = st2.challenge;
+    if (!ch) { await i.reply({ content: 'In etraz baste shode.', flags: MessageFlags.Ephemeral }); return; }
+
+    const roster = await players(ev.id);
+    if (!roster.some(p => p.userId === i.user.id)) {
+      await i.reply({ content: 'Faghat bazikon ha ray midan.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (i.user.id === ch.targetId) {
+      await i.reply({ content: 'Sahebe javab ray nemide.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    await i.deferUpdate();
+    const votes = { ...ch.votes, [i.user.id]: (dec(i.customId)[2] as 'y' | 'n') };
+    await mergeState(ev.id, { challenge: { ...ch, votes } });
+    await settleChallenge(i.guild!, ev.id, false);
+    return;
+  }
+
+  if (step === 'settle') {
+    if (!host) { await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral }); return; }
+    await i.deferUpdate();
+    await settleChallenge(i.guild!, ev.id, true);
+    return;
+  }
+}
+
+export async function esmSelect(i: StringSelectMenuInteraction): Promise<void> {
+  const [step, idRaw] = dec(i.customId);
+  if (step !== 'pick') return;
+  const ev = await getEvent(Number(idRaw));
+  if (!ev) return;
+
+  const [targetId, column] = i.values[0]!.split('|');
+  const last = (ev.state as State).lastRound;
+  const answer = last?.answers[targetId!]?.[column!] ?? '';
+
+  await mergeState(ev.id, {
+    challenge: { targetId, column, answer, byId: i.user.id, votes: {} },
+  });
+
+  const roster = await players(ev.id);
+  const ch = channelOf(i.guild!, ev);
+  const msg = await ch?.send(challengeCard({
+    targetId: targetId!, column: column!, answer, byId: i.user.id, votes: {},
+  }, ev.id, roster.length)).catch(() => null);
+
+  if (msg) {
+    const cur = (await getEvent(ev.id))!.state as State;
+    await mergeState(ev.id, { challenge: { ...cur.challenge!, messageId: msg.id } });
+  }
+  await i.update({
+    components: [new ContainerBuilder().setAccentColor(C.wait)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent('Etraz ferestade shod.'))],
+    flags: MessageFlags.IsComponentsV2,
+  });
+}
+
+function challengeCard(ch: Challenge, eventId: number, roster: number) {
+  const yes = Object.values(ch.votes).filter(v => v === 'y').length;
+  const no = Object.values(ch.votes).filter(v => v === 'n').length;
+  const need = Math.floor((roster - 1) / 2) + 1;
+
+  return {
+    components: [new ContainerBuilder().setAccentColor(C.wait)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## ⚖️ Etraz be yek javab\n<@${ch.byId}> be javabe <@${ch.targetId}> etraz dare.`))
+      .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+        `**${ch.column}** → ${isolate(ch.answer)}`,
+        '',
+        `✅ **${yes}** ghabool   ·   ❌ **${no}** rad`,
+        `-# Baraye tasmim ${need} ray lazem e. Sahebe javab ray nemide.`,
+      ].join('\n')))
+      .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(enc('vote', eventId, 'y')).setLabel('Ghabool').setEmoji('✅').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(enc('vote', eventId, 'n')).setLabel('Rad').setEmoji('❌').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(enc('settle', eventId)).setLabel('Tamoom').setEmoji('🔒').setStyle(ButtonStyle.Secondary)))],
+    flags: MessageFlags.IsComponentsV2 as const,
+    allowedMentions: { parse: [] as never[] },
+  };
+}
+
+/**
+ * Resolves a challenge when a side reaches a majority, or when the host calls
+ * it. Rejecting an answer does not just zero one score: removing it can make a
+ * neighbour's answer unique, so the whole column is scored again and the
+ * difference applied to the running totals.
+ */
+async function settleChallenge(guild: Guild, eventId: number, force: boolean): Promise<void> {
+  const ev = await getEvent(eventId);
+  if (!ev) return;
+  const st = ev.state as State;
+  const ch = st.challenge;
+  const last = st.lastRound;
+  if (!ch || !last) return;
+
+  const roster = await players(eventId);
+  const voters = Math.max(1, roster.length - 1);
+  const need = Math.floor(voters / 2) + 1;
+  const yes = Object.values(ch.votes).filter(v => v === 'y').length;
+  const no = Object.values(ch.votes).filter(v => v === 'n').length;
+
+  const chan = channelOf(guild, ev);
+  const msg = ch.messageId ? await chan?.messages.fetch(ch.messageId).catch(() => null) : null;
+
+  if (!force && yes < need && no < need) {
+    await msg?.edit(challengeCard(ch, eventId, roster.length)).catch(() => {});
+    return;
+  }
+
+  const rejected = no >= yes && (no >= need || force);
+  const totals = { ...(st.scores ?? {}) };
+  let note = 'Javab ghabool shod — chizi avaz nashod.';
+
+  if (rejected) {
+    const key = `${ch.targetId}:${ch.column}`;
+    const answers: Answers = JSON.parse(JSON.stringify(last.answers));
+    if (answers[ch.targetId]) answers[ch.targetId]![ch.column] = '';
+
+    const before = last.awarded[ch.column] ?? {};
+    const after = scoreColumn(ch.column, answers);
+    for (const s of after) {
+      totals[s.userId] = (totals[s.userId] ?? 0) - (before[s.userId] ?? 0) + s.points;
+    }
+    const nextAwarded = { ...last.awarded, [ch.column]: Object.fromEntries(after.map(s => [s.userId, s.points])) };
+
+    await mergeState(eventId, {
+      scores: totals, challenge: null,
+      lastRound: { ...last, answers, awarded: nextAwarded, voided: [...last.voided, key] },
+    });
+    note = `Javab rad shod — sotoone **${ch.column}** dobare emtiaz gereft.`;
+  } else {
+    await mergeState(eventId, { challenge: null });
+  }
+
+  const board = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  await msg?.edit({
+    components: [new ContainerBuilder().setAccentColor(rejected ? C.wait : C.done)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## ⚖️ Etraz ${rejected ? 'ghabool' : 'rad'} shod`))
+      .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+        `**${ch.column}** → ${isolate(ch.answer)} (<@${ch.targetId}>)`,
+        `✅ ${yes}  ·  ❌ ${no}`,
+        '',
+        note,
+        '',
+        ...board.slice(0, 10).map(([id, pts], i) =>
+          `${['🥇', '🥈', '🥉'][i] ?? `\`${i + 1}\``} <@${id}> — **${pts}**`),
+      ].join('\n')))],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },
+  }).catch(() => {});
+
+  log.info(`esm famil #${eventId} challenge ${rejected ? 'upheld' : 'dismissed'} (${yes}/${no})`);
 }
 
 export async function esmModal(i: ModalSubmitInteraction): Promise<void> {
