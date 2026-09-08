@@ -1,6 +1,7 @@
 import { ActivityType } from 'discord.js';
 import { logger } from '../lib/log.js';
 import { startExpiryWorker } from '../modules/expiry.js';
+import { syncVoiceMute } from '../lib/enforce.js';
 import { resolveSections } from '../lib/sections.js';
 import { config } from '../config.js';
 import type { AionClient } from '../client.js';
@@ -26,6 +27,18 @@ const handler: EventHandler = {
         else log.info(`section "${key}" resolved`);
       }
     }
+    // Voice sessions survive a bot restart; re-derive server-mute for everyone
+    // currently connected so nobody is left wrongly muted or wrongly free.
+    if (g) {
+      let synced = 0;
+      for (const vs of g.voiceStates.cache.values()) {
+        const m = vs.member;
+        if (!m || m.user.bot || !vs.channelId) continue;
+        try { await syncVoiceMute(m, 'AION: startup reconcile'); synced++; } catch { /* keep going */ }
+      }
+      if (synced) log.info(`reconciled voice state for ${synced} connected member(s)`);
+    }
+
     if (config.databaseUrl) startExpiryWorker(client);
 
     client.user?.setPresence({

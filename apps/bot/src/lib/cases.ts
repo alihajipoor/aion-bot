@@ -91,3 +91,34 @@ export async function activeCaseFor(guildId: string, userId: string, section: Se
     .orderBy(desc(cases.caseNumber)).limit(1);
   return row ?? null;
 }
+
+export interface ActiveSanctionRow {
+  sanctionId: number; caseId: number | null; caseNumber: number | null;
+  section: Section; type: PunishAction; roleId: string;
+  reason: string | null; expiresAt: Date | null;
+}
+
+/** Active sanctions for one member, newest first. */
+export async function activeSanctionsFor(guildId: string, userId: string): Promise<ActiveSanctionRow[]> {
+  const rows = await getDb()
+    .select({
+      sanctionId: sanctions.id, caseId: sanctions.caseId, caseNumber: cases.caseNumber,
+      section: sanctions.section, type: sanctions.type, roleId: sanctions.roleId,
+      reason: cases.reason, expiresAt: sanctions.expiresAt,
+    })
+    .from(sanctions)
+    .leftJoin(cases, eq(sanctions.caseId, cases.id))
+    .where(and(eq(sanctions.guildId, guildId), eq(sanctions.userId, userId)));
+  return rows as ActiveSanctionRow[];
+}
+
+/** Reverse a sanction and close its case, recording who lifted it. */
+export async function liftSanction(sanctionId: number, caseId: number | null, byUserId: string): Promise<void> {
+  const db = getDb();
+  await db.delete(sanctions).where(eq(sanctions.id, sanctionId));
+  if (caseId !== null) {
+    await db.update(cases)
+      .set({ active: false, resolvedAt: new Date(), resolvedBy: byUserId })
+      .where(eq(cases.id, caseId));
+  }
+}

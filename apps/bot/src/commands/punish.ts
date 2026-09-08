@@ -2,13 +2,15 @@ import {
   SlashCommandBuilder, MessageFlags, ContainerBuilder, TextDisplayBuilder,
   SeparatorBuilder, SeparatorSpacingSize, ActionRowBuilder, StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
+  ButtonBuilder, ButtonStyle, type ButtonInteraction,
   PermissionFlagsBits, type ChatInputCommandInteraction, type StringSelectMenuInteraction,
   type ModalSubmitInteraction, type GuildMember, type TextChannel,
 } from 'discord.js';
 import { resolveSections, type Section } from '../lib/sections.js';
 import { authorityOf, canBan, canMute, type Authority } from '../lib/perms.js';
 import { checkCooldown, markUsed, GLOBAL_PUNISH_COOLDOWN_MS } from '../lib/cooldown.js';
-import { createCase, type PunishAction } from '../lib/cases.js';
+import { createCase, activeSanctionsFor, liftSanction, type PunishAction } from '../lib/cases.js';
+import { syncVoiceMute, ejectFromSection } from '../lib/enforce.js';
 import { bidi, humanDuration, isolate } from '../lib/text.js';
 import { logger } from '../lib/log.js';
 import type { Command } from '../types.js';
@@ -212,6 +214,11 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
 
   try {
     await target.roles.add(roleId, `${act} by ${invoker.user.tag}: ${reason}`);
+    // A live voice session keeps its old permissions, so force a reconnect.
+    // Mutes apply instantly via server-mute; bans eject from the section.
+    const kicked = act === 'ban'
+      ? await ejectFromSection(target, cfg.categoryId, `AION ban: ${reason}`)
+      : (await syncVoiceMute(target, `AION mute: ${reason}`), false);
     const { caseNumber, expiresAt } = await createCase({
       guildId: guild.id, section: sec, action: act,
       targetId: target.id, targetTag: target.user.tag,
@@ -230,8 +237,15 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
         `**Moddat**  ${when}${expiresAt ? `  ·  <t:${Math.floor(expiresAt.getTime() / 1000)}:R>` : ''}`,
         `**Dalil**  ${isolate(reason)}`,
         `**Tavassote**  <@${invoker.id}>`,
+        ...(kicked ? ['-# Az voice disconnect shod.'] : []),
         `-# Case #${caseNumber}`,
-      ].join('\n')));
+      ].join('\n')))
+      .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(enc('lift', target.id, sec, act))
+          .setLabel(act === 'ban' ? 'Unban' : 'Unmute')
+          .setEmoji('🔓')
+          .setStyle(ButtonStyle.Secondary)));
 
     const chId = cfg.banChannelId ?? cfg.punishChannelId;
     const ch = chId ? await guild.channels.fetch(chId).catch(() => null) : null;
@@ -248,3 +262,68 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
 }
 
 export default command;
+
+/**
+ * "Unmute" / "Unban" button under a punishment announcement.
+ * Scoped exactly like /punish: a Public Global can only lift in Public, and
+ * lifting a ban requires Global rank while a mute can be lifted by a moderator.
+ */
+export async function handleButton(i: ButtonInteraction): Promise<void> {
+  const [step, targetId, section, action] = dec(i.customId);
+  if (step !== 'lift') return;
+
+  const sec = section as Section;
+  const act = action as PunishAction;
+  const guild = i.guild!;
+  const auth = authorityOf(i.member as GuildMember);
+
+  const permitted = act === 'ban' ? canBan(auth, sec) : canMute(auth, sec);
+  if (!permitted) {
+    await i.reply({ content: 'To dastresi be bardashtane in punishment nadari.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  await i.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const cfg = resolveSections(guild).get(sec)!;
+  const roleId = act === 'ban' ? cfg.bannedRoleId : cfg.mutedRoleId;
+
+  const active = await activeSanctionsFor(guild.id, targetId!);
+  const row = active.find(r => r.section === sec && r.type === act);
+
+  const member = await guild.members.fetch(targetId!).catch(() => null);
+  if (!row && !(member && roleId && member.roles.cache.has(roleId))) {
+    await i.editReply('In punishment ghablan bardashte shode.');
+    return;
+  }
+
+  try {
+    if (member && roleId && member.roles.cache.has(roleId)) {
+      await member.roles.remove(roleId, `lifted by ${i.user.tag}`);
+    }
+    if (row) await liftSanction(row.sanctionId, row.caseId, i.user.id);
+    if (member) await syncVoiceMute(member, 'AION: mute lifted');
+
+    // Rewrite the announcement so the channel reflects the current state.
+    await i.message.edit({
+      components: [
+        new ContainerBuilder().setAccentColor(ACCENT.ok)
+          .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            `### 🔓 ${act === 'ban' ? 'Unban' : 'Unmute'} — ${cfg.emoji} ${cfg.label}`))
+          .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+          .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+            `**User**  <@${targetId}>`,
+            `**Bardashte shod tavassote**  <@${i.user.id}>`,
+            row?.caseNumber ? `-# Case #${row.caseNumber} — baste shod` : '-# baste shod',
+          ].join('\n'))),
+      ],
+      flags: MessageFlags.IsComponentsV2,
+    });
+
+    await i.editReply(`Anjam shod — ${act === 'ban' ? 'ban' : 'mute'} bardashte shod.`);
+    log.info(`${act} lifted for ${targetId} in ${sec} by ${i.user.tag}`);
+  } catch (e) {
+    log.error('lift failed', e);
+    await i.editReply('Nashod. Ehtemalan bot dastresi nadare.');
+  }
+}
