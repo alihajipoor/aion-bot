@@ -3,18 +3,22 @@ import {
   GuildScheduledEventPrivacyLevel, ContainerBuilder, TextDisplayBuilder, SeparatorBuilder,
   SeparatorSpacingSize, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
-  MediaGalleryBuilder, MediaGalleryItemBuilder, AttachmentBuilder,
+  MediaGalleryBuilder, MediaGalleryItemBuilder, AttachmentBuilder, SectionBuilder,
   type ButtonInteraction, type StringSelectMenuInteraction, type ModalSubmitInteraction,
   type Guild, type GuildMember, type TextChannel, type VoiceChannel,
   type MessageCreateOptions,
 } from 'discord.js';
 import { renderHeaderBanner } from '../../lib/banner.js';
+import { CATALOGUE, type GameKey } from './games.js';
+import {
+  WZ, decWizard, draftFor, clearDraft, screenFor, applyChange, timerModal, configOf,
+} from './wizard.js';
 import { asciiFold, isolate } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
 import { emitLog } from '../../lib/logbus.js';
 import {
   createEvent, getEvent, liveEvents, patchEvent, players, addPlayer, removePlayer,
-  type EventRow, type Game,
+  mergeState, recentEvents, type EventRow, type PastEvent,
 } from './store.js';
 import { startMafia, endMafia, mafiaComponent, mafiaModal, MAFIA_ID } from './mafia.js';
 import type { AionClient } from '../../client.js';
@@ -26,13 +30,6 @@ const enc = (...p: (string | number)[]) => [EV, ...p].join('|');
 const dec = (s: string) => s.split('|').slice(1);
 
 const C = { brand: 0x9b6cff, live: 0x57f287, wait: 0xfee75c, off: 0x99aab5 } as const;
-
-const GAMES: Record<Game, { label: string; emoji: string; blurb: string }> = {
-  mafia:     { label: 'Mafia',      emoji: '🕵️', blurb: 'Ba gardanande — bot shab ro saket mikone' },
-  esmfamil:  { label: 'Esm Famil',  emoji: '✍️', blurb: 'Harf e tasadofi, timer, emtiaz khodkar' },
-  bistsoali: { label: '20 Soali',   emoji: '❓', blurb: 'Yek nafar fekr mikone, baghie mipoorsan' },
-  custom:    { label: 'Custom',     emoji: '🎪', blurb: 'Har chizi ke khodet migardooni' },
-};
 
 /* ── channel lookup ────────────────────────────────────────────── */
 
@@ -55,10 +52,16 @@ const isStaff = (m: GuildMember): boolean =>
 
 export async function interfacePanel(guild: Guild): Promise<MessageCreateOptions> {
   const banner = await renderHeaderBanner({
-    kicker: 'STAFF · EVENTS', title: 'Event Control', accent: '#9b6cff',
-    subtitle: 'Event besaz, elan kon, shoroo kon — bot baghiash ro handle mikone.',
+    kicker: 'STAFF · EVENT CONTROL', title: 'Event Control', accent: '#9b6cff',
+    subtitle: 'Baazi ro tanzim kon, elan kon, begardoon — hamash az hamin ja.',
     tags: ['MAFIA', 'ESM FAMIL', '20 SOALI', 'CUSTOM'],
   });
+
+  const live = await liveEvents(guild.id).catch(() => []);
+  const hall = hallChannel(guild);
+  const inHall = hall?.members.size ?? 0;
+  const next = live.filter(e => e.scheduledFor && e.status === 'announced')
+    .sort((a, b) => (a.scheduledFor!.getTime()) - (b.scheduledFor!.getTime()))[0];
 
   const box = new ContainerBuilder().setAccentColor(C.brand);
   if (banner) {
@@ -66,35 +69,59 @@ export async function interfacePanel(guild: Guild): Promise<MessageCreateOptions
       .addItems(new MediaGalleryItemBuilder().setURL('attachment://event-panel.png')));
   }
 
-  const live = await liveEvents(guild.id).catch(() => []);
+  /* ── status strip ── */
+  box.addTextDisplayComponents(new TextDisplayBuilder().setContent([
+    `### 📡 Vaziat`,
+    `🔴 **${live.filter(e => e.status === 'running').length}** dar hale ejra   ·   `
+      + `📣 **${live.filter(e => e.status === 'announced').length}** elan shode   ·   `
+      + `📝 **${live.filter(e => e.status === 'draft').length}** pish-nevis`,
+    `🎧 **${inHall}** nafar alan too ${hall ? `<#${hall.id}>` : 'EVENT HALL'}`
+      + (next ? `   ·   ⏭ badi <t:${Math.floor(next.scheduledFor!.getTime() / 1000)}:R>` : ''),
+  ].join('\n')));
 
-  box
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      '### 🎪 Event e jadid besaz',
-      'Baazi ro entekhab kon — bad esm, zarfiat va zaman ro mipoorse.',
-    ].join('\n')))
-    .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-      new StringSelectMenuBuilder().setCustomId(enc('new'))
-        .setPlaceholder('Che baazi-i?')
-        .addOptions((Object.keys(GAMES) as Game[]).map(g =>
-          new StringSelectMenuOptionBuilder()
-            .setLabel(GAMES[g].label).setValue(g)
-            .setEmoji(GAMES[g].emoji).setDescription(GAMES[g].blurb)))))
-    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      live.length
-        ? `### 🔴 Alan ${live.length} event ${live.length === 1 ? 'hast' : 'hastan'}\nKart e har kodoom pain e hamin channel e.`
-        : '### 💤 Hich event e faal-i nist\nAz menu-ye bala yeki besaz.'))
-    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      '-# **Elan** kart e sabt-nam ro too EVENT-NEWS mizare va event e Discord misaze.',
-      '-# **Shoroo** adam-haye sabt-nam karde ro miare too room.',
-      '-# **Payan** recap post mikone va har channeli ke event sakhte bood pak mishe.',
+  box.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  box.addTextDisplayComponents(new TextDisplayBuilder().setContent('### 🎮 Ketabkhaneye baazi'));
+
+  /* ── one section per game, each with its own setup button ── */
+  for (const key of ['mafia', 'esmfamil', 'bistsoali', 'custom'] as GameKey[]) {
+    const def = CATALOGUE[key];
+    box.addSectionComponents(new SectionBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `**${def.emoji} ${def.label}** · ${def.fa}${def.max ? `  ·  \`${def.min}–${def.max} nafar\`` : ''}`),
+        new TextDisplayBuilder().setContent(def.blurb),
+        new TextDisplayBuilder().setContent(def.does.slice(0, 3).map(d => `-# › ${d}`).join('\n')))
+      .setButtonAccessory(new ButtonBuilder()
+        .setCustomId(enc('setup', key))
+        .setLabel(def.configurable ? 'Tanzim' : 'Besaz')
+        .setEmoji(def.configurable ? '⚙️' : '➕')
+        .setStyle(ButtonStyle.Primary)));
+  }
+
+  box.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+  /* ── live events ── */
+  if (live.length) {
+    box.addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '### 🔴 Event haye faal',
+      ...live.slice(0, 6).map(e =>
+        `${CATALOGUE[e.game as GameKey].emoji} **${isolate(e.title)}** — \`${e.status}\`  ·  <@${e.hostId}>`
+        + (e.scheduledFor ? `  ·  <t:${Math.floor(e.scheduledFor.getTime() / 1000)}:R>` : '')),
+      '-# Kart e kontrol e har kodoom pain e hamin channel e.',
     ].join('\n')));
+  } else {
+    box.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      '### 💤 Hich event e faal-i nist\n-# Az bala yeki entekhab kon — tanzimatesh ghabl az sakht neshoon dade mishe.'));
+  }
+
+  box.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(enc('refresh')).setLabel('Tazegi').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(enc('history')).setLabel('Tarikhche').setEmoji('📚').setStyle(ButtonStyle.Secondary)));
 
   return {
     components: [box],
-    flags: MessageFlags.IsComponentsV2,
+    flags: MessageFlags.IsComponentsV2 as const,
     ...(banner ? { files: [new AttachmentBuilder(banner, { name: 'event-panel.png' })] } : {}),
   };
 }
@@ -141,7 +168,7 @@ const STATUS_TONE: Record<string, number> = {
 
 export async function controlCard(ev: EventRow) {
   const roster = await players(ev.id).catch(() => []);
-  const g = GAMES[ev.game as Game];
+  const g = CATALOGUE[ev.game as GameKey];
   const cap = ev.capacity ? `${roster.length}/${ev.capacity}` : `${roster.length}`;
 
   const box = new ContainerBuilder().setAccentColor(STATUS_TONE[ev.status] ?? C.off)
@@ -189,7 +216,7 @@ async function refreshCard(guild: Guild, ev: EventRow): Promise<void> {
 
 async function signupCard(ev: EventRow) {
   const roster = await players(ev.id).catch(() => []);
-  const g = GAMES[ev.game as Game];
+  const g = CATALOGUE[ev.game as GameKey];
   const full = ev.capacity > 0 && roster.length >= ev.capacity;
 
   return {
@@ -223,45 +250,78 @@ async function refreshSignup(guild: Guild, ev: EventRow): Promise<void> {
 
 /* ── interactions ──────────────────────────────────────────────── */
 
+/** The panel no longer has a game dropdown; setup is a button per game. */
 export async function handleSelect(i: StringSelectMenuInteraction): Promise<void> {
   const [step] = dec(i.customId);
-  if (step !== 'new') return;
-  if (!isStaff(i.member as GuildMember)) {
-    await i.reply({ content: 'Faghat staff mitoone event besaze.', flags: MessageFlags.Ephemeral });
+  if (step === 'noop') await i.deferUpdate();
+}
+
+/** Wizard controls: every change redraws the same ephemeral screen. */
+export async function handleWizard(i: ButtonInteraction | StringSelectMenuInteraction): Promise<void> {
+  const [a, b] = decWizard(i.customId);
+
+  if (i.isStringSelectMenu()) {
+    const d = draftFor(i.user.id);
+    await i.update(applyChange(d, a!, b!, i.values));
     return;
   }
-  const game = i.values[0] as Game;
-  await i.showModal(new ModalBuilder().setCustomId(enc('draft', game))
-    .setTitle(`Event e ${GAMES[game].label}`)
-    .addComponents(
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder().setCustomId('title').setLabel('Esme event')
-          .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(60)
-          .setPlaceholder('Mesal: Mafia — sanario pedarkhande')),
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder().setCustomId('capacity').setLabel('Zarfiat (0 = bi nahayat)')
-          .setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(3).setPlaceholder('12')),
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder().setCustomId('minutes').setLabel('Chand daghighe dige shoroo mishe?')
-          .setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(4).setPlaceholder('60')),
-    ));
+
+  if (a === 'cancel') {
+    clearDraft(i.user.id);
+    await i.update({
+      components: [new ContainerBuilder().setAccentColor(C.off)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent('Bikhial shod.'))],
+      flags: MessageFlags.IsComponentsV2,
+    });
+    return;
+  }
+
+  if (a === 'timers') {
+    await i.showModal(timerModal(draftFor(i.user.id)));
+    return;
+  }
+
+  if (a === 'create') {
+    const game = b as GameKey;
+    const def = CATALOGUE[game];
+    await i.showModal(new ModalBuilder().setCustomId(enc('draft', game))
+      .setTitle(`${def.label} — jozeiat`)
+      .addComponents(
+        new ActionRowBuilder<TextInputBuilder>().addComponents(
+          new TextInputBuilder().setCustomId('title').setLabel('Esme event')
+            .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(60)
+            .setPlaceholder(`Mesal: ${def.label} — jomeh shab`)),
+        new ActionRowBuilder<TextInputBuilder>().addComponents(
+          new TextInputBuilder().setCustomId('capacity').setLabel('Zarfiat (0 = bi nahayat)')
+            .setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(3)
+            .setPlaceholder(def.max ? String(def.max) : '0')),
+        new ActionRowBuilder<TextInputBuilder>().addComponents(
+          new TextInputBuilder().setCustomId('minutes').setLabel('Chand daghighe dige shoroo mishe?')
+            .setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(4).setPlaceholder('60')),
+      ));
+  }
 }
 
 export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
   const [step, arg] = dec(i.customId);
   if (step !== 'draft') return;
 
-  const game = arg as Game;
+  const game = arg as GameKey;
   const title = i.fields.getTextInputValue('title').trim();
   const capacity = Math.max(0, Math.min(99, Number(i.fields.getTextInputValue('capacity').replace(/\D/g, '')) || 0));
   const mins = Math.max(0, Math.min(10080, Number(i.fields.getTextInputValue('minutes').replace(/\D/g, '')) || 0));
 
   await i.deferReply({ flags: MessageFlags.Ephemeral });
+  const draft = draftFor(i.user.id, game);
   const ev = await createEvent({
     guildId: i.guildId!, game, title, capacity,
     hostId: i.user.id, hostTag: i.user.tag,
     scheduledFor: mins > 0 ? new Date(Date.now() + mins * 60_000) : null,
   });
+  // Everything the wizard collected rides along, so start-up reads config
+  // rather than guessing defaults.
+  await mergeState(ev.id, { config: configOf(draft) });
+  clearDraft(i.user.id);
 
   const ch = interfaceChannel(i.guild!);
   const card = await ch?.send(await controlCard(ev));
@@ -274,6 +334,24 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
 
 export async function handleButton(i: ButtonInteraction): Promise<void> {
   const [step, idRaw] = dec(i.customId);
+
+  // Panel-level buttons carry no event id.
+  if (step === 'setup') {
+    if (!isStaff(i.member as GuildMember)) {
+      await i.reply({ content: 'Faghat staff.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const d = draftFor(i.user.id, idRaw as GameKey);
+    await i.reply(screenFor(d));
+    return;
+  }
+  if (step === 'refresh') {
+    await i.deferUpdate();
+    await ensureEventPanel(i.guild!);
+    return;
+  }
+  if (step === 'history') { await history(i); return; }
+
   const id = Number(idRaw);
   const ev = await getEvent(id);
   if (!ev) { await i.reply({ content: 'In event peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
@@ -333,7 +411,7 @@ async function announce(i: ButtonInteraction, ev: EventRow): Promise<void> {
         privacyLevel: GuildScheduledEventPrivacyLevel.GuildOnly,
         entityType: GuildScheduledEventEntityType.Voice,
         channel: hall.id,
-        description: `${GAMES[ev.game as Game].label} · gardanande <@${ev.hostId}>`.slice(0, 1000),
+        description: `${CATALOGUE[ev.game as GameKey].label} · gardanande <@${ev.hostId}>`.slice(0, 1000),
       }).catch(e => { log.warn(`scheduled event failed: ${e.message}`); return null; });
       scheduledEventId = se?.id ?? null;
     }
@@ -397,7 +475,7 @@ async function start(i: ButtonInteraction, ev: EventRow): Promise<void> {
   await ensureEventPanel(guild);
   emitLog(guild, 'punishment', [
     `### 🎪 Event shoroo shod — ${isolate(ev.title)}`,
-    `**Baazi** ${GAMES[ev.game as Game].label} · **Gardanande** <@${ev.hostId}>`,
+    `**Baazi** ${CATALOGUE[ev.game as GameKey].label} · **Gardanande** <@${ev.hostId}>`,
     `**Bazikon-ha** ${roster.length}`,
     `-# Event #${ev.id}`,
   ].join('\n'));
@@ -480,6 +558,37 @@ async function cancel(i: ButtonInteraction, ev: EventRow): Promise<void> {
   await ensureEventPanel(guild);
 }
 
+/** The timer modal is the one wizard control that cannot live in a select. */
+async function handleTimers(i: ModalSubmitInteraction): Promise<void> {
+  const d = draftFor(i.user.id);
+  const read = (id: string, fallback: number, lo: number, hi: number) => {
+    const n = Number(i.fields.getTextInputValue(id).replace(/\D/g, ''));
+    return Number.isFinite(n) && n > 0 ? Math.min(hi, Math.max(lo, n)) : fallback;
+  };
+  d.mafia.nightSeconds = read('night', d.mafia.nightSeconds, 15, 600);
+  d.mafia.daySeconds = read('day', d.mafia.daySeconds, 30, 1800);
+  d.mafia.defenseSeconds = read('defense', d.mafia.defenseSeconds, 10, 300);
+  d.mafia.voteSeconds = read('vote', d.mafia.voteSeconds, 10, 300);
+  await i.reply(screenFor(d));
+}
+
+async function history(i: ButtonInteraction): Promise<void> {
+  const past = await recentEvents(i.guildId!, 8).catch(() => []);
+  await i.reply({
+    components: [new ContainerBuilder().setAccentColor(C.brand)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 📚 Event haye ghabli'))
+      .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        past.length
+          ? past.map((e: PastEvent) =>
+              `${CATALOGUE[e.game as GameKey].emoji} **${isolate(e.title)}** — \`${e.status}\``
+              + (e.endedAt ? `  ·  <t:${Math.floor(e.endedAt.getTime() / 1000)}:R>` : '')
+              + `\n-# ${e.playerCount} bazikon · gardanande <@${e.hostId}>`).join('\n')
+          : '-# Hanooz hich event-i tamoom nashode.'))],
+    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+  });
+}
+
 /* ── wiring ────────────────────────────────────────────────────── */
 
 export function installEvents(client: AionClient): void {
@@ -488,6 +597,9 @@ export function installEvents(client: AionClient): void {
       if (i.isButton() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaComponent(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaComponent(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaModal(i); return; }
+      if (i.isButton() && i.customId.startsWith(`${WZ}|`)) { await handleWizard(i); return; }
+      if (i.isStringSelectMenu() && i.customId.startsWith(`${WZ}|`)) { await handleWizard(i); return; }
+      if (i.isModalSubmit() && i.customId.startsWith(`${WZ}|`)) { await handleTimers(i); return; }
       if (i.isButton() && i.customId.startsWith(`${EV}|`)) { await handleButton(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${EV}|`)) { await handleSelect(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${EV}|`)) { await handleModal(i); return; }

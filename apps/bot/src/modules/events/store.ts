@@ -75,3 +75,22 @@ export async function revivePlayer(eventId: number, userId: string): Promise<voi
   await getDb().update(eventPlayers).set({ alive: true, diedAt: null })
     .where(and(eq(eventPlayers.eventId, eventId), eq(eventPlayers.userId, userId)));
 }
+
+export interface PastEvent {
+  id: number; title: string; game: string; status: string;
+  hostId: string; endedAt: Date | null; playerCount: number;
+}
+
+/** Finished events with their attendance, for the history view. */
+export async function recentEvents(guildId: string, limit = 8): Promise<PastEvent[]> {
+  const rows = await getDb()
+    .select({
+      id: events.id, title: events.title, game: events.game, status: events.status,
+      hostId: events.hostId, endedAt: events.endedAt,
+      playerCount: sql<number>`(select count(*)::int from event_players p where p.event_id = ${events.id})`,
+    })
+    .from(events)
+    .where(and(eq(events.guildId, guildId), inArray(events.status, ['ended', 'cancelled'])))
+    .orderBy(desc(events.id)).limit(limit);
+  return rows as PastEvent[];
+}

@@ -9,8 +9,12 @@ import { isolate } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
 import {
   getEvent, patchEvent, mergeState, players, alivePlayers, assignRole,
-  killPlayer, revivePlayer, type EventRow, type PlayerRow,
+  killPlayer, revivePlayer, type EventRow,
 } from './store.js';
+import {
+  SCENARIOS, CITIZEN, scenarioOf, distribution, MAFIA_DEFAULTS,
+  type RoleDef, type MafiaConfig,
+} from './games.js';
 
 const log = logger('mafia');
 export const MAFIA_ID = 'mf';
@@ -29,27 +33,14 @@ export const gameHeld = new Set<string>();
 
 /* ── scenarios ─────────────────────────────────────────────────── */
 
-interface Role { key: string; fa: string; side: 'mafia' | 'town'; blurb: string }
-
-/** Ordered: dealt top-down, so player count decides which roles appear. */
-const GODFATHER: Role[] = [
-  { key: 'godfather', fa: 'پدرخوانده', side: 'mafia', blurb: 'Rais e mafia. Shellik e shab roosh asar nadare va baraye karagah shahrvand neshoon dade mishe.' },
-  { key: 'detective', fa: 'کارآگاه', side: 'town', blurb: 'Har shab yek nafar ro estelam mikone. Pedarkhande ro shahrvand mibine.' },
-  { key: 'doctor', fa: 'دکتر شهر', side: 'town', blurb: 'Har shab yek nafar ro nejat mide. Khodesh ro faghat yek bar.' },
-  { key: 'lecter', fa: 'دکتر لکتر', side: 'mafia', blurb: 'Har shab yek mafia ro nejat mide. Khodesh ro faghat yek bar.' },
-  { key: 'sniper', fa: 'اسنایپر', side: 'town', blurb: 'Do bar too baazi mitoone shellik kone. Age be shahrvand bezane, khodesh mimire.' },
-  { key: 'matador', fa: 'ماتادور', side: 'mafia', blurb: 'Har shab yek naghsh ro block mikone — oon shab kari az dastesh barnemiad.' },
-  { key: 'tough', fa: 'جان سخت', side: 'town', blurb: 'Do jan dare. Bare aval ke behesh shellik beshe zende mimoone.' },
-  { key: 'armored', fa: 'زره پوش', side: 'town', blurb: 'Yek bar dar barabare ray giri mosoon e.' },
-];
-
-const CITIZEN: Role = { key: 'citizen', fa: 'شهروند ساده', side: 'town', blurb: 'Hich ghodrati nadari — hoosh o harfet tanha selahe toe.' };
-
-function deal(count: number): Role[] {
-  const out = GODFATHER.slice(0, Math.min(count, GODFATHER.length));
-  while (out.length < count) out.push(CITIZEN);
-  return out;
+/** The host's wizard choices, with defaults for events drafted before it. */
+function configOf(ev: EventRow): MafiaConfig {
+  const raw = (ev.state as { config?: Partial<MafiaConfig> }).config ?? {};
+  return { ...MAFIA_DEFAULTS, ...raw };
 }
+
+const roleOf = (key: string | null): RoleDef =>
+  SCENARIOS.flatMap(s => s.roles).find(r => r.key === key) ?? CITIZEN;
 
 const shuffle = <T>(a: T[]): T[] => {
   const x = [...a];
@@ -59,9 +50,6 @@ const shuffle = <T>(a: T[]): T[] => {
   }
   return x;
 };
-
-const roleOf = (key: string | null): Role =>
-  GODFATHER.find(r => r.key === key) ?? CITIZEN;
 
 /* ── voice control ─────────────────────────────────────────────── */
 
@@ -80,7 +68,8 @@ async function applyVoice(guild: Guild, ev: EventRow, phase: 'night' | 'day'): P
   for (const state of channel.members.values()) {
     const p = byId.get(state.id);
     if (!p) continue;                       // spectators are not the game's business
-    const shouldMute = phase === 'night' || !p.alive;
+    const cfg = configOf(ev);
+    const shouldMute = (phase === 'night' && cfg.autoMuteNight) || (!p.alive && cfg.deadStayMuted);
     gameHeld.add(state.id);
     if (state.voice.serverMute !== shouldMute) {
       await state.voice.setMute(shouldMute, `AION mafia ${phase}`).catch(() => {});
@@ -109,7 +98,9 @@ export async function startMafia(guild: Guild, ev: EventRow): Promise<void> {
     log.warn(`event #${ev.id}: only ${roster.length} players, dealing anyway`);
   }
 
-  const roles = shuffle(deal(roster.length));
+  const cfg = configOf(ev);
+  const sc = scenarioOf(cfg.scenario);
+  const roles = shuffle(distribution(sc, roster.length, cfg.optionalRoles));
   const seats = shuffle(roster);
 
   const owned = [...ev.ownedChannelIds];
@@ -117,7 +108,7 @@ export async function startMafia(guild: Guild, ev: EventRow): Promise<void> {
   // The mafia team needs somewhere to talk at night that the town cannot read.
   const mafiaIds = seats.filter((_, idx) => roles[idx]!.side === 'mafia').map(p => p.userId);
   const cat = guild.channels.cache.get(ev.voiceChannelId ?? '')?.parentId;
-  const room = await guild.channels.create({
+  const room = !cfg.mafiaRoom ? null : await guild.channels.create({
     name: `🕵-mafia-${ev.id}`,
     type: ChannelType.GuildText,
     parent: cat ?? undefined,
@@ -131,7 +122,7 @@ export async function startMafia(guild: Guild, ev: EventRow): Promise<void> {
       })),
     ],
     reason: `AION mafia #${ev.id}`,
-  }).catch(e => { log.warn(`mafia room failed: ${e.message}`); return null; });
+  }).catch((e: Error) => { log.warn(`mafia room failed: ${e.message}`); return null; });
   if (room) owned.push(room.id);
 
   for (let i = 0; i < seats.length; i++) {
@@ -146,7 +137,8 @@ export async function startMafia(guild: Guild, ev: EventRow): Promise<void> {
           `## ${role.side === 'mafia' ? '🔴' : '🟢'} ${role.fa}`))
         .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
         .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-          `**Side**  ${role.side === 'mafia' ? 'Mafia' : 'Shahr'}`,
+          `**Sanario**  ${sc.fa}`,
+          `**Side**  ${role.side === 'mafia' ? 'Mafia' : role.side === 'solo' ? 'Solo' : 'Shahr'}`,
           `**Sandali**  ${i + 1}`,
           '',
           role.blurb,
@@ -168,8 +160,8 @@ export async function startMafia(guild: Guild, ev: EventRow): Promise<void> {
   }
 
   await patchEvent(ev.id, { ownedChannelIds: owned });
-  await mergeState(ev.id, { phase: 'setup', night: 0, scenario: 'godfather', votes: {} });
-  log.info(`mafia #${ev.id} dealt ${roles.length} roles, ${mafiaIds.length} mafia`);
+  await mergeState(ev.id, { phase: 'setup', night: 0, scenario: sc.key, votes: {} });
+  log.info(`mafia #${ev.id}: ${sc.key}, ${roles.length} roles, ${mafiaIds.length} mafia`);
 }
 
 export async function endMafia(guild: Guild, ev: EventRow): Promise<void> {
