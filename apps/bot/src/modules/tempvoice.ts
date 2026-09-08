@@ -78,7 +78,19 @@ async function createRoom(member: GuildMember, hub: VoiceChannel): Promise<void>
     bitrate: hub.bitrate,
     reason: `temp voice for ${member.user.tag}`,
     permissionOverwrites: [
-      ...hub.permissionOverwrites.cache.map(o => ({ id: o.id, allow: o.allow.toArray(), deny: o.deny.toArray() })),
+      // The hub deliberately denies Speak so nobody lingers in it. Copying that
+      // verbatim would mute every private room, so those denies are dropped and
+      // the member roles are granted participation explicitly.
+      ...hub.permissionOverwrites.cache.map(o => ({
+        id: o.id,
+        allow: o.allow.toArray(),
+        deny: o.deny.toArray().filter(p => !['Speak', 'SendMessages', 'UseVAD', 'Stream'].includes(p)),
+      })),
+      ...memberRoleIds(guild).map(id => ({
+        id,
+        allow: ['ViewChannel' as const, 'Connect' as const, 'Speak' as const,
+                'SendMessages' as const, 'UseVAD' as const, 'Stream' as const],
+      })),
       { id: member.id, allow: ['ViewChannel', 'Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers'] },
       // Staff keep access to every room, so a private channel is never a blind spot.
       ...staffRoleIds(guild).map(id => ({ id, allow: ['ViewChannel' as const, 'Connect' as const] })),
