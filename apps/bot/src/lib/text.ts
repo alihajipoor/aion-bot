@@ -89,21 +89,35 @@ const PERSIAN_WRAP = ['꒰ ', ' ꒱'] as const;
  */
 const NICK_LIMIT = 32;
 
-export function styleNickname(rawName: string, style: NickStyle = 'mono'): string {
+function render(name: string, style: NickStyle): string {
+  if (style === 'plain') return name;
+  if (style === 'smallCaps') return [...name.toLowerCase()].map(c => SMALL_CAPS[c] ?? c).join('');
+  return mapLatin(name, style === 'sansBold' ? SANS_BOLD : MONO);
+}
+
+/**
+ * Styled Latin glyphs are outside the BMP, so each costs 2 of Discord's 32
+ * UTF-16 nickname budget -- a 17-letter name cannot be styled at all. Rather
+ * than dropping such names to plain text and leaving the member list uneven,
+ * fall back to small caps, which are BMP characters costing 1 each and fit the
+ * full 32. Plain is only the last resort.
+ */
+export function styleNickname(rawName: string, style: NickStyle = 'sansBold'): string {
   const name = rawName.replace(/\s+/g, ' ').trim();
   if (!name) return '';
 
   if (hasPersian(name)) {
-    const decorated = `${PERSIAN_WRAP[0]}${normalizePersian(name)}${PERSIAN_WRAP[1]}`;
-    return decorated.length <= NICK_LIMIT ? decorated : normalizePersian(name).slice(0, NICK_LIMIT);
+    const clean = normalizePersian(name);
+    const decorated = `${PERSIAN_WRAP[0]}${clean}${PERSIAN_WRAP[1]}`;
+    return decorated.length <= NICK_LIMIT ? decorated : clean.slice(0, NICK_LIMIT);
   }
 
-  if (style === 'plain') return name.slice(0, NICK_LIMIT);
-  const styled = style === 'smallCaps'
-    ? [...name.toLowerCase()].map(c => SMALL_CAPS[c] ?? c).join('')
-    : mapLatin(name, style === 'sansBold' ? SANS_BOLD : MONO);
-
-  return styled.length <= NICK_LIMIT ? styled : name.slice(0, NICK_LIMIT);
+  const ladder: NickStyle[] = style === 'plain' ? [] : [style, 'smallCaps'];
+  for (const s of ladder) {
+    const out = render(name, s);
+    if (out.length <= NICK_LIMIT) return out;
+  }
+  return name.slice(0, NICK_LIMIT);
 }
 
 /** Human-readable duration in Finglish, e.g. "2 saat va 30 daghighe". */
