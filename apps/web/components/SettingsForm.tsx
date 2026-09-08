@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 import { saveSettings, type SaveResult } from '@/app/dashboard/settings/actions';
 import { Group, Field, Toggle, Num, inputCls } from '@/components/form';
 import type { AionSettings } from '@aion/db';
+import { BannerPreview } from './BannerPreview';
 
 const LOG_EVENTS = [
   'memberJoin', 'memberLeave', 'memberKick', 'memberBan', 'memberUnban', 'memberTimeout',
@@ -100,6 +101,7 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
           </Field>
           <Field label="People shown per board" htmlFor="topCount"><Num name="topCount" defaultValue={s.leaderboard.topCount} min={3} max={25} /></Field>
           <Toggle name="banners" label="Attach rendered banner images" defaultChecked={s.leaderboard.banners} />
+          <BannerPreview />
         </Group>
 
         <Group title="Live counters" hint="The A I O N and M I C channels in SERVER INFO.">

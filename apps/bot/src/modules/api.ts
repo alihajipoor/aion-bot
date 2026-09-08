@@ -10,6 +10,8 @@ import { runBackup, testMail } from './backup.js';
 import { decideVerification } from './verification.js';
 import { liftByTarget, liftSanction, createCase, type PunishAction } from '../lib/cases.js';
 import { resolveSections, type Section } from '../lib/sections.js';
+import { queryActivity, sinceDay, hhmm, staffRows } from '../lib/leaderboard.js';
+import { renderLeaderboardBanner, renderStatsBanner } from '../lib/banner.js';
 import { releaseVoiceMute, syncVoiceMute, ejectFromSection } from '../lib/enforce.js';
 import type { AionSettings } from '@aion/db';
 import type { AionClient } from '../client.js';
@@ -44,6 +46,16 @@ const json = (res: ServerResponse, code: number, body: unknown): void => {
   const payload = JSON.stringify(body);
   res.writeHead(code, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) });
   res.end(payload);
+};
+
+const png = (res: ServerResponse, body: Buffer): void => {
+  res.writeHead(200, {
+    'content-type': 'image/png',
+    'content-length': body.byteLength,
+    // The panel asks for these on every render of the settings page.
+    'cache-control': 'private, max-age=30',
+  });
+  res.end(body);
 };
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -364,6 +376,50 @@ export function startApi(client: AionClient): void {
             .sort((a, b) => b.position - a.position)
             .map(r => ({ id: r.id, name: r.name, color: r.hexColor, members: r.members.size }));
           return json(res, 200, { roles });
+        }
+
+        // Renders exactly what the scheduled job would post, from live data,
+        // so the settings page can show the artwork instead of describing it.
+        if (req.method === 'GET' && url.pathname === '/banner/preview') {
+          const kind = url.searchParams.get('kind') ?? 'voice';
+          const days = kind === 'staff' ? 'week' : 'day';
+          const rows = await queryActivity(guild.id, sinceDay(days));
+          const named = (id: string) => guild.members.cache.get(id)?.displayName ?? id;
+          const subtitle = `${guild.name} · ${new Date().toUTCString().slice(5, 16)}`;
+          const top = (pick: (r: { voice: number; chat: number }) => number) =>
+            [...rows].filter(r => pick(r) > 0).sort((a, b) => pick(b) - pick(a)).slice(0, 8);
+
+          let buf: Buffer | null = null;
+          if (kind === 'staff') {
+            const staff = staffRows(guild, rows);
+            const sum = (pick: (r: typeof staff[number]) => number) => staff.reduce((a, r) => a + pick(r), 0);
+            buf = await renderStatsBanner({
+              title: 'Admin Report — 7 rooz', subtitle: `${guild.name} · hafteye gozashte`,
+              accent: '#ffd76a', kicker: 'WEEKLY · STAFF', footer: 'ADMIN ACTIVITY',
+              tiles: [
+                { label: 'VOICE', value: hhmm(sum(r => r.voice)) },
+                { label: 'MESSAGE', value: `${sum(r => r.chat)}` },
+                { label: 'PUNISH', value: `${sum(r => r.punishments)}` },
+                { label: 'FA\'AL', value: `${staff.filter(r => r.voice + r.chat + r.punishments > 0).length}`,
+                  hint: `az ${staff.length} admin` },
+              ],
+            });
+          } else if (kind === 'chat') {
+            buf = await renderLeaderboardBanner({
+              title: 'Top Chatters — 24 saat', subtitle, accent: '#fee75c',
+              kicker: 'DAILY · CHAT', footer: 'TOP ACTIVE',
+              rows: top(r => r.chat).map(r => ({ name: named(r.userId), value: `${r.chat} pm`, amount: r.chat })),
+            });
+          } else {
+            buf = await renderLeaderboardBanner({
+              title: 'Top Voice — 24 saat', subtitle, accent: '#4aa6ff',
+              kicker: 'DAILY · VOICE', footer: 'TOP ACTIVE',
+              rows: top(r => r.voice).map(r => ({ name: named(r.userId), value: hhmm(r.voice), amount: r.voice })),
+            });
+          }
+
+          if (!buf) return json(res, 503, { error: 'render failed' });
+          return png(res, buf);
         }
 
         if (req.method === 'POST' && url.pathname === '/announce') {

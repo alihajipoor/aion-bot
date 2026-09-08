@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { submitAnnouncement, type SendResult } from '@/app/dashboard/announce/actions';
+import { DiscordPreview } from './DiscordPreview';
 
 interface Props {
   channels: { id: string; name: string; parent: string | null }[];
@@ -11,6 +12,12 @@ interface Props {
 export function AnnounceForm({ channels, roles }: Props) {
   const [state, action, pending] = useActionState<SendResult | null, FormData>(submitAnnouncement, null);
   const [content, setContent] = useState('');
+  const [asCard, setAsCard] = useState(true);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [channelId, setChannelId] = useState('');
+
+  const toggle = (id: string, on: boolean) =>
+    setPicked(p => (on ? [...new Set([...p, id])] : p.filter(x => x !== id)));
 
   const field = 'w-full rounded-xl border border-ink-700 bg-ink-900/80 px-3.5 py-2.5 text-sm ' +
     'text-mist-50 outline-none transition placeholder:text-mist-400/70 ' +
@@ -23,7 +30,8 @@ export function AnnounceForm({ channels, roles }: Props) {
           <label htmlFor="channelId" className="mb-1.5 block text-xs font-medium uppercase tracking-[0.12em] text-mist-400">
             Channel
           </label>
-          <select id="channelId" name="channelId" required className={field} defaultValue="">
+          <select id="channelId" name="channelId" required className={field}
+            value={channelId} onChange={e => setChannelId(e.target.value)}>
             <option value="" disabled>Select a channel…</option>
             {channels.map(c => (
               <option key={c.id} value={c.id}>
@@ -51,7 +59,8 @@ export function AnnounceForm({ channels, roles }: Props) {
         </div>
 
         <label className="flex items-center gap-2.5 text-sm text-mist-200">
-          <input type="checkbox" name="asCard" defaultChecked
+          <input type="checkbox" name="asCard" checked={asCard}
+            onChange={e => setAsCard(e.target.checked)}
             className="h-4 w-4 rounded border-ink-600 bg-ink-900 accent-brand-500" />
           Send as a styled card
         </label>
@@ -76,6 +85,8 @@ export function AnnounceForm({ channels, roles }: Props) {
           <label className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm
                             transition hover:bg-ink-800">
             <input type="checkbox" name="mentions" value="everyone"
+              checked={picked.includes('everyone')}
+              onChange={e => toggle('everyone', e.target.checked)}
               className="h-4 w-4 rounded border-ink-600 bg-ink-900 accent-bad" />
             <span className="font-medium text-bad">@everyone</span>
           </label>
@@ -83,6 +94,8 @@ export function AnnounceForm({ channels, roles }: Props) {
             <label key={r.id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm
                                          transition hover:bg-ink-800">
               <input type="checkbox" name="mentions" value={r.id}
+                checked={picked.includes(r.id)}
+                onChange={e => toggle(r.id, e.target.checked)}
                 className="h-4 w-4 rounded border-ink-600 bg-ink-900 accent-brand-500" />
               <span className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{ background: r.color === '#000000' ? '#4f5666' : r.color }} />
@@ -91,9 +104,15 @@ export function AnnounceForm({ channels, roles }: Props) {
             </label>
           ))}
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-mist-400">
-          Only the roles you tick are allowed to ping. Everything else in the message is inert.
-        </p>
+        <div className="mt-5">
+          <DiscordPreview
+            content={content}
+            mentions={picked}
+            roles={roles}
+            asCard={asCard}
+            channel={channels.find(c => c.id === channelId)?.name}
+          />
+        </div>
       </div>
     </form>
   );

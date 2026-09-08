@@ -21,6 +21,20 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
   }
 }
 
+/** Binary sibling of call(), for the rendered banners. */
+export async function callBinary(path: string): Promise<ArrayBuffer | null> {
+  try {
+    const res = await fetch(`${env.botApi()}${path}`, {
+      headers: { Authorization: `Bearer ${env.botApiSecret()}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return await res.arrayBuffer();
+  } catch {
+    return null;
+  }
+}
+
 export interface Health {
   ok: boolean; uptimeMs: number; ping: number; rssMb: number;
   guild: {
