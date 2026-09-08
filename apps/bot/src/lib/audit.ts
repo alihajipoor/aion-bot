@@ -5,6 +5,8 @@ export interface AuditRecord {
   action: number;
   executorId: string | null;
   targetId: string | null;
+  /** MEMBER_MOVE records the destination channel here and no target at all. */
+  channelId: string | null;
   reason: string | null;
   at: number;
 }
@@ -48,6 +50,7 @@ export function recordAudit(entry: GuildAuditLogsEntry): AuditRecord {
     // undefined, so never read entry.executor.tag here.
     executorId: entry.executorId ?? null,
     targetId: (entry.targetId as string | null) ?? null,
+    channelId: (entry.extra as { channel?: { id: string } } | undefined)?.channel?.id ?? null,
     reason: entry.reason ?? null,
     at: Date.now(),
   };
@@ -75,4 +78,17 @@ export async function waitForAudit(
     await new Promise(r => setTimeout(r, gapMs));
   }
   return null;
+}
+
+/**
+ * Attribute a voice move or disconnect. Discord does not name the moved member
+ * on these entries -- only the executor, destination channel and a count -- so
+ * the match is by destination and recency, and the caller supplies the member
+ * from the voice state event.
+ */
+export function findVoiceAction(action: number, channelId: string | null, windowMs = 5_000): AuditRecord | null {
+  const cutoff = Date.now() - windowMs;
+  return recent.find(r =>
+    r.action === action && r.at >= cutoff &&
+    (channelId === null || r.channelId === null || r.channelId === channelId)) ?? null;
 }

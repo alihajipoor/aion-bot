@@ -4,7 +4,7 @@ import {
   type Message, type PartialMessage, type Role, type VoiceState, type User, type PartialUser,
 } from 'discord.js';
 import { emitLog, isIgnored } from '../../lib/logbus.js';
-import { recordAudit, waitForAudit, findAudit, countDelta, COUNTED_ACTIONS } from '../../lib/audit.js';
+import { recordAudit, waitForAudit, findAudit, findVoiceAction } from '../../lib/audit.js';
 import { now, u, byWhom, ch, chName, snippet, diffLines, av, quote, title } from './format.js';
 import { isolate } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
@@ -68,18 +68,9 @@ export function installLogging(client: AionClient): void {
       return;
     }
 
-    // Repeated moves/disconnects reuse one entry, so emit the delta.
-    if (COUNTED_ACTIONS.has(action)) {
-      const extra = entry.extra as { count?: number | string } | undefined;
-      const raw = extra?.count;
-      const current = raw === undefined ? undefined : Number(raw);
-      const delta = countDelta(rec.id, current);
-      if (delta > 0 && (action === AuditLogEvent.MemberMove || action === AuditLogEvent.MemberDisconnect)) {
-        const verb = action === AuditLogEvent.MemberMove ? 'moved' : 'disconnected';
-        emitLog(guild, 'voiceState',
-          `${now()} 🎚 **${delta}** member(s) ${verb} by <@${rec.executorId}>`);
-      }
-    }
+    // Moves and disconnects are attributed onto the voice log lines below
+    // instead of being announced separately -- the audit entry alone cannot
+    // name who was moved, so on its own it says nothing useful.
   });
 
   /* ── membership ────────────────────────────────────────────────── */
@@ -245,12 +236,26 @@ export function installLogging(client: AionClient): void {
     const user = after.member?.user ?? before.member?.user;
     if (!user || user.bot) return;
 
-    if (!before.channelId && after.channelId)
-      emitLog(guild, 'voiceJoin', [title('🔼','Joined voice'), `${u(user)} → ${ch(after.channel)}`, `-# ${now()}`].join('\n'), av(user));
-    else if (before.channelId && !after.channelId)
-      emitLog(guild, 'voiceLeave', [title('🔽','Left voice'), `${u(user)} ← ${ch(before.channel)}`, `-# ${now()}`].join('\n'), av(user));
-    else if (before.channelId !== after.channelId)
-      emitLog(guild, 'voiceSwitch', [title('🔂','Switched voice'), u(user), `${ch(before.channel)} → ${ch(after.channel)}`, `-# ${now()}`].join('\n'), av(user));
+    if (!before.channelId && after.channelId) {
+      emitLog(guild, 'voiceJoin', [title('🔼', 'Joined voice'), `${u(user)} → ${ch(after.channel)}`, `-# ${now()}`].join('\n'), av(user));
+    } else if (before.channelId && !after.channelId) {
+      const kicked = findVoiceAction(AuditLogEvent.MemberDisconnect, before.channelId);
+      emitLog(guild, 'voiceLeave', [
+        title('🔽', kicked ? 'Disconnected from voice' : 'Left voice'),
+        `${u(user)} ← ${ch(before.channel)}`,
+        ...(kicked?.executorId ? [`Disconnected by <@${kicked.executorId}>`] : []),
+        `-# ${now()}`,
+      ].join('\n'), av(user));
+    } else if (before.channelId !== after.channelId) {
+      const moved = findVoiceAction(AuditLogEvent.MemberMove, after.channelId);
+      emitLog(guild, 'voiceSwitch', [
+        title('🔂', moved ? 'Moved by a moderator' : 'Switched voice'),
+        u(user),
+        `${ch(before.channel)} → ${ch(after.channel)}`,
+        ...(moved?.executorId ? [`Moved by <@${moved.executorId}>`] : []),
+        `-# ${now()}`,
+      ].join('\n'), av(user));
+    }
 
     const flags: string[] = [];
     if (before.serverMute !== after.serverMute) flags.push(after.serverMute ? 'server-muted' : 'server-unmuted');
