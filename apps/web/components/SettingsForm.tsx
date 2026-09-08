@@ -218,7 +218,7 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
                      hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50">
           {pending ? 'Saving…' : 'Save settings'}
         </button>
-        {state ? <span className={`text-sm ${state.ok ? 'text-good' : 'text-bad'}`}>{state.message}</span> : null}
+        {state ? <span role="status" aria-live="polite" className={`text-sm ${state.ok ? 'text-good' : 'text-bad'}`}>{state.message}</span> : null}
       </div>
     </form>
   );

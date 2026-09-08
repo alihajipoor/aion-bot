@@ -63,7 +63,7 @@ export function AnnounceForm({ channels, roles }: Props) {
             {pending ? 'Sending…' : 'Send announcement'}
           </button>
           {state ? (
-            <span className={`text-sm ${state.ok ? 'text-good' : 'text-bad'}`}>{state.message}</span>
+            <span role="status" aria-live="polite" className={`text-sm ${state.ok ? 'text-good' : 'text-bad'}`}>{state.message}</span>
           ) : null}
         </div>
       </div>

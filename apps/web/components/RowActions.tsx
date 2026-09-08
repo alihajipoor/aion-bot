@@ -39,7 +39,7 @@ export function VerifyActions({ id }: { id: number }) {
             className={`${btn} bg-bad/10 text-bad hover:bg-bad/20`}>Decline</button>
         </div>
       )}
-      {state && !state.ok ? <span className="text-[11px] text-bad">{state.message}</span> : null}
+      {state && !state.ok ? <span role="status" aria-live="polite" className="text-[11px] text-bad">{state.message}</span> : null}
     </div>
   );
 }
@@ -56,7 +56,7 @@ export function LiftAction({ userId, section, type }: { userId: string; section:
         className={`${btn} bg-brand-500/15 text-brand-400 hover:bg-brand-500/25`}>
         {pending ? '…' : `Lift ${type}`}
       </button>
-      {state && !state.ok ? <span className="text-[11px] text-bad">{state.message}</span> : null}
+      {state && !state.ok ? <span role="status" aria-live="polite" className="text-[11px] text-bad">{state.message}</span> : null}
     </form>
   );
 }

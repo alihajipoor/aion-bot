@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { and, desc, eq, gte, ilike, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, lt, sql } from 'drizzle-orm';
 import { getDb, logEvents } from '@aion/db';
 import { env } from '@/lib/env';
 import { Card, EmptyState, Pill } from '@/components/ui';
@@ -35,15 +35,18 @@ function plain(body: string): string {
 }
 
 export default async function LogsPage({ searchParams }: {
-  searchParams: Promise<{ q?: string; type?: string; user?: string; days?: string }>;
+  searchParams: Promise<{ q?: string; type?: string; user?: string; days?: string; before?: string }>;
 }) {
   const sp = await searchParams;
   const q = sp.q ?? '';
   const type = sp.type ?? '';
   const user = sp.user ?? '';
   const days = Number(sp.days ?? 7);
+  const before = Number(sp.before ?? 0);
 
+  const PAGE = 100;
   let rows: { id: number; type: string; body: string; createdAt: Date; avatar: string | null }[] = [];
+  let total = 0;
   let failed = false;
   try {
     const since = new Date(Date.now() - Math.min(90, Math.max(1, days)) * 86_400_000);
@@ -55,8 +58,29 @@ export default async function LogsPage({ searchParams }: {
     rows = await getDb().select({
       id: logEvents.id, type: logEvents.type, body: logEvents.body,
       createdAt: logEvents.createdAt, avatar: logEvents.avatar,
-    }).from(logEvents).where(and(...filters)).orderBy(desc(logEvents.id)).limit(150);
+    }).from(logEvents)
+      // Keyset paging on the primary key: stable while new events keep landing,
+      // which OFFSET is not.
+      .where(and(...filters, ...(before > 0 ? [lt(logEvents.id, before)] : [])))
+      .orderBy(desc(logEvents.id)).limit(PAGE + 1);
+
+    const [count] = await getDb()
+      .select({ n: sql<number>`count(*)::int` }).from(logEvents).where(and(...filters));
+    total = count?.n ?? 0;
   } catch { failed = true; }
+
+  // The extra row only tells us another page exists; it is never rendered.
+  const more = rows.length > PAGE;
+  if (more) rows = rows.slice(0, PAGE);
+  const olderHref = (id: number) => {
+    const qs = new URLSearchParams();
+    if (q) qs.set('q', q);
+    if (type) qs.set('type', type);
+    if (user) qs.set('user', user);
+    qs.set('days', String(days));
+    qs.set('before', String(id));
+    return `/dashboard/logs?${qs}`;
+  };
 
   const field = 'rounded-xl border border-ink-700 bg-ink-900/80 px-3 py-2 text-sm text-mist-50 ' +
     'outline-none transition placeholder:text-mist-400/60 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25';
@@ -68,6 +92,12 @@ export default async function LogsPage({ searchParams }: {
         <p className="mt-1 text-sm text-mist-400">
           Every event, searchable across types — something Discord channels cannot do. Kept for 30 days.
         </p>
+        {total > 0 ? (
+          <p className="mt-1 text-xs text-mist-400">
+            {total.toLocaleString()} event{total === 1 ? '' : 's'} match
+            {before > 0 ? ' · showing older results' : rows.length < total ? ` · showing the newest ${rows.length}` : ''}
+          </p>
+        ) : null}
       </header>
 
       <form className="mb-5 flex flex-wrap gap-2">
@@ -116,6 +146,23 @@ export default async function LogsPage({ searchParams }: {
             ? 'Logs cannot be read right now.'
             : 'No events for these filters. Logging began when this feature shipped, so older activity is not stored.'} />
       )}
+
+      {(more || before > 0) ? (
+        <div className="mt-4 flex items-center justify-between">
+          {before > 0 ? (
+            <Link href={olderHref(0).replace(/&?before=\d+/, '')}
+              className="rounded-xl bg-ink-800 px-4 py-2 text-sm text-mist-300 transition hover:bg-ink-700">
+              ← Newest
+            </Link>
+          ) : <span />}
+          {more ? (
+            <Link href={olderHref(rows[rows.length - 1]!.id)}
+              className="rounded-xl bg-ink-800 px-4 py-2 text-sm text-mist-300 transition hover:bg-ink-700">
+              Older →
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 }

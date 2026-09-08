@@ -42,7 +42,7 @@ export function VoiceActions({ userId, muted, channels, roles, sections }: Props
       </div>
 
       {state ? (
-        <span className={`text-[11px] ${state.ok ? 'text-good' : 'text-bad'}`}>{state.message}</span>
+        <span role="status" aria-live="polite" className={`text-[11px] ${state.ok ? 'text-good' : 'text-bad'}`}>{state.message}</span>
       ) : null}
 
       {open ? (

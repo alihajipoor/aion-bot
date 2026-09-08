@@ -13,7 +13,7 @@ export function RunBackup() {
         {pending ? 'Running…' : 'Run backup now'}
       </button>
       {pending ? <span className="text-sm text-mist-400">Dumping the database — this can take a moment.</span> : null}
-      {state ? <span className={`text-sm ${state.ok ? 'text-good' : 'text-bad'}`}>{state.message}</span> : null}
+      {state ? <span role="status" aria-live="polite" className={`text-sm ${state.ok ? 'text-good' : 'text-bad'}`}>{state.message}</span> : null}
     </form>
   );
 }

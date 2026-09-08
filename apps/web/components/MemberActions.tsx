@@ -35,7 +35,7 @@ export function MemberActions({ userId, inVoice, roles, voiceChannels, sections 
   return (
     <div className="space-y-3">
       {state ? (
-        <div className={`rounded-lg px-3 py-2 text-xs ${state.ok
+        <div role="status" aria-live="polite" className={`rounded-lg px-3 py-2 text-xs ${state.ok
           ? 'bg-good/10 text-good' : 'bg-bad/10 text-bad'}`}>{state.message}</div>
       ) : null}
 

@@ -1,6 +1,7 @@
 import { getVoice, getRoles, getCategories } from '@/lib/bot';
 import { Card, EmptyState, Pill } from '@/components/ui';
 import { VoiceActions } from '@/components/VoiceActions';
+import { AutoRefresh } from '@/components/AutoRefresh';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -30,7 +31,10 @@ export default async function VoicePage() {
             {' · '}move, mute, punish or assign roles without leaving the panel
           </p>
         </div>
-        <Pill tone={data ? 'good' : 'bad'}>{data ? 'live' : 'bot offline'}</Pill>
+        <div className="flex items-center gap-3">
+          <AutoRefresh seconds={5} />
+          <Pill tone={data ? 'good' : 'bad'}>{data ? 'live' : 'bot offline'}</Pill>
+        </div>
       </header>
 
       {rooms.length ? (
