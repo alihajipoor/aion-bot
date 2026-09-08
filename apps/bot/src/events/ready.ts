@@ -5,7 +5,7 @@ import { syncVoiceMute } from '../lib/enforce.js';
 import { installLogging, primeInviteCache } from '../modules/logging/index.js';
 import { startActivityTracking } from '../modules/activity.js';
 import { startCounters } from '../modules/counters.js';
-import { installTempVoice, sweepTempChannels } from '../modules/tempvoice.js';
+import { installTempVoice, sweepTempChannels, ensureInterfacePanel } from '../modules/tempvoice.js';
 import { startLeaderboardPoster } from '../modules/leaderboardPoster.js';
 import { startApi } from '../modules/api.js';
 import { startVoicePresence } from '../modules/voicepresence.js';
@@ -64,7 +64,7 @@ const handler: EventHandler = {
       startExpiryWorker(client);
       startActivityTracking(client);
       startLeaderboardPoster(client);
-      if (g) await sweepTempChannels(g);
+      if (g) { await sweepTempChannels(g); await ensureInterfacePanel(g); }
     }
 
     client.user?.setPresence({

@@ -18,6 +18,7 @@ const enc = (...p: string[]) => [TV, ...p].join('|');
 const dec = (s: string) => s.split('|').slice(1);
 
 const HUB = /𝙿𝚁𝙸𝚅𝙴𝚃 𝙳𝚁𝙸𝚅𝙴|privet drive/i;
+const INTERFACE = /𝙸𝙽𝚃𝙴𝚁𝙵𝙰𝙲𝙴|interface/i;
 const MEMBER_ROLES = ['ʙᴏʏ│𝙼𝙴𝙼𝙱𝙴𝚁│•', 'ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•'];
 const STAFF_ROLES = ['Consultant', 'PowerAdmin', 'Dev'];
 
@@ -28,8 +29,25 @@ const memberRoleIds = (g: Guild) =>
 const staffRoleIds = (g: Guild) =>
   STAFF_ROLES.map(n => g.roles.cache.find(r => r.name === n)?.id).filter((x): x is string => !!x);
 
-const isOwner = (i: { channelId: string | null; user: { id: string } }) =>
-  !!i.channelId && owners.get(i.channelId) === i.user.id;
+/**
+ * Which room does this click apply to? Buttons live both inside each room and
+ * in the shared interface channel, so the target is resolved rather than
+ * assumed from where the message sits.
+ */
+function resolveRoom(guild: Guild, userId: string, channelId: string | null): VoiceChannel | null {
+  if (channelId && owners.has(channelId)) return guild.channels.cache.get(channelId) as VoiceChannel;
+
+  // Sitting in a temp room (needed for Claim, where they are not yet the owner).
+  const member = guild.members.cache.get(userId);
+  const here = member?.voice.channelId;
+  if (here && owners.has(here)) return guild.channels.cache.get(here) as VoiceChannel;
+
+  // Otherwise the room they own, wherever it is.
+  for (const [cid, owner] of owners) {
+    if (owner === userId) return guild.channels.cache.get(cid) as VoiceChannel;
+  }
+  return null;
+}
 
 const isStaff = (m: GuildMember) =>
   m.permissions.has(PermissionFlagsBits.Administrator) ||
@@ -60,6 +78,55 @@ function panel(ownerId: string, name: string): MessageCreateOptions {
     ],
     flags: MessageFlags.IsComponentsV2,
   };
+}
+
+/** Shared panel for the interface channel; acts on whichever room you own. */
+export function interfacePanel(): MessageCreateOptions {
+  const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(enc('name')).setLabel('Esm').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(enc('limit')).setLabel('Zarfiat').setEmoji('👥').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(enc('lock')).setLabel('Ghofl').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(enc('hide')).setLabel('Makhfi').setEmoji('👻').setStyle(ButtonStyle.Secondary),
+  );
+  const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(enc('kick')).setLabel('Kick').setEmoji('🚪').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(enc('claim')).setLabel('Claim').setEmoji('👑').setStyle(ButtonStyle.Primary),
+  );
+  return {
+    components: [
+      new ContainerBuilder().setAccentColor(0x9b59b6)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 🎧 Room e khodet'))
+        .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+          'Bia too **🅟 ─ PRIVET DRIVE** ta yek room baraye khodet sakhte beshe.',
+          'Bad ba in dokme-ha az hamin ja control esh kon:',
+          '',
+          '**Esm** esme room  ·  **Zarfiat** chand nafar',
+          '**Ghofl** kesi natoone bia tu  ·  **Makhfi** kesi nabinesh',
+          '**Kick** birone kardan  ·  **Claim** vaghti saheb rafte',
+          '',
+          '-# Tanzimatet zakhire mishe va dafeye bad khodkar emal mishe.',
+        ].join('\n')))
+        .addActionRowComponents(row1)
+        .addActionRowComponents(row2),
+    ],
+    flags: MessageFlags.IsComponentsV2,
+  };
+}
+
+/** Post the panel once, and keep it as the only bot message in that channel. */
+export async function ensureInterfacePanel(guild: Guild): Promise<void> {
+  const ch = [...guild.channels.cache.values()]
+    .find(c => c.type === ChannelType.GuildText && INTERFACE.test(c.name)) as import('discord.js').TextChannel | undefined;
+  if (!ch) return;
+  try {
+    const recent = await ch.messages.fetch({ limit: 20 });
+    const mine = recent.filter(m => m.author.id === guild.client.user?.id);
+    if (mine.size === 1) return;                       // already correct
+    for (const m of mine.values()) await m.delete().catch(() => {});
+    await ch.send(interfacePanel());
+    log.info('temp voice interface panel posted');
+  } catch (e) { log.warn('could not post interface panel', (e as Error).message); }
 }
 
 /* ── lifecycle ─────────────────────────────────────────────────── */
@@ -140,10 +207,13 @@ async function savePref(guildId: string, userId: string, patch: Record<string, u
 
 export async function handleButton(i: ButtonInteraction): Promise<void> {
   const [action] = dec(i.customId);
-  const channel = i.channel as VoiceChannel | null;
   const member = i.member as GuildMember;
-  if (!channel || !isTemp(channel.id)) {
-    await i.reply({ content: 'In room dige vojood nadare.', flags: MessageFlags.Ephemeral });
+  const channel = resolveRoom(i.guild!, member.id, i.channelId);
+  if (!channel) {
+    await i.reply({
+      content: 'Hich room i nadari. Aval bia too **🅟 ─ PRIVET DRIVE** ta baraye khodet sakhte beshe.',
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
 
@@ -160,7 +230,7 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
     return;
   }
 
-  if (!isOwner(i) && !isStaff(member)) {
+  if (owners.get(channel.id) !== member.id && !isStaff(member)) {
     await i.reply({ content: 'Faghat sahebe room mitoone in ro avaz kone.', flags: MessageFlags.Ephemeral });
     return;
   }
@@ -208,8 +278,11 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
 
 export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
   const [action] = dec(i.customId);
-  const channel = i.channel as VoiceChannel | null;
-  if (!channel || !isTemp(channel.id)) return;
+  const channel = resolveRoom(i.guild!, i.user.id, i.channelId);
+  if (!channel) {
+    await i.reply({ content: 'Room et peyda nashod.', flags: MessageFlags.Ephemeral });
+    return;
+  }
   const value = i.fields.getTextInputValue('v').trim();
 
   if (action === 'namedo') {
@@ -239,8 +312,8 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
 export async function handleUserSelect(i: UserSelectMenuInteraction): Promise<void> {
   const [action] = dec(i.customId);
   if (action !== 'kickdo') return;
-  const channel = i.channel as VoiceChannel | null;
-  if (!channel || !isTemp(channel.id)) return;
+  const channel = resolveRoom(i.guild!, i.user.id, i.channelId);
+  if (!channel) return;
 
   const targetId = i.values[0]!;
   if (targetId === owners.get(channel.id)) {
