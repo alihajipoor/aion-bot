@@ -25,8 +25,19 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Typecheck & build
+      - name: Typecheck & build bot
         run: npm run typecheck
+
+      - name: Build web panel
+        run: npm -w @aion/web run build
+
+      - name: Assemble standalone web bundle
+        run: |
+          rm -rf webdist && cp -r apps/web/.next/standalone webdist
+          mkdir -p webdist/apps/web/.next
+          cp -r apps/web/.next/static webdist/apps/web/.next/static
+          [ -d apps/web/public ] && cp -r apps/web/public webdist/apps/web/public || true
+          du -sh webdist
 
       # Reinstall without dev dependencies so the shipped bundle stays small.
       # The VPS never runs npm: it has 1.9 GB shared with another bot.
@@ -40,7 +51,8 @@ jobs:
             package.json package-lock.json \
             apps/bot/dist apps/bot/package.json apps/bot/assets \
             packages/db/dist packages/db/package.json packages/db/migrations \
-            deploy
+            deploy \
+            webdist
           ls -lh aion.tar.gz
 
       - name: Upload artifact

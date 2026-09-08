@@ -1,0 +1,17 @@
+# Caddy terminates TLS and proxies to the Next.js standalone server, which
+# binds to loopback only. Certificates are issued and renewed automatically.
+aion.neoxify.com {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy 127.0.0.1:3100 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

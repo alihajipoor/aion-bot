@@ -1,0 +1,42 @@
+[Unit]
+Description=AION web panel
+After=network-online.target postgresql.service aion-bot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aionbot
+Group=aionbot
+WorkingDirectory=/opt/aion/web/apps/web
+EnvironmentFile=/opt/aion/.env
+Environment=NODE_ENV=production
+Environment=PORT=3100
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/node server.js
+
+Restart=always
+RestartSec=10s
+StartLimitBurst=5
+
+# Next.js is the heaviest process on the box; cap it so a leak here cannot
+# take down the two bots.
+MemoryHigh=280M
+MemoryMax=360M
+CPUQuota=60%
+TasksMax=128
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/aion
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aion-web
+
+[Install]
+WantedBy=multi-user.target

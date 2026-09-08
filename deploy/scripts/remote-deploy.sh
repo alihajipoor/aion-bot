@@ -22,6 +22,15 @@ tar xzf "$BUNDLE" -C "$APP"
 rm -f "$BUNDLE"
 
 install -m 644 "$APP/deploy/systemd/aion-bot.service" /etc/systemd/system/
+[ -f "$APP/deploy/systemd/aion-web.service" ] && install -m 644 "$APP/deploy/systemd/aion-web.service" /etc/systemd/system/
+
+# The web bundle ships as webdist/ and is swapped in atomically.
+if [ -d "$APP/webdist" ]; then
+  rm -rf "$APP/web.old"
+  [ -d "$APP/web" ] && mv "$APP/web" "$APP/web.old"
+  mv "$APP/webdist" "$APP/web"
+  rm -rf "$APP/web.old"
+fi
 chown -R aionbot:aionbot "$APP"
 [ -f "$APP/.env" ] && chmod 600 "$APP/.env" && chown aionbot:aionbot "$APP/.env"
 
@@ -36,12 +45,17 @@ fi
 systemctl daemon-reload
 systemctl enable aion-bot >/dev/null 2>&1 || true
 systemctl restart aion-bot
-sleep 4
+if [ -d "$APP/web" ]; then
+  systemctl enable aion-web >/dev/null 2>&1 || true
+  systemctl restart aion-web
+fi
+sleep 5
 
 if systemctl is-active --quiet aion-bot; then
   echo "-- aion-bot is active"
 else
   echo "!! aion-bot failed to start"
 fi
-journalctl -u aion-bot -n 20 --no-pager
+journalctl -u aion-bot -n 15 --no-pager
+[ -d "$APP/web" ] && { echo '-- web --'; systemctl is-active aion-web || journalctl -u aion-web -n 15 --no-pager; }
 systemctl is-active --quiet aion-bot

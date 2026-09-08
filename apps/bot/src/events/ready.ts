@@ -7,6 +7,7 @@ import { startActivityTracking } from '../modules/activity.js';
 import { startCounters } from '../modules/counters.js';
 import { installTempVoice, sweepTempChannels } from '../modules/tempvoice.js';
 import { startLeaderboardPoster } from '../modules/leaderboardPoster.js';
+import { startApi } from '../modules/api.js';
 import { resolveSections } from '../lib/sections.js';
 import { config } from '../config.js';
 import type { AionClient } from '../client.js';
@@ -52,6 +53,7 @@ const handler: EventHandler = {
     if (g) await primeInviteCache(g);   // baseline for working out which invite a joiner used
 
     installTempVoice(client);
+    startApi(client);
     startCounters(client);
     if (config.databaseUrl) {
       startExpiryWorker(client);

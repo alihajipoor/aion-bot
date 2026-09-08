@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink-950: #07080f;
+  --color-ink-900: #0b0d17;
+  --color-ink-850: #10131f;
+  --color-ink-800: #161a28;
+  --color-ink-700: #222739;
+  --color-ink-600: #333a52;
+  --color-mist-400: #8b93a7;
+  --color-mist-200: #c8cede;
+  --color-mist-50:  #e8ecf5;
+  --color-brand-500: #5865f2;
+  --color-brand-400: #7b86ff;
+  --color-sky-glow: #4aa8ff;
+  --color-good: #57f287;
+  --color-warn: #fee75c;
+  --color-bad: #ed4245;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html, body { background: var(--color-ink-950); color: var(--color-mist-50); }
+
+/* A single soft light source keeps the dark surface from reading as flat black. */
+body::before {
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(60rem 40rem at 15% -10%, rgba(88,101,242,0.16), transparent 60%),
+    radial-gradient(50rem 35rem at 90% 0%, rgba(74,168,255,0.10), transparent 55%);
+}
+
+::selection { background: rgba(88,101,242,0.35); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-ink-700); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-ink-600); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .rise { animation: rise .5s cubic-bezier(.2,.7,.3,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+}
