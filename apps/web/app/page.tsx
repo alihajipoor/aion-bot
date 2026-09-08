@@ -47,7 +47,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         </Link>
 
         <p className="mt-5 text-center text-xs leading-relaxed text-mist-400">
-          Access requires the <span className="text-mist-200">Consultant</span> role or above.
+          Access requires the <span className="text-mist-200">Consultant</span> or{' '}
+          <span className="text-mist-200">A I O N</span> role.
           Roles are checked against Discord on every request, so removing a role revokes access immediately.
         </p>
       </div>
