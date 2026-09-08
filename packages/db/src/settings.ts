@@ -52,6 +52,8 @@ export interface AionSettings {
     recipients: string[];
     keepLocal: number;
     includeMessages: boolean;
+    /** Encrypt the archive before it leaves the server. */
+    encrypt: boolean;
   };
 }
 
@@ -99,6 +101,7 @@ export const DEFAULT_SETTINGS: AionSettings = {
     keepLocal: 7,
     // Message bodies are the bulk of the dump and expire in 24h anyway.
     includeMessages: false,
+    encrypt: false,
   },
 };
 

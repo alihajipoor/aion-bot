@@ -127,6 +127,9 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
           <Toggle name="includeMessages" label="Include cached message bodies"
             hint="They dominate the archive size and expire within 24 hours anyway."
             defaultChecked={s.backup.includeMessages} />
+          <Toggle name="encrypt" label="Encrypt the archive"
+            hint="Archives are emailed, and the dump contains member names, ages and cities. With this off they arrive as a plain tar.gz anyone holding the mail can open."
+            defaultChecked={s.backup.encrypt} />
         </Group>
       </div>
 

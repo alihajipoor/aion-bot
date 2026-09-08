@@ -69,6 +69,7 @@ export async function saveSettings(_prev: SaveResult | null, form: FormData): Pr
       recipients: list(form, 'recipients'),
       keepLocal: num(form, 'keepLocal', d.backup.keepLocal),
       includeMessages: bool(form, 'includeMessages'),
+      encrypt: bool(form, 'encrypt'),
     },
   };
 

@@ -37,8 +37,9 @@ export default async function BackupsPage() {
         <Stat label="Last backup" value={last ? when(last.createdAt).split(',')[0] ?? '—' : 'never'}
           hint={last ? mb(last.sizeBytes) : undefined} accent={last?.ok ? 'good' : 'warn'} />
         <Stat label="Successful" value={`${ok}/${rows.length}`} accent={ok === rows.length ? 'good' : 'warn'} />
-        <Stat label="Encryption" value={status?.encrypted ? 'on' : 'off'}
-          accent={status?.encrypted ? 'good' : 'bad'} hint="AES-256-GCM" />
+        <Stat label="Encryption" value={cfg?.encrypt ? 'on' : 'off'}
+          accent={cfg?.encrypt ? 'good' : 'warn'}
+          hint={cfg?.encrypt ? 'AES-256-GCM' : 'archives are plain tar.gz'} />
         <Stat label="Email delivery" value={status?.smtpConfigured ? 'ready' : 'not set up'}
           accent={status?.smtpConfigured ? 'good' : 'warn'}
           hint={cfg?.recipients.length ? `${cfg.recipients.length} recipient(s)` : 'no recipients'} />

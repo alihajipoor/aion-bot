@@ -10,12 +10,18 @@ archive. Everything else — server, database, TLS — is reproducible.
 | `*.sql.gz` | Full `pg_dump`: cases, sanctions, verifications, activity, logs, settings |
 | `*.structure.json` | Every role, channel and permission overwrite in the Discord server |
 
-Archives are **AES-256-GCM encrypted** with a scrypt-derived key from
-`BACKUP_PASSPHRASE`. That passphrase lives only in `/opt/aion/.env` — an archive
-sitting in an inbox is useless without it.
+Archives are an ordinary `tar.gz` containing both files, so they open with any
+standard tool.
 
-**Store the passphrase somewhere other than the server.** Losing it makes every
-backup unrecoverable.
+Encryption is **off by default** and can be turned on in the panel under
+Bot settings → Backups. With it on, the archive is AES-256-GCM encrypted under a
+scrypt-derived key from `BACKUP_PASSPHRASE`, which lives only in
+`/opt/aion/.env` — store a copy elsewhere, because losing it makes every
+encrypted archive unrecoverable.
+
+> Archives are delivered by email and the dump includes the `verifications`
+> table — members' names, ages and cities. Unencrypted, that data is readable by
+> anyone who can reach the mailbox.
 
 ## Restoring
 
@@ -24,12 +30,13 @@ git clone git@github.com:alihajipoor/aion-bot.git /opt/aion
 cd /opt/aion && bash deploy/scripts/install.sh     # swap, Postgres, systemd units
 # put the secrets back into /opt/aion/.env (see .env.example)
 DATABASE_URL=postgres://aion:PASSWORD@127.0.0.1:5432/aion \
-  bash deploy/scripts/restore.sh aion-2026-09-08.tar.gz.enc
+  bash deploy/scripts/restore.sh aion-2026-09-08.tar.gz
 systemctl restart aion-bot aion-web
 ```
 
-`restore.sh` asks for the passphrase, refuses to run without a typed
-confirmation, and stops on the first SQL error rather than half-applying.
+`restore.sh` handles both plain and encrypted archives (asking for the
+passphrase only when needed), refuses to run without a typed confirmation, and
+stops on the first SQL error rather than half-applying.
 
 ## Rebuilding the Discord server itself
 

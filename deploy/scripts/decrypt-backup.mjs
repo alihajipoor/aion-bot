@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // Decrypt an AION backup archive. Layout written by modules/backup.ts:
 //   salt(16) | iv(12) | tag(16) | ciphertext
-// and inside, a JSON header line followed by the gzipped dump and the
-// structure JSON, concatenated in that order.
+// The plaintext is an ordinary tar.gz.
 import { createDecipheriv, scryptSync } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
@@ -30,16 +29,6 @@ try {
   process.exit(1);
 }
 
-const nl = plain.indexOf(0x0a);
-const header = JSON.parse(plain.subarray(0, nl).toString('utf8'));
-let offset = nl + 1;
-
-const stem = basename(file).replace(/\.tar\.gz\.enc$/, '');
-writeFileSync(`${stem}.sql.gz`, plain.subarray(offset, offset + header.sql));
-offset += header.sql;
-console.log(`wrote ${stem}.sql.gz`);
-
-if (header.structure > 0) {
-  writeFileSync(`${stem}.structure.json`, plain.subarray(offset, offset + header.structure));
-  console.log(`wrote ${stem}.structure.json`);
-}
+const out = basename(file).replace(/\.enc$/, '');
+writeFileSync(out, plain);
+console.log(`wrote ${out}`);

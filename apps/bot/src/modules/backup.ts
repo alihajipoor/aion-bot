@@ -92,31 +92,34 @@ export async function runBackup(client: AionClient): Promise<BackupResult> {
   const base = `aion-${stamp}`;
   await mkdir(DIR, { recursive: true });
 
-  const sqlPath = join(DIR, `${base}.sql.gz`);
-  const jsonPath = join(DIR, `${base}.structure.json`);
-  let finalPath = sqlPath;
+  const work = join(DIR, `.work-${stamp}`);
+  const sqlPath = join(work, 'database.sql.gz');
+  const jsonPath = join(work, 'structure.json');
+  let finalPath = join(DIR, `${base}.tar.gz`);
   const emailed: string[] = [];
 
   try {
+    await mkdir(work, { recursive: true });
     await dumpDatabase(sqlPath, !cfg.includeMessages);
 
     const guild = client.guilds.cache.get(config.guildId);
     if (guild) await writeFile(jsonPath, await dumpStructure(guild), 'utf8');
 
-    // Bundle and encrypt when a passphrase is configured.
+    // One standard archive holding both parts. Previously the structure export
+    // was only bundled on the encrypted path and was silently dropped otherwise.
+    await tarball(work, finalPath);
+
     const passphrase = process.env.BACKUP_PASSPHRASE ?? '';
-    if (passphrase) {
-      const parts = [await readFile(sqlPath)];
-      if (guild) parts.push(await readFile(jsonPath));
-      const combined = Buffer.concat([
-        Buffer.from(JSON.stringify({ sql: parts[0]!.length, structure: parts[1]?.length ?? 0 }) + '\n'),
-        ...parts,
-      ]);
-      finalPath = join(DIR, `${base}.tar.gz.enc`);
-      await writeFile(finalPath, encrypt(combined, passphrase));
-      await rm(sqlPath, { force: true });
-      await rm(jsonPath, { force: true });
+    if (cfg.encrypt && passphrase) {
+      const enc = join(DIR, `${base}.tar.gz.enc`);
+      await writeFile(enc, encrypt(await readFile(finalPath), passphrase));
+      await rm(finalPath, { force: true });
+      finalPath = enc;
+    } else if (cfg.encrypt && !passphrase) {
+      log.warn('encryption is enabled but BACKUP_PASSPHRASE is unset — archive left in the clear');
     }
+
+    await rm(work, { recursive: true, force: true });
 
     const { size } = await stat(finalPath);
     if (cfg.recipients.length) emailed.push(...await email(finalPath, base, size, cfg.recipients));
@@ -129,9 +132,21 @@ export async function runBackup(client: AionClient): Promise<BackupResult> {
   } catch (e) {
     const error = (e as Error).message;
     log.error('backup failed', error);
+    await rm(work, { recursive: true, force: true }).catch(() => {});
     await record(base, 0, [], false, error).catch(() => {});
     return { ok: false, emailed, error };
   }
+}
+
+/** Standard tar.gz so the archive opens with ordinary tools. */
+function tarball(dir: string, target: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('tar', ['-czf', target, '-C', dir, '.'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', d => { stderr += String(d); });
+    proc.on('error', reject);
+    proc.on('close', code => code === 0 ? resolve() : reject(new Error(`tar exited ${code}: ${stderr.slice(0, 200)}`)));
+  });
 }
 
 async function email(path: string, base: string, size: number, to: string[]): Promise<string[]> {
@@ -166,9 +181,9 @@ async function email(path: string, base: string, size: number, to: string[]): Pr
       `Size: ${(size / 1048576).toFixed(2)} MB`,
       `Taken: ${new Date().toISOString()}`,
       ``,
-      process.env.BACKUP_PASSPHRASE
-        ? `This archive is encrypted with AES-256-GCM. Restore with deploy/scripts/restore.sh, which asks for the passphrase.`
-        : `WARNING: no BACKUP_PASSPHRASE is set, so this archive is NOT encrypted.`,
+      path.endsWith('.enc')
+        ? 'Encrypted with AES-256-GCM. Restore with deploy/scripts/restore.sh, which asks for the passphrase.'
+        : 'Plain tar.gz — contains database.sql.gz and structure.json. Restore with deploy/scripts/restore.sh.',
     ].join('\n'),
     attachments: [{ filename: path.split('/').pop()!, path }],
   });
