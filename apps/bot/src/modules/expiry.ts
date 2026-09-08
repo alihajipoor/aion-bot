@@ -1,7 +1,7 @@
 import { MessageFlags, ContainerBuilder, TextDisplayBuilder, type TextChannel } from 'discord.js';
 import { dueSanctions, clearSanction } from '../lib/cases.js';
 import { resolveSections, type Section } from '../lib/sections.js';
-import { syncVoiceMute } from '../lib/enforce.js';
+import { syncVoiceMute, releaseVoiceMute } from '../lib/enforce.js';
 import { logger } from '../lib/log.js';
 import { isolate } from '../lib/text.js';
 import type { AionClient } from '../client.js';
@@ -29,7 +29,7 @@ export function startExpiryWorker(client: AionClient): NodeJS.Timeout {
           await member.roles.remove(s.roleId, 'AION: punishment expired');
         }
         await clearSanction(s.id, s.caseId);
-        if (member) await syncVoiceMute(member, 'AION: punishment expired');
+        if (member) { await releaseVoiceMute(member, 'AION: punishment expired'); await syncVoiceMute(member); }
         log.info(`expired ${s.type} for ${s.userId} in ${s.section}`);
 
         const cfg = resolveSections(guild).get(s.section as Section);

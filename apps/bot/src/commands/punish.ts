@@ -10,7 +10,7 @@ import { resolveSections, type Section } from '../lib/sections.js';
 import { authorityOf, canBan, canMute, type Authority } from '../lib/perms.js';
 import { checkCooldown, markUsed, GLOBAL_PUNISH_COOLDOWN_MS } from '../lib/cooldown.js';
 import { createCase, activeSanctionsFor, liftSanction, type PunishAction } from '../lib/cases.js';
-import { syncVoiceMute, ejectFromSection } from '../lib/enforce.js';
+import { syncVoiceMute, releaseVoiceMute, ejectFromSection } from '../lib/enforce.js';
 import { bidi, humanDuration, isolate } from '../lib/text.js';
 import { logger } from '../lib/log.js';
 import type { Command } from '../types.js';
@@ -302,7 +302,7 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
       await member.roles.remove(roleId, `lifted by ${i.user.tag}`);
     }
     if (row) await liftSanction(row.sanctionId, row.caseId, i.user.id);
-    if (member) await syncVoiceMute(member, 'AION: mute lifted');
+    if (member) { await releaseVoiceMute(member, 'AION: mute lifted'); await syncVoiceMute(member); }
 
     // Rewrite the announcement so the channel reflects the current state.
     await i.message.edit({

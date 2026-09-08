@@ -1,5 +1,5 @@
 import type { VoiceState } from 'discord.js';
-import { syncVoiceMute } from '../lib/enforce.js';
+import { syncVoiceMute, hasPendingUnmute, clearPendingUnmute, releaseVoiceMute } from '../lib/enforce.js';
 import { logger } from '../lib/log.js';
 import type { AionClient } from '../client.js';
 import type { EventHandler } from '../types.js';
@@ -20,8 +20,14 @@ const handler: EventHandler = {
     const member = newState.member ?? await newState.guild.members.fetch(newState.id).catch(() => null);
     if (!member || member.user.bot) return;
 
-    try { await syncVoiceMute(member); }
-    catch (e) { log.warn('voice sync failed', e); }
+    try {
+      // An unmute that could not be applied while they were disconnected.
+      if (hasPendingUnmute(member.id)) {
+        await releaseVoiceMute(member, 'AION: deferred unmute on rejoin');
+        clearPendingUnmute(member.id);
+      }
+      await syncVoiceMute(member);
+    } catch (e) { log.warn('voice sync failed', e); }
   },
 };
 export default handler;

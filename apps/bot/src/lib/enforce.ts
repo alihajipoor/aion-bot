@@ -45,14 +45,12 @@ export function hasAnyMute(member: GuildMember): boolean {
  */
 export async function syncVoiceMute(member: GuildMember, reason = 'AION scoped mute'): Promise<void> {
   const channel = member.voice?.channel;
-  if (!channel) return;                       // cannot set server-mute off-voice
+  if (!channel) return;   // Discord rejects a mute change for a disconnected member
 
+  // The invariant: server-muted if and only if they hold the Muted role for the
+  // section they are currently in. Enforced in both directions so lifting a
+  // mute, moving sections, or expiry all resolve correctly with no extra state.
   const shouldMute = isMutedHere(member, channel);
-
-  // Only ever release a server-mute on someone we are managing, so a manual
-  // server-mute by a human moderator is never silently undone.
-  if (!shouldMute && member.voice.serverMute && !hasAnyMute(member)) return;
-
   if (member.voice.serverMute === shouldMute) return;
 
   try {
@@ -62,6 +60,29 @@ export async function syncVoiceMute(member: GuildMember, reason = 'AION scoped m
     log.warn(`could not ${shouldMute ? 'mute' : 'unmute'} ${member.user.tag}`, e);
   }
 }
+
+/**
+ * Clear a server-mute after a punishment is lifted. Discord refuses the change
+ * while the member is disconnected, and it persists across sessions, so the
+ * flag is recorded for the next voiceStateUpdate to pick up on rejoin.
+ */
+const pendingUnmute = new Set<string>();
+
+export async function releaseVoiceMute(member: GuildMember, reason: string): Promise<void> {
+  if (!member.voice?.channel) { pendingUnmute.add(member.id); return; }
+  if (!member.voice.serverMute) return;
+  try {
+    await member.voice.setMute(false, reason);
+    pendingUnmute.delete(member.id);
+    log.info(`server-unmuted ${member.user.tag} (${reason})`);
+  } catch (e) {
+    pendingUnmute.add(member.id);
+    log.warn(`deferred unmute for ${member.user.tag}`, e);
+  }
+}
+
+export function hasPendingUnmute(userId: string): boolean { return pendingUnmute.has(userId); }
+export function clearPendingUnmute(userId: string): void { pendingUnmute.delete(userId); }
 
 /** Bans remove access outright, so eject from that section's voice immediately. */
 export async function ejectFromSection(

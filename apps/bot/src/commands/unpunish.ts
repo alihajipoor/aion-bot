@@ -7,7 +7,7 @@ import {
 import { resolveSections, type Section } from '../lib/sections.js';
 import { authorityOf, canBan, canMute } from '../lib/perms.js';
 import { activeSanctionsFor, liftSanction, type PunishAction } from '../lib/cases.js';
-import { syncVoiceMute } from '../lib/enforce.js';
+import { syncVoiceMute, releaseVoiceMute } from '../lib/enforce.js';
 import { isolate } from '../lib/text.js';
 import { logger } from '../lib/log.js';
 import type { Command } from '../types.js';
@@ -108,7 +108,7 @@ export async function handleComponent(i: StringSelectMenuInteraction): Promise<v
       await member.roles.remove(row.roleId, `lifted by ${i.user.tag}`);
     }
     await liftSanction(row.sanctionId, row.caseId, i.user.id);
-    if (member) await syncVoiceMute(member, 'AION: punishment lifted');
+    if (member) { await releaseVoiceMute(member, 'AION: punishment lifted'); await syncVoiceMute(member); }
 
     const chId = cfg.banChannelId ?? cfg.punishChannelId;
     const ch = chId ? await guild.channels.fetch(chId).catch(() => null) : null;
