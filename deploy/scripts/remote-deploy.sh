@@ -54,7 +54,13 @@ if [ -d "$APP/web" ]; then
   systemctl enable aion-web >/dev/null 2>&1 || true
   systemctl restart aion-web
 fi
-sleep 5
+# The bot writes its first heartbeat once the ready handler finishes, which is
+# a few seconds after the process starts. Wait for the real signal, not the
+# process table.
+for _ in $(seq 1 12); do
+  [ -f "$APP/run/bot.heartbeat.json" ] && break
+  sleep 1
+done
 
 if systemctl is-active --quiet aion-bot; then
   echo "-- aion-bot is active"
@@ -62,5 +68,14 @@ else
   echo "!! aion-bot failed to start"
 fi
 journalctl -u aion-bot -n 15 --no-pager
+
+echo '-- watchdog --'
+systemctl is-active aion-watchdog.timer || echo '!! watchdog timer is not running'
+if [ -f "$APP/run/bot.heartbeat.json" ]; then
+  age=$(( $(date +%s) - $(( $(sed -n 's/.*"ts":\([0-9]*\).*/\1/p' "$APP/run/bot.heartbeat.json") / 1000 )) ))
+  echo "-- heartbeat written ${age}s ago"
+else
+  echo '!! no heartbeat file — the bot could not write to '"$APP/run"
+fi
 [ -d "$APP/web" ] && { echo '-- web --'; systemctl is-active aion-web || journalctl -u aion-web -n 15 --no-pager; }
 systemctl is-active --quiet aion-bot
