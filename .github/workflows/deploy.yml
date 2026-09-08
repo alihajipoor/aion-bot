@@ -62,39 +62,13 @@ jobs:
           KEY: ${{ secrets.VPS_SSH_KEY }}
           HOST: ${{ secrets.VPS_HOST }}
         run: |
-          if [ -z "$KEY" ]; then echo "VPS_SSH_KEY not set — artifact built but not deployed."; exit 0; fi
-          mkdir -p ~/.ssh && printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          set -euo pipefail
+          if [ -z "$KEY" ]; then echo "VPS_SSH_KEY not set - built but not deployed."; exit 0; fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
-
-          scp -i ~/.ssh/id_ed25519 aion.tar.gz root@"$HOST":/tmp/aion.tar.gz
-          ssh -i ~/.ssh/id_ed25519 root@"$HOST" bash -s <<'REMOTE'
-            set -euo pipefail
-            APP=/opt/aion
-            mkdir -p "$APP" /opt/aion-releases
-            STAMP=$(date +%Y%m%d-%H%M%S)
-
-            # Keep the previous release so a bad deploy can be rolled back.
-            [ -d "$APP/apps" ] && cp -a "$APP" "/opt/aion-releases/$STAMP" || true
-            ls -1dt /opt/aion-releases/* 2>/dev/null | tail -n +4 | xargs -r rm -rf
-
-            tar xzf /tmp/aion.tar.gz -C "$APP"
-            rm -f /tmp/aion.tar.gz
-
-            install -m 644 "$APP/deploy/systemd/aion-bot.service" /etc/systemd/system/
-            id -u aionbot &>/dev/null || useradd --system --home "$APP" --shell /usr/sbin/nologin aionbot
-            chown -R aionbot:aionbot "$APP"
-            chmod 600 "$APP/.env" 2>/dev/null || true
-
-            # Apply any new migrations before the new code starts.
-            if [ -f "$APP/.env" ]; then
-              sudo -u aionbot env $(grep -v '^#' "$APP/.env" | xargs -d '\n') \
-                node "$APP/packages/db/dist/migrate.js" || echo "migration step skipped/failed"
-            fi
-
-            systemctl daemon-reload
-            systemctl enable aion-bot >/dev/null 2>&1 || true
-            systemctl restart aion-bot
-            sleep 4
-            systemctl is-active aion-bot
-            journalctl -u aion-bot -n 15 --no-pager
-          REMOTE
+          SSH="ssh -i $HOME/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=20"
+          scp -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes aion.tar.gz "root@$HOST:/tmp/aion.tar.gz"
+          scp -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes deploy/scripts/remote-deploy.sh "root@$HOST:/tmp/remote-deploy.sh"
+          $SSH "root@$HOST" 'bash /tmp/remote-deploy.sh /tmp/aion.tar.gz'
