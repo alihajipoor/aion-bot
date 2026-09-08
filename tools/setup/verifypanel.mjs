@@ -22,14 +22,12 @@ c.once('clientReady', async () => {
       console.log(`${mine ? 'WOULD EDIT' : 'WOULD POST'} panel in #${ch.name}${mine ? ` (message ${mine.id})` : ''}`);
       return c.destroy();
     }
-    if (mine) {
-      // Editing with new files needs the old attachments cleared explicitly.
-      await mine.edit({ ...payload, attachments: [] });
-      console.log('edited', mine.id);
-    } else {
-      const m = await ch.send(payload);
-      console.log('posted', m.id);
-    }
+    // Delete and repost rather than edit: editing a Components V2 message with
+    // `attachments: []` and fresh `files` drops the upload while keeping the
+    // media gallery that points at it, leaving a broken image on the panel.
+    if (mine) await mine.delete().catch(() => {});
+    const m = await ch.send(payload);
+    console.log(mine ? `replaced ${mine.id} -> ${m.id}` : `posted ${m.id}`);
   } catch (e) { console.error(e); }
   finally { c.destroy(); }
 });

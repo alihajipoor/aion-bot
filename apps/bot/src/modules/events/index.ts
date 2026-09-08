@@ -99,28 +99,27 @@ export async function interfacePanel(guild: Guild): Promise<MessageCreateOptions
   };
 }
 
-/** Keeps exactly one panel at the top of the interface channel. */
+/**
+ * Keeps exactly one panel in the interface channel.
+ *
+ * It is deliberately delete-and-repost rather than edit. Editing a Components
+ * V2 message with `attachments: []` and fresh `files` drops the upload but
+ * keeps the media gallery pointing at it, which leaves a broken image — and
+ * an untouched panel is not worth that risk on every restart.
+ */
 export async function ensureEventPanel(guild: Guild): Promise<void> {
   const ch = interfaceChannel(guild);
   if (!ch) return;
   try {
     const recent = await ch.messages.fetch({ limit: 30 });
-    const panels = recent.filter(m => m.author.id === guild.client.user?.id && !m.reference
-      && m.components.length && !/Event #/.test(m.content ?? ''));
-    const payload = await interfacePanel(guild);
-    const existing = panels.last();          // oldest of ours = the panel
-    if (existing && panels.size === 1) {
-      // edit() rejects create-only fields, so the payload is rebuilt rather
-      // than spread. attachments: [] drops the previous banner upload.
-      await existing.edit({
-        components: payload.components,
-        files: payload.files,
-        attachments: [],
-        flags: MessageFlags.IsComponentsV2,
-      });
-    } else if (!existing) {
-      await ch.send(payload);
-    }
+    const mine = recent.filter(m => m.author.id === guild.client.user?.id && !m.reference && m.components.length);
+    const cards = new Set((await liveEvents(guild.id).catch(() => []))
+      .map(e => e.panelMessageId).filter(Boolean) as string[]);
+    const panels = mine.filter(m => !cards.has(m.id));
+    if (panels.size === 1) return;                       // already correct
+    for (const m of panels.values()) await m.delete().catch(() => {});
+    await ch.send(await interfacePanel(guild));
+    log.info('event panel posted');
   } catch (e) { log.warn('event panel failed', (e as Error).message); }
 }
 
