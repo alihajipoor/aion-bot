@@ -33,7 +33,7 @@ const command: Command = {
     if (forcePost) {
       const member = i.member as GuildMember;
       const allowed = member.permissions.has(PermissionFlagsBits.ManageGuild) ||
-        member.roles.cache.some(r => ['Consultant', 'PowerAdmin', 'A I O N'].includes(r.name));
+        member.roles.cache.some(r => ['Consultant', 'PowerAdmin', 'Dev'].includes(r.name));
       if (!allowed) {
         await i.reply({ content: 'Faghat admin-ha mitunan post konan.', flags: 64 });
         return;

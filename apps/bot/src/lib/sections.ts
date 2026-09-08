@@ -4,7 +4,7 @@ import { ChannelType } from 'discord.js';
 export type Section = 'public' | 'game' | 'entertainment';
 
 /** Roles that act everywhere and are never rate-limited. */
-export const ELEVATED_ROLES = ['Consultant', 'PowerAdmin', 'A I O N'] as const;
+export const ELEVATED_ROLES = ['Consultant', 'PowerAdmin', 'Dev'] as const;
 
 interface SectionSpec {
   label: string;

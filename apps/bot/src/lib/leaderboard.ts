@@ -10,7 +10,7 @@ export type Metric = 'voice' | 'chat' | 'punishments';
 export type Period = 'today' | 'day' | 'week' | 'month' | 'all';
 
 export const STAFF_ROLE_NAMES = [
-  'Consultant', 'PowerAdmin', 'A I O N',
+  'Consultant', 'PowerAdmin', 'Dev',
   'P . Global', 'G . Global', 'E . Global', 'V . Global',
   'P . MODERATOR', 'G . MODERATOR', 'E . MODERATOR',
 ];

@@ -8,6 +8,7 @@ import { startCounters } from '../modules/counters.js';
 import { installTempVoice, sweepTempChannels } from '../modules/tempvoice.js';
 import { startLeaderboardPoster } from '../modules/leaderboardPoster.js';
 import { startApi } from '../modules/api.js';
+import { startSettingsRefresh, loadSettings } from '../lib/settings.js';
 import { resolveSections } from '../lib/sections.js';
 import { config } from '../config.js';
 import type { AionClient } from '../client.js';
@@ -56,6 +57,8 @@ const handler: EventHandler = {
     startApi(client);
     startCounters(client);
     if (config.databaseUrl) {
+      await loadSettings(true);
+      startSettingsRefresh();
       startExpiryWorker(client);
       startActivityTracking(client);
       startLeaderboardPoster(client);

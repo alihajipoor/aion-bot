@@ -1,6 +1,7 @@
 import { ChannelType, type Guild, type VoiceChannel } from 'discord.js';
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
+import { settings } from '../lib/settings.js';
 import type { AionClient } from '../client.js';
 
 const log = logger('counters');
@@ -10,7 +11,7 @@ const log = logger('counters');
  * refresh on a 6-minute cycle and only when the value actually changed. Truly
  * live numbers belong in an edited message or the web panel, not a channel name.
  */
-const CYCLE_MS = 6 * 60_000;
+const BASE_CYCLE_MS = 60_000;   // re-checked each minute against the configured interval
 
 interface CounterSpec { match: RegExp; value: (g: Guild) => number }
 
@@ -33,7 +34,13 @@ function renamed(current: string, n: number): string {
   return /\d+\s*$/.test(current) ? current.replace(/\d+\s*$/, String(n)) : `${current} ${n}`;
 }
 
+let lastRun = 0;
+
 async function tick(client: AionClient): Promise<void> {
+  const cfg = settings().counters;
+  if (!cfg.enabled) return;
+  if (Date.now() - lastRun < cfg.intervalMinutes * 60_000) return;
+  lastRun = Date.now();
   const guild = client.guilds.cache.get(config.guildId);
   if (guild) {
     for (const spec of COUNTERS) {
@@ -58,8 +65,8 @@ async function tick(client: AionClient): Promise<void> {
 
 export function startCounters(client: AionClient): NodeJS.Timeout {
   void tick(client);
-  const timer = setInterval(() => void tick(client), CYCLE_MS);
+  const timer = setInterval(() => void tick(client), BASE_CYCLE_MS);
   timer.unref?.();
-  log.info('counters started (6 minute cycle)');
+  log.info('counters started');
   return timer;
 }

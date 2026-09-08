@@ -8,7 +8,8 @@ import {
 } from 'discord.js';
 import { resolveSections, type Section } from '../lib/sections.js';
 import { authorityOf, canBan, canMute, type Authority } from '../lib/perms.js';
-import { checkCooldown, markUsed, GLOBAL_PUNISH_COOLDOWN_MS } from '../lib/cooldown.js';
+import { checkCooldown, markUsed } from '../lib/cooldown.js';
+import { settings } from '../lib/settings.js';
 import { createCase, activeSanctionsFor, liftSanction, type PunishAction } from '../lib/cases.js';
 import { syncVoiceMute, releaseVoiceMute, ejectFromSection } from '../lib/enforce.js';
 import { bidi, humanDuration, isolate } from '../lib/text.js';
@@ -20,11 +21,12 @@ const ID = 'pn';
 const enc = (...p: (string | number)[]) => [ID, ...p].join('|');
 const dec = (s: string) => s.split('|').slice(1);
 
-const DURATIONS: [label: string, minutes: number][] = [
-  ['10 daghighe', 10], ['30 daghighe', 30], ['1 saat', 60], ['3 saat', 180],
-  ['6 saat', 360], ['12 saat', 720], ['1 rooz', 1440], ['3 rooz', 4320],
-  ['1 hafte', 10080], ['Hamishegi (permanent)', 0],
-];
+function durations(): [label: string, minutes: number][] {
+  const s = settings().moderation;
+  const list: [string, number][] = s.durationsMinutes.map(m => [humanDuration(m), m]);
+  if (s.allowPermanent) list.push(['Hamishegi (permanent)', 0]);
+  return list.slice(0, 25);   // Discord select menu limit
+}
 
 const ACCENT = { ask: 0x5865f2, ok: 0x57f287, bad: 0xed4245 } as const;
 
@@ -158,7 +160,7 @@ export async function handleComponent(i: StringSelectMenuInteraction): Promise<v
     const menu = new StringSelectMenuBuilder()
       .setCustomId(enc('dur', targetId!, section!, act))
       .setPlaceholder('Chand vaght?')
-      .addOptions(DURATIONS.map(([label, m]) =>
+      .addOptions(durations().map(([label, m]) =>
         new StringSelectMenuOptionBuilder().setLabel(label).setValue(String(m))));
     await i.update({
       components: [panel(`Punish — ${act === 'ban' ? '⛔ Ban' : '🔇 Mute'}`, 'Moddat ro entekhab kon.')
@@ -198,7 +200,7 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
 
   // Globals are rate-limited; elevated staff are not.
   if (!auth.elevated) {
-    const left = checkCooldown(`${guild.id}:${invoker.id}`);
+    const left = checkCooldown(`${guild.id}:${invoker.id}`, settings().moderation.globalCooldownSec * 1000);
     if (left > 0) {
       await i.editReply(`Sabr kon — ${Math.ceil(left / 1000)} saniye dige mitooni punish badi ro bezani.`);
       return;

@@ -5,6 +5,7 @@ import {
 } from 'discord.js';
 import { asciiFold } from './text.js';
 import { logger } from './log.js';
+import { settings } from './settings.js';
 
 const log = logger('logbus');
 
@@ -110,6 +111,7 @@ const breaker = new Map<string, number>();
  * output does not cost extra requests.
  */
 export function emitLog(guild: Guild, type: LogType, text: string, avatar?: string): void {
+  if (settings().logging.disabledEvents.includes(type)) return;
   const channel = resolveChannel(guild, type);
   if (!channel) return;
 

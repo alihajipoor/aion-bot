@@ -4,6 +4,7 @@ import * as schema from './schema.js';
 
 export * as schema from './schema.js';
 export * from './schema.js';
+export * from './settings.js';
 
 let pool: pg.Pool | undefined;
 let db: NodePgDatabase<typeof schema> | undefined;

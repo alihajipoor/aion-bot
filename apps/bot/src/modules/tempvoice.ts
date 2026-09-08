@@ -19,7 +19,7 @@ const dec = (s: string) => s.split('|').slice(1);
 
 const HUB = /𝙿𝚁𝙸𝚅𝙴𝚃 𝙳𝚁𝙸𝚅𝙴|privet drive/i;
 const MEMBER_ROLES = ['ʙᴏʏ│𝙼𝙴𝙼𝙱𝙴𝚁│•', 'ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•'];
-const STAFF_ROLES = ['Consultant', 'PowerAdmin', 'A I O N'];
+const STAFF_ROLES = ['Consultant', 'PowerAdmin', 'Dev'];
 
 const owners = new Map<string, string>();   // channelId -> ownerId
 

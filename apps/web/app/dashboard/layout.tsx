@@ -1,13 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireSession } from '@/lib/auth';
-
-const NAV = [
-  { href: '/dashboard', label: 'Overview', icon: '◈' },
-  { href: '/dashboard/announce', label: 'Announcements', icon: '◇' },
-  { href: '/dashboard/cases', label: 'Moderation', icon: '◆' },
-  { href: '/dashboard/verifications', label: 'Verifications', icon: '◉' },
-];
+import { Nav } from '@/components/Nav';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
@@ -26,16 +20,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="text-sm font-semibold tracking-tight">AION Panel</div>
         </div>
 
-        <nav className="flex flex-col gap-1">
-          {NAV.map(item => (
-            <Link key={item.href} href={item.href}
-              className="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-mist-400
-                         transition hover:bg-ink-800/70 hover:text-mist-50">
-              <span className="text-xs opacity-60 transition group-hover:opacity-100">{item.icon}</span>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <Nav />
 
         <div className="mt-auto rounded-xl border border-ink-700/70 bg-ink-850/60 p-3">
           <div className="flex items-center gap-2.5">

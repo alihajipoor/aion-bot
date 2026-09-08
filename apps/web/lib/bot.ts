@@ -1,4 +1,5 @@
 import { env } from './env';
+import type { AionSettings } from '@aion/db';
 
 /** Calls the bot's loopback control API. */
 async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
@@ -37,3 +38,16 @@ export const sendAnnouncement = (body: {
 }) => call<{ ok: boolean; messageId: string }>('/announce', {
   method: 'POST', body: JSON.stringify(body),
 });
+
+export const getSettings = () => call<{ settings: AionSettings }>('/settings');
+export const putSettings = (settings: AionSettings) =>
+  call<{ settings: AionSettings }>('/settings', { method: 'PUT', body: JSON.stringify(settings) });
+
+export interface Category { id: string; name: string; channels: { id: string; name: string; type: string }[] }
+export const getCategories = () => call<{ categories: Category[] }>('/categories');
+
+export interface VoiceRoom {
+  id: string; name: string; parent: string | null;
+  members: { id: string; name: string; muted: boolean; deafened: boolean; streaming: boolean }[];
+}
+export const getVoice = () => call<{ rooms: VoiceRoom[] }>('/voice');

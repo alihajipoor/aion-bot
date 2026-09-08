@@ -8,6 +8,7 @@ import {
 } from 'discord.js';
 import { createRequest, getRequest, pendingFor, decide, attachMessage, type Gender } from '../lib/verify.js';
 import { styleNickname, isolate } from '../lib/text.js';
+import { settings } from '../lib/settings.js';
 import { logger } from '../lib/log.js';
 
 const log = logger('verify');
@@ -26,10 +27,10 @@ const logChannel    = (g: Guild) => findChannel(g, /𝙻𝙾𝙶-𝚅𝙴𝚁�
 const requestChannel= (g: Guild) => findChannel(g, /𝚅𝙴𝚁𝙸𝙵𝚈-𝚁𝙴𝚀𝚄𝙴𝚂𝚃|verify-request/i);
 
 /** Roles pinged when a request lands, in the order they should appear. */
-const NOTIFY_ROLES = ['V . Global', 'PowerAdmin', 'Consultant', 'A I O N'] as const;
+const notifyRoleNames = () => settings().verification.notifyRoles;
 
 function reviewerRoles(g: Guild) {
-  return NOTIFY_ROLES
+  return notifyRoleNames()
     .map(n => g.roles.cache.find(r => r.name === n))
     .filter((r): r is NonNullable<typeof r> => !!r);
 }
@@ -37,7 +38,7 @@ function reviewerRoles(g: Guild) {
 const isStaff = (m: GuildMember): boolean =>
   m.id === m.guild.ownerId ||
   m.permissions.has(PermissionFlagsBits.Administrator) ||
-  m.roles.cache.some(r => ['Consultant', 'PowerAdmin', 'A I O N', 'V . Global'].includes(r.name));
+  m.roles.cache.some(r => ['Consultant', 'PowerAdmin', 'Dev', 'V . Global'].includes(r.name));
 
 /* ── the public panel ──────────────────────────────────────────── */
 
@@ -139,8 +140,9 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
     const age = Number(ageRaw.replace(/[^\d]/g, ''));
 
     await i.deferReply({ flags: MessageFlags.Ephemeral });
-    if (!Number.isFinite(age) || age < 10 || age > 99) {
-      await i.editReply('Sen ro dorost vared kon (bein 10 ta 99).');
+    const { minAge, maxAge } = settings().verification;
+    if (!Number.isFinite(age) || age < minAge || age > maxAge) {
+      await i.editReply(`Sen ro dorost vared kon (bein ${minAge} ta ${maxAge}).`);
       return;
     }
 
@@ -149,7 +151,7 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
       name, age, city, gender,
     });
 
-    const preview = styleNickname(name);
+    const preview = styleNickname(name, settings().verification.nickStyle);
     const reviewers = reviewerRoles(i.guild!);
     const ping = reviewers.map(r => `<@&${r.id}>`).join(' ');
 
@@ -223,7 +225,7 @@ async function handleDecision(i: ButtonInteraction, step: 'ok' | 'no', id: numbe
 
   const roleName = ROLE[row.gender as Gender];
   const role = guild.roles.cache.find(r => r.name === roleName);
-  const nick = styleNickname(row.name);
+  const nick = styleNickname(row.name, settings().verification.nickStyle);
 
   try {
     if (role) await member.roles.add(role, `verified by ${i.user.tag}`);

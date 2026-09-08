@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
-import { ChannelType, MessageFlags, ContainerBuilder, TextDisplayBuilder, type TextChannel } from 'discord.js';
+import { ChannelType, MessageFlags, ContainerBuilder, TextDisplayBuilder, type TextChannel, type GuildChannel } from 'discord.js';
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
+import { settings, loadSettings, saveSettings } from '../lib/settings.js';
+import type { AionSettings } from '@aion/db';
 import type { AionClient } from '../client.js';
 
 const log = logger('api');
@@ -69,6 +71,64 @@ export function startApi(client: AionClient): void {
               boostTier: guild.premiumTier,
             },
           });
+        }
+
+        if (req.method === 'GET' && url.pathname === '/settings') {
+          return json(res, 200, { settings: await loadSettings(true) });
+        }
+
+        if (req.method === 'PUT' && url.pathname === '/settings') {
+          const body = await readBody(req);
+          const saved = await saveSettings(body as unknown as AionSettings);
+          return json(res, 200, { settings: saved });
+        }
+
+        if (req.method === 'GET' && url.pathname === '/categories') {
+          // Flatten to a plain shape first: threads carry no rawPosition and
+          // would otherwise break the sort.
+          const all = [...guild.channels.cache.values()]
+            .filter(c => !!c && !c.isThread())
+            .map(c => ({
+              id: c.id,
+              name: c.name,
+              type: ChannelType[c.type] ?? String(c.type),
+              parentId: c.parentId ?? null,
+              pos: (c as GuildChannel).rawPosition ?? 0,
+              isCategory: c.type === ChannelType.GuildCategory,
+            }));
+
+          const cats = all
+            .filter(c => c.isCategory)
+            .sort((a, b) => a.pos - b.pos)
+            .map(c => ({
+              id: c.id,
+              name: c.name,
+              channels: all
+                .filter(x => x.parentId === c.id)
+                .sort((a, b) => a.pos - b.pos)
+                .map(x => ({ id: x.id, name: x.name, type: x.type })),
+            }));
+
+          return json(res, 200, { categories: cats });
+        }
+
+        if (req.method === 'GET' && url.pathname === '/voice') {
+          const rooms = [...guild.channels.cache.values()]
+            .filter(c => c.isVoiceBased())
+            .map(c => ({
+              id: c.id, name: c.name, parent: c.parent?.name ?? null,
+              members: [...guild.voiceStates.cache.values()]
+                .filter(v => v.channelId === c.id && !v.member?.user.bot)
+                .map(v => ({
+                  id: v.id,
+                  name: v.member?.displayName ?? v.id,
+                  muted: !!(v.serverMute || v.selfMute),
+                  deafened: !!(v.serverDeaf || v.selfDeaf),
+                  streaming: !!v.streaming,
+                })),
+            }))
+            .filter(c => c.members.length > 0);
+          return json(res, 200, { rooms });
         }
 
         if (req.method === 'GET' && url.pathname === '/channels') {

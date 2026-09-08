@@ -20,4 +20,4 @@ export const env = {
  * moderation tier, not a configuration tier. `A I O N` is the configurer role.
  * The server owner is always allowed, checked separately.
  */
-export const GATE_ROLES = ['Consultant', 'A I O N'];
+export const GATE_ROLES = ['Consultant', 'Dev'];

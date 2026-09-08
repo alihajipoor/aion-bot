@@ -8,15 +8,16 @@ import { queryActivity, renderBoard, renderStaffBoard, sinceDay, hhmm, type Row 
 import { renderLeaderboardBanner } from '../lib/banner.js';
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
+import { settings } from '../lib/settings.js';
 import type { AionClient } from '../client.js';
 
 const log = logger('leaderboard');
 
 const CHECK_MS = 10 * 60_000;
 /** Hour (UTC) the daily post goes out. 20:00 UTC ≈ 23:30 Tehran. */
-const DAILY_HOUR_UTC = Number(process.env.LEADERBOARD_HOUR_UTC ?? 20);
+
 /** 0 = Sunday. Weekly staff report. */
-const WEEKLY_DOW = Number(process.env.LEADERBOARD_DOW ?? 6);
+
 
 const findChannel = (g: Guild, re: RegExp): TextChannel | null =>
   ([...g.channels.cache.values()].find(c => c.type === ChannelType.GuildText && re.test(c.name)) as TextChannel) ?? null;
@@ -117,12 +118,13 @@ async function tick(client: AionClient): Promise<void> {
     const today = now.toISOString().slice(0, 10);
     let changed = false;
 
-    if (now.getUTCHours() >= DAILY_HOUR_UTC && marks.lastDaily !== today) {
+    const lb = settings().leaderboard;
+    if (lb.dailyEnabled && now.getUTCHours() >= lb.dailyHourUtc && marks.lastDaily !== today) {
       await postDaily(guild);
       marks.lastDaily = today; changed = true;
     }
     const wk = weekKey(now);
-    if (now.getUTCDay() === WEEKLY_DOW && now.getUTCHours() >= DAILY_HOUR_UTC && marks.lastWeekly !== wk) {
+    if (lb.weeklyEnabled && now.getUTCDay() === lb.weeklyDayOfWeek && now.getUTCHours() >= lb.dailyHourUtc && marks.lastWeekly !== wk) {
       await postWeekly(guild);
       marks.lastWeekly = wk; changed = true;
     }
@@ -136,7 +138,7 @@ export function startLeaderboardPoster(client: AionClient): NodeJS.Timeout {
   const timer = setInterval(() => void tick(client), CHECK_MS);
   timer.unref?.();
   void tick(client);
-  log.info(`leaderboard poster started (daily ${DAILY_HOUR_UTC}:00 UTC, weekly on day ${WEEKLY_DOW})`);
+  log.info('leaderboard poster started');
   return timer;
 }
 
