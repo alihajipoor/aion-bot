@@ -2,6 +2,7 @@ import { MessageFlags, type Interaction } from 'discord.js';
 import { logger } from '../lib/log.js';
 import { handleComponent as punishComponent, handleModal as punishModal, handleButton as punishButton } from '../commands/punish.js';
 import { handleComponent as unpunishComponent } from '../commands/unpunish.js';
+import { handleButton as vfButton, handleSelect as vfSelect, handleModal as vfModal, VF } from '../modules/verification.js';
 import type { AionClient } from '../client.js';
 import type { EventHandler } from '../types.js';
 
@@ -31,6 +32,9 @@ const handler: EventHandler = {
         return;
       }
 
+      if (i.isButton() && i.customId.startsWith(`${VF}|`))        { await vfButton(i); return; }
+      if (i.isStringSelectMenu() && i.customId.startsWith(`${VF}|`)) { await vfSelect(i); return; }
+      if (i.isModalSubmit() && i.customId.startsWith(`${VF}|`))   { await vfModal(i); return; }
       if (i.isButton() && i.customId.startsWith('pn|'))           { await punishButton(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith('pn|')) { await punishComponent(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith('pn|'))      { await punishModal(i); return; }
