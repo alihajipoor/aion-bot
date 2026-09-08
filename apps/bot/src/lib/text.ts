@@ -131,3 +131,19 @@ export function humanDuration(minutes: number): string {
   }
   return m ? `${h} saat va ${m} daghighe` : `${h} saat`;
 }
+
+/** Reverse of SMALL_CAPS, for matching channel names written in small capitals. */
+const FROM_SMALL_CAPS: Record<string, string> = Object.fromEntries(
+  Object.entries(SMALL_CAPS).map(([ascii, sc]) => [sc, ascii]),
+);
+
+/**
+ * Fold decorated channel names down to plain ASCII for matching.
+ * NFKC handles mathematical alphanumerics (𝙲𝙷𝙰𝚃 -> CHAT) but NOT small
+ * capitals (U+1D00-U+1D2B have no compatibility decomposition), so those are
+ * mapped explicitly.
+ */
+export function asciiFold(input: string): string {
+  const mapped = [...input].map(c => FROM_SMALL_CAPS[c] ?? c).join('');
+  return mapped.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
