@@ -3,11 +3,14 @@ import {
   SeparatorSpacingSize, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ModalBuilder,
   TextInputBuilder, TextInputStyle, ChannelType, PermissionFlagsBits,
+  MediaGalleryBuilder, MediaGalleryItemBuilder, AttachmentBuilder,
+  SectionBuilder, ThumbnailBuilder,
   type ButtonInteraction, type StringSelectMenuInteraction, type ModalSubmitInteraction,
   type Guild, type GuildMember, type TextChannel, type MessageCreateOptions,
 } from 'discord.js';
 import { createRequest, getRequest, pendingFor, decide, attachMessage, type Gender } from '../lib/verify.js';
 import { styleNickname, isolate } from '../lib/text.js';
+import { welcomeBanner } from '../lib/banner.js';
 import { settings } from '../lib/settings.js';
 import { logger } from '../lib/log.js';
 
@@ -42,25 +45,49 @@ const isStaff = (m: GuildMember): boolean =>
 
 /* ── the public panel ──────────────────────────────────────────── */
 
-export function panelMessage(): MessageCreateOptions {
+export async function panelMessage(): Promise<MessageCreateOptions> {
+  const art = await welcomeBanner();
+  const rule = (divider: boolean) =>
+    new SeparatorBuilder().setDivider(divider).setSpacing(SeparatorSpacingSize.Small);
+
+  const box = new ContainerBuilder().setAccentColor(C.brand);
+
+  if (art) {
+    box.addMediaGalleryComponents(new MediaGalleryBuilder()
+      .addItems(new MediaGalleryItemBuilder().setURL(`attachment://${art.name}`)));
+  }
+
+  box
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '# Khosh oomadi be AION 🌠',
+      'Ye bar verify sho — badesh hameye server barat baze.',
+    ].join('\n')))
+    .addSeparatorComponents(rule(true))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '### 📝 Chetori verify konam?',
+      '`1` Dokmeye **Verify** ro bezan',
+      '`2` Jensiatet ro entekhab kon',
+      '`3` **Esm** · **Sen** · **Shahr** ro por kon',
+      '`4` Admin check mikone — mamoolan chand daghighe tool mikeshe',
+    ].join('\n')))
+    .addSeparatorComponents(rule(true))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '### 🎁 Bad az tayid chi migiri?',
+      '> Role e **ʙᴏʏ** ya **ɢɪʀʟ**',
+      '> Esmet ba font e server style mishe',
+      '> Hameye room-ha, voice-ha va bazi-ha baz mishe',
+    ].join('\n')))
+    .addSeparatorComponents(rule(false))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      '-# 🔒 Etela\'atet faghat pish e admin-haye server mimune va hich ja post nemishe.'))
+    .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(enc('start')).setLabel('Verify').setEmoji('✅').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(enc('help')).setLabel('Soal daram').setEmoji('❔').setStyle(ButtonStyle.Secondary)));
+
   return {
-    components: [
-      new ContainerBuilder().setAccentColor(C.brand)
-        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-          '# 🌠 Khosh oomadi be AION'))
-        .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-        .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-          'Baraye dastresi be hameye channel-ha bayad verify beshi.',
-          '',
-          'Rooye dokmeye pain bezan va etela\'ate zir ro por kon:',
-          '**Esm** · **Sen** · **Shahr** · **Jensiat**',
-          '',
-          '-# Darkhast beshe be admin-ha mire va zud check mishe.',
-        ].join('\n')))
-        .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder().setCustomId(enc('start')).setLabel('Verify').setEmoji('✅').setStyle(ButtonStyle.Success))),
-    ],
+    components: [box],
     flags: MessageFlags.IsComponentsV2,
+    ...(art ? { files: [new AttachmentBuilder(art.data, { name: art.name })] } : {}),
   };
 }
 
@@ -87,8 +114,40 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
         new StringSelectMenuOptionBuilder().setLabel('Dokhtar / Girl').setValue('girl').setEmoji('👧'));
     await i.reply({
       components: [new ContainerBuilder().setAccentColor(C.brand)
-        .addTextDisplayComponents(new TextDisplayBuilder().setContent('### Ghadame 1 az 2\nJensiatet ro entekhab kon.'))
-        .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu))],
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+          '### Ghadam **1** az **2**  ·  Jensiat',
+          'Entekhabet role et ro moshakhas mikone — ba deghat bezan.',
+        ].join('\n')))
+        .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+        .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          '-# Ba entekhab kardan, form e etela\'at baz mishe.'))],
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (step === 'help') {
+    await i.reply({
+      components: [new ContainerBuilder().setAccentColor(C.brand)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+          '### ❔ Soal-haye takrari',
+          '',
+          '**Chera bayad verify konam?**',
+          '> Ta jelo-ye fake account va spam gerefte beshe. Server baste nist, faghat check mishe.',
+          '',
+          '**Ki etela\'atam ro mibine?**',
+          '> Faghat admin-haye server. Hich ja post nemishe va be kasi dade nemishe.',
+          '',
+          '**Esmam bayad vaghei bashe?**',
+          '> Har esmi ke mikhay too server sedat konan. Fosh o esme jaalebe-forush nazan.',
+          '',
+          '**Cheghadr tool mikeshe?**',
+          '> Mamoolan chand daghighe. Age tool keshid sabr kon, admin-ha khabar daran.',
+          '',
+          '**Rad shodam, chi kar konam?**',
+          '> Dalilesh barat miad. Dorostesh kon o dobare dokmeye Verify ro bezan.',
+        ].join('\n')))],
       flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
     });
     return;
@@ -155,22 +214,37 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
     const reviewers = reviewerRoles(i.guild!);
     const ping = reviewers.map(r => `<@&${r.id}>`).join(' ');
 
+    // Account age is the cheapest alt/throwaway signal a reviewer has, so it
+    // sits next to the answers rather than a click away in the profile.
+    const member = i.member as GuildMember | null;
+    const born = Math.floor(i.user.createdTimestamp / 1000);
+    const joined = member?.joinedTimestamp ? Math.floor(member.joinedTimestamp / 1000) : null;
+
     const card = new ContainerBuilder().setAccentColor(C.wait)
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent('### 🕐 Darkhaste verify'))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `### 🕐 Darkhaste verify  ·  \`#${id}\``))
+      .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addSectionComponents(new SectionBuilder()
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            `${gender === 'boy' ? '👦' : '👧'}  **${isolate(name)}**  ·  ${age} sale  ·  ${isolate(city)}`),
+          new TextDisplayBuilder().setContent(
+            `<@${i.user.id}>  ${isolate(i.user.tag)}`),
+          new TextDisplayBuilder().setContent(
+            `-# Account saakhte shode <t:${born}:R>${joined ? ` · vared e server shode <t:${joined}:R>` : ''}`))
+        .setThumbnailAccessory(new ThumbnailBuilder()
+          .setURL(i.user.displayAvatarURL({ extension: 'png', size: 256 }))))
       .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-        `**User**  <@${i.user.id}>  ${isolate(i.user.tag)}`,
-        `**Esm**  ${isolate(name)}`,
-        `**Sen**  ${age}`,
-        `**Shahr**  ${isolate(city)}`,
-        `**Jensiat**  ${gender === 'boy' ? '👦 Pesar' : '👧 Dokhtar'}`,
-        `**Nick e nahayi**  ${preview}`,
-        `-# Request #${id}`,
-        ...(ping ? ['', ping] : []),
-      ].join('\n')))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `**Nick e nahayi**\n> ${preview}`))
       .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(enc('ok', id)).setLabel('Approve').setEmoji('✅').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(enc('no', id)).setLabel('Decline').setEmoji('✖️').setStyle(ButtonStyle.Danger)));
+
+    if (ping) {
+      card.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(ping));
+    }
 
     const ch = adminChannel(i.guild!);
     if (!ch) { await i.editReply('Channel e admin-verify peyda nashod. Be admin begoo.'); return; }

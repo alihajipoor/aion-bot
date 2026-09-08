@@ -100,3 +100,82 @@ export async function renderLeaderboardBanner(opts: {
     return null;
   }
 }
+
+/* ── verify panel banner ───────────────────────────────────────── */
+
+// dist/lib -> apps/bot/assets/banners
+const ART = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets', 'banners');
+
+export interface Art { data: Buffer; name: string }
+
+/**
+ * Artwork for the verify panel. A file dropped into assets/banners wins, so the
+ * art can be swapped without touching code; otherwise one is rendered.
+ * Deliberately uncached — the panel is posted rarely, and a restart should not
+ * be the price of changing the picture.
+ */
+export async function welcomeBanner(): Promise<Art | null> {
+  for (const name of ['welcome.gif', 'welcome.png', 'welcome.jpg', 'welcome.jpeg']) {
+    const data = await readFile(join(ART, name)).catch(() => null);
+    if (data) return { data, name };
+  }
+  const data = await renderWelcomeBanner();
+  return data ? { data, name: 'welcome.png' } : null;
+}
+
+const W = 1200, H = 400;
+
+/** Fallback art: the AION wordmark split by a lit rift. */
+async function renderWelcomeBanner(): Promise<Buffer | null> {
+  try {
+    const absolute = { position: 'absolute', display: 'flex' } as const;
+
+    const tree = el('div', {
+      display: 'flex', position: 'relative', width: W, height: H,
+      background: '#05060c', fontFamily: 'Vazirmatn',
+    }, [
+      // Light source, off the right edge so the falloff reads as a burst.
+      el('div', {
+        ...absolute, top: -190, right: -220, width: 760, height: 760, borderRadius: 380,
+        backgroundImage: 'radial-gradient(circle, rgba(74,166,255,0.62) 0%, rgba(74,166,255,0.16) 42%, rgba(5,6,12,0) 68%)',
+      }),
+      el('div', {
+        ...absolute, bottom: -260, left: -160, width: 620, height: 620, borderRadius: 310,
+        backgroundImage: 'radial-gradient(circle, rgba(74,166,255,0.22) 0%, rgba(5,6,12,0) 65%)',
+      }),
+
+      // Wordmark
+      el('div', {
+        ...absolute, top: 96, left: 0, width: W, justifyContent: 'center',
+        fontSize: 168, fontWeight: 700, letterSpacing: 26, color: '#f2f8ff',
+        textShadow: '0 0 46px rgba(90,175,255,0.95)',
+      }, 'AION'),
+
+      // The rift, drawn over the wordmark
+      el('div', {
+        ...absolute, top: 198, left: 40, width: W - 80, height: 3,
+        backgroundImage: 'linear-gradient(90deg, rgba(120,200,255,0) 0%, #8fd0ff 18%, #ffffff 50%, #8fd0ff 82%, rgba(120,200,255,0) 100%)',
+        boxShadow: '0 0 26px 5px rgba(90,180,255,0.75)',
+      }),
+      el('div', {
+        ...absolute, top: 176, left: 0, width: W, justifyContent: 'center',
+      }, [
+        el('div', {
+          display: 'flex', alignItems: 'center', height: 46, paddingLeft: 26, paddingRight: 26,
+          background: '#05060c', fontSize: 24, fontWeight: 700, letterSpacing: 14, color: '#e7f3ff',
+        }, 'WELCOME TO'),
+      ]),
+
+      el('div', {
+        ...absolute, bottom: 40, left: 0, width: W, justifyContent: 'center',
+        fontSize: 22, letterSpacing: 8, color: 'rgba(180,205,235,0.72)',
+      }, 'VERIFY  ·  JOIN  ·  BELONG'),
+    ]);
+
+    const svg = await satori(tree as never, { width: W, height: H, fonts: await loadFonts() });
+    return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: W } }).render().asPng());
+  } catch (e) {
+    log.error('welcome banner render failed', e);
+    return null;
+  }
+}

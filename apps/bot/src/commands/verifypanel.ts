@@ -13,8 +13,10 @@ const command: Command = {
       await i.reply({ content: 'Faghat too text channel.', flags: MessageFlags.Ephemeral });
       return;
     }
-    await (i.channel as TextChannel).send(panelMessage());
-    await i.reply({ content: 'Panel post shod ✅', flags: MessageFlags.Ephemeral });
+    // Rendering the banner takes a moment, so acknowledge first.
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    await (i.channel as TextChannel).send(await panelMessage());
+    await i.editReply('Panel post shod ✅');
   },
 };
 export default command;
