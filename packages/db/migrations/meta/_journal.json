@@ -15,6 +15,13 @@
       "when": 1788847769243,
       "tag": "0001_sticky_jane_foster",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788886837157,
+      "tag": "0002_tranquil_mephistopheles",
+      "breakpoints": true
     }
   ]
 }

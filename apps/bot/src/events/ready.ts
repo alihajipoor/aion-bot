@@ -10,6 +10,7 @@ import { startLeaderboardPoster } from '../modules/leaderboardPoster.js';
 import { startApi } from '../modules/api.js';
 import { startVoicePresence } from '../modules/voicepresence.js';
 import { installVoiceGuard } from '../modules/voiceguard.js';
+import { installEvents, ensureEventPanel } from '../modules/events/index.js';
 import { ensureGuide } from '../commands/guide.js';
 import { startBackupWorker } from '../modules/backup.js';
 import { startHeartbeat } from '../modules/heartbeat.js';
@@ -62,6 +63,7 @@ const handler: EventHandler = {
     startApi(client);
     startVoicePresence(client);
     installVoiceGuard(client);
+    installEvents(client);
     startCounters(client);
     if (config.databaseUrl) {
       await loadSettings(true);
@@ -71,7 +73,7 @@ const handler: EventHandler = {
       startLeaderboardPoster(client);
       startBackupWorker(client);
       await startHeartbeat(client);
-      if (g) { await sweepTempChannels(g); await ensureInterfacePanel(g); await ensureGuide(g); }
+      if (g) { await sweepTempChannels(g); await ensureInterfacePanel(g); await ensureGuide(g); await ensureEventPanel(g); }
     }
 
     client.user?.setPresence({

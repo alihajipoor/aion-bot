@@ -10,6 +10,8 @@ export const sectionEnum   = pgEnum('section', ['public', 'game', 'entertainment
 export const caseTypeEnum  = pgEnum('case_type', ['ban', 'mute', 'kick', 'timeout', 'warn', 'note', 'unban', 'unmute']);
 export const verifyStatus  = pgEnum('verify_status', ['pending', 'approved', 'declined', 'expired']);
 export const genderEnum    = pgEnum('gender', ['boy', 'girl']);
+export const eventGameEnum = pgEnum('event_game', ['mafia', 'esmfamil', 'bistsoali', 'custom']);
+export const eventStatus   = pgEnum('event_status', ['draft', 'announced', 'running', 'ended', 'cancelled']);
 
 /* ── configuration ─────────────────────────────────────────────── */
 
@@ -260,4 +262,65 @@ export const logEvents = pgTable('log_events', {
 }, t => [
   index('log_events_guild_time_idx').on(t.guildId, t.createdAt),
   index('log_events_type_idx').on(t.guildId, t.type),
+]);
+
+/* ── events and games ──────────────────────────────────────────── */
+
+/**
+ * One row per event, from the moment staff drafts it to the recap. Channels
+ * the event created are listed on the row itself, so ending it can never
+ * leave anything behind for someone to tidy up by hand.
+ */
+export const events = pgTable('events', {
+  id:          serial('id').primaryKey(),
+  guildId:     snowflake('guild_id').notNull(),
+  game:        eventGameEnum('game').notNull(),
+  title:       text('title').notNull(),
+  status:      eventStatus('status').notNull().default('draft'),
+  capacity:    integer('capacity').notNull().default(0),       // 0 = no limit
+  hostId:      snowflake('host_id').notNull(),
+  hostTag:     text('host_tag'),
+  scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
+
+  voiceChannelId: snowflake('voice_channel_id'),
+  textChannelId:  snowflake('text_channel_id'),
+  /** Only channels this event created. Everything here is deleted on end. */
+  ownedChannelIds: text('owned_channel_ids').array().notNull().default([]),
+  scheduledEventId: snowflake('scheduled_event_id'),
+  announceChannelId: snowflake('announce_channel_id'),
+  announceMessageId: snowflake('announce_message_id'),
+  panelMessageId:    snowflake('panel_message_id'),
+
+  /** Game-specific working state — night number, pending actions, votes. */
+  state:  jsonb('state').$type<Record<string, unknown>>().notNull().default({}),
+  /** Final outcome, kept after the channels are gone. */
+  result: jsonb('result').$type<Record<string, unknown>>().notNull().default({}),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  endedAt:   timestamp('ended_at', { withTimezone: true }),
+}, t => [
+  index('events_guild_status_idx').on(t.guildId, t.status),
+  index('events_created_idx').on(t.createdAt),
+]);
+
+/**
+ * Signups and players are the same people at different stages, so they are one
+ * table: role and side stay null until the game deals cards.
+ */
+export const eventPlayers = pgTable('event_players', {
+  id:       serial('id').primaryKey(),
+  eventId:  integer('event_id').notNull(),
+  userId:   snowflake('user_id').notNull(),
+  userTag:  text('user_tag'),
+  role:     text('role'),
+  side:     text('side'),
+  alive:    boolean('alive').notNull().default(true),
+  /** Order they were dealt, which is the seat number players call out. */
+  seat:     integer('seat'),
+  joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+  diedAt:   timestamp('died_at', { withTimezone: true }),
+}, t => [
+  uniqueIndex('event_players_unique_idx').on(t.eventId, t.userId),
+  index('event_players_event_idx').on(t.eventId),
 ]);

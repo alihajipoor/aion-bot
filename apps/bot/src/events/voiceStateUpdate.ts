@@ -1,5 +1,6 @@
 import type { VoiceState } from 'discord.js';
 import { syncVoiceMute, hasPendingUnmute, clearPendingUnmute, releaseVoiceMute } from '../lib/enforce.js';
+import { gameHeld } from '../modules/events/mafia.js';
 import { logger } from '../lib/log.js';
 import type { AionClient } from '../client.js';
 import type { EventHandler } from '../types.js';
@@ -19,6 +20,11 @@ const handler: EventHandler = {
 
     const member = newState.member ?? await newState.guild.members.fetch(newState.id).catch(() => null);
     if (!member || member.user.bot) return;
+
+    // A running game owns this member's mute. Re-deriving it from section roles
+    // here would unmute someone the night has silenced — the same class of bug
+    // that once left a member muted after an unpunish.
+    if (gameHeld.has(member.id)) return;
 
     try {
       // An unmute that could not be applied while they were disconnected.
