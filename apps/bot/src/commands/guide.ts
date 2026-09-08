@@ -112,6 +112,21 @@ function pages(): ContainerBuilder[] {
   ];
 }
 
+/** Post on boot when the guide channel is empty, so it is never left blank. */
+export async function ensureGuide(guild: import('discord.js').Guild): Promise<void> {
+  const ch = [...guild.channels.cache.values()]
+    .find(c => c.type === ChannelType.GuildText && GUIDE_CHANNEL.test(c.name)) as TextChannel | undefined;
+  if (!ch) return;
+  try {
+    const existing = await ch.messages.fetch({ limit: 5 });
+    if (existing.some(m => m.author.id === guild.client.user?.id)) return;
+    for (const p of pages()) {
+      await ch.send({ components: [p], flags: MessageFlags.IsComponentsV2 });
+      await new Promise(r => setTimeout(r, 400));
+    }
+  } catch { /* not fatal */ }
+}
+
 const command: Command = {
   data: new SlashCommandBuilder()
     .setName('guide')

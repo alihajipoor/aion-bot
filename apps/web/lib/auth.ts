@@ -10,6 +10,8 @@ export interface Session {
   username: string;
   avatar: string | null;
   roles: string[];
+  /** Captured at login so the owner check never depends on a live API call. */
+  owner?: boolean;
 }
 
 const key = () => new TextEncoder().encode(env.sessionSecret());
@@ -116,6 +118,10 @@ async function guildOwnerId(): Promise<string | null> {
   return ownerId;
 }
 
+export async function isGuildOwner(userId: string): Promise<boolean> {
+  try { return userId === await guildOwnerId(); } catch { return false; }
+}
+
 /** Gate check: a listed role, or the server owner. */
 export async function canAccess(userId: string, roles: string[]): Promise<boolean> {
   return isAllowed(roles) || userId === await guildOwnerId();
@@ -129,15 +135,24 @@ export async function canAccess(userId: string, roles: string[]): Promise<boolea
  */
 export async function requireSession(): Promise<Session | null> {
   const session = await readSession();
-  if (!session) return null;
+  if (!session) {
+    console.warn('[auth] no valid session cookie');
+    return null;
+  }
+
+  // The owner is resolved once at login. Re-checking it on every request made
+  // access depend on a Discord call succeeding, and a single failed call logged
+  // them out mid-action.
+  if (session.owner) return session;
 
   try {
     const roles = await fetchMemberRoles(session.id);
-    if (!roles) return null;                       // no longer in the guild
-    if (!await canAccess(session.id, roles)) return null;
+    if (!roles) { console.warn(`[auth] ${session.username} is no longer a guild member`); return null; }
+    if (!isAllowed(roles)) { console.warn(`[auth] ${session.username} holds no gate role: ${roles.join(', ')}`); return null; }
     return { ...session, roles };
-  } catch {
-    // Discord unavailable: trust the session's own roles for this request.
+  } catch (e) {
+    // Discord unavailable is not the same as access revoked.
+    console.warn(`[auth] role check failed for ${session.username}, falling back to session roles:`, (e as Error).message);
     return isAllowed(session.roles) ? session : null;
   }
 }

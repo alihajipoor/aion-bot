@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
-import { createSession, setSessionCookie, fetchMemberRoles, canAccess } from '@/lib/auth';
+import { createSession, setSessionCookie, fetchMemberRoles, canAccess, isGuildOwner } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code');
@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
 
   await setSessionCookie(await createSession({
     id: user.id, username: user.username, avatar: user.avatar, roles,
+    owner: await isGuildOwner(user.id),
   }));
   return NextResponse.redirect(`${env.baseUrl()}/dashboard`);
 }

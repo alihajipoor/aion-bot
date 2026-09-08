@@ -60,9 +60,6 @@ function panel(ownerId: string, name: string): MessageCreateOptions {
     new ButtonBuilder().setCustomId(enc('name')).setLabel('Esm').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(enc('limit')).setLabel('Zarfiat').setEmoji('👥').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(enc('lock')).setLabel('Ghofl').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(enc('hide')).setLabel('Makhfi').setEmoji('👻').setStyle(ButtonStyle.Secondary),
-  );
-  const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(enc('kick')).setLabel('Kick').setEmoji('🚪').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId(enc('claim')).setLabel('Claim').setEmoji('👑').setStyle(ButtonStyle.Primary),
   );
@@ -73,8 +70,7 @@ function panel(ownerId: string, name: string): MessageCreateOptions {
         .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
         .addTextDisplayComponents(new TextDisplayBuilder().setContent(
           `Sahebe room: <@${ownerId}>\nBa dokme-ha room et ro control kon.`))
-        .addActionRowComponents(row1)
-        .addActionRowComponents(row2),
+        .addActionRowComponents(row1),
     ],
     flags: MessageFlags.IsComponentsV2,
   };
@@ -86,9 +82,6 @@ export function interfacePanel(): MessageCreateOptions {
     new ButtonBuilder().setCustomId(enc('name')).setLabel('Esm').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(enc('limit')).setLabel('Zarfiat').setEmoji('👥').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(enc('lock')).setLabel('Ghofl').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(enc('hide')).setLabel('Makhfi').setEmoji('👻').setStyle(ButtonStyle.Secondary),
-  );
-  const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(enc('kick')).setLabel('Kick').setEmoji('🚪').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId(enc('claim')).setLabel('Claim').setEmoji('👑').setStyle(ButtonStyle.Primary),
   );
@@ -102,13 +95,12 @@ export function interfacePanel(): MessageCreateOptions {
           'Bad ba in dokme-ha az hamin ja control esh kon:',
           '',
           '**Esm** esme room  ·  **Zarfiat** chand nafar',
-          '**Ghofl** kesi natoone bia tu  ·  **Makhfi** kesi nabinesh',
-          '**Kick** birone kardan  ·  **Claim** vaghti saheb rafte',
+          '**Ghofl** kesi natoone bia tu  ·  **Kick** birone kardan',
+          '**Claim** vaghti saheb e room rafte bashe',
           '',
           '-# Tanzimatet zakhire mishe va dafeye bad khodkar emal mishe.',
         ].join('\n')))
-        .addActionRowComponents(row1)
-        .addActionRowComponents(row2),
+        .addActionRowComponents(row1),
     ],
     flags: MessageFlags.IsComponentsV2,
   };

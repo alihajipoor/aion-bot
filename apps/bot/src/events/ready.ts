@@ -9,6 +9,7 @@ import { installTempVoice, sweepTempChannels, ensureInterfacePanel } from '../mo
 import { startLeaderboardPoster } from '../modules/leaderboardPoster.js';
 import { startApi } from '../modules/api.js';
 import { startVoicePresence } from '../modules/voicepresence.js';
+import { ensureGuide } from '../commands/guide.js';
 import { startSettingsRefresh, loadSettings } from '../lib/settings.js';
 import { resolveSections } from '../lib/sections.js';
 import { config } from '../config.js';
@@ -64,7 +65,7 @@ const handler: EventHandler = {
       startExpiryWorker(client);
       startActivityTracking(client);
       startLeaderboardPoster(client);
-      if (g) { await sweepTempChannels(g); await ensureInterfacePanel(g); }
+      if (g) { await sweepTempChannels(g); await ensureInterfacePanel(g); await ensureGuide(g); }
     }
 
     client.user?.setPresence({
