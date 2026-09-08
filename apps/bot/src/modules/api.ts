@@ -5,7 +5,7 @@ import { logger } from '../lib/log.js';
 import { config } from '../config.js';
 import { settings, loadSettings, saveSettings } from '../lib/settings.js';
 import { emitLog } from '../lib/logbus.js';
-import { runBackup } from './backup.js';
+import { runBackup, testMail } from './backup.js';
 import { decideVerification } from './verification.js';
 import { liftByTarget, liftSanction, createCase, type PunishAction } from '../lib/cases.js';
 import { resolveSections, type Section } from '../lib/sections.js';
@@ -273,6 +273,12 @@ export function startApi(client: AionClient): void {
         if (req.method === 'POST' && url.pathname === '/backup/run') {
           const result = await runBackup(client);
           return json(res, result.ok ? 200 : 500, result);
+        }
+
+        if (req.method === 'POST' && url.pathname === '/backup/testmail') {
+          const body = await readBody(req);
+          const result = await testMail(String(body.to ?? ''));
+          return json(res, result.ok ? 200 : 400, result);
         }
 
         if (req.method === 'GET' && url.pathname === '/backup/status') {

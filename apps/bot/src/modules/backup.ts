@@ -144,10 +144,14 @@ async function email(path: string, base: string, size: number, to: string[]): Pr
     return [];
   }
 
+  const secure = process.env.SMTP_SECURE === 'true';
   const transport = nodemailer.createTransport({
     host,
     port: Number(process.env.SMTP_PORT ?? 587),
-    secure: process.env.SMTP_SECURE === 'true',
+    secure,
+    // On 587 the connection starts plaintext and upgrades. Demand the upgrade
+    // rather than allowing a silent fallback that would send credentials in clear.
+    requireTLS: !secure,
     auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS ?? '' } : undefined,
   });
 
@@ -198,4 +202,39 @@ export function startBackupWorker(client: AionClient): NodeJS.Timeout {
   timer.unref?.();
   log.info('backup worker started');
   return timer;
+}
+
+/** Send a small test message so mail can be verified without a full backup. */
+export async function testMail(to: string): Promise<{ ok: boolean; message: string }> {
+  const host = process.env.SMTP_HOST;
+  if (!host) return { ok: false, message: 'SMTP_HOST is not set.' };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return { ok: false, message: 'Give a valid address.' };
+
+  const secure = process.env.SMTP_SECURE === 'true';
+  try {
+    const transport = nodemailer.createTransport({
+      host,
+      port: Number(process.env.SMTP_PORT ?? 587),
+      secure,
+      requireTLS: !secure,
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS ?? '' } : undefined,
+    });
+    await transport.verify();
+    await transport.sendMail({
+      from: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? 'aion@localhost',
+      to,
+      subject: 'AION — mail test',
+      text: [
+        'Mail delivery from the AION bot is working.',
+        '',
+        `Host: ${host}:${process.env.SMTP_PORT ?? 587} (${secure ? 'TLS' : 'STARTTLS'})`,
+        `Encryption of archives: ${process.env.BACKUP_PASSPHRASE ? 'on' : 'OFF'}`,
+        '',
+        'Nightly backups will arrive at the addresses set in the panel.',
+      ].join('\n'),
+    });
+    return { ok: true, message: `Test message sent to ${to}.` };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
 }
