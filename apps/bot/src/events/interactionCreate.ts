@@ -3,6 +3,7 @@ import { logger } from '../lib/log.js';
 import { handleComponent as punishComponent, handleModal as punishModal, handleButton as punishButton } from '../commands/punish.js';
 import { handleComponent as unpunishComponent } from '../commands/unpunish.js';
 import { handleButton as vfButton, handleSelect as vfSelect, handleModal as vfModal, VF } from '../modules/verification.js';
+import { handleButton as tvButton, handleModal as tvModal, handleUserSelect as tvSelect, TV } from '../modules/tempvoice.js';
 import type { AionClient } from '../client.js';
 import type { EventHandler } from '../types.js';
 
@@ -32,6 +33,9 @@ const handler: EventHandler = {
         return;
       }
 
+      if (i.isButton() && i.customId.startsWith(`${TV}|`))        { await tvButton(i); return; }
+      if (i.isModalSubmit() && i.customId.startsWith(`${TV}|`))   { await tvModal(i); return; }
+      if (i.isUserSelectMenu() && i.customId.startsWith(`${TV}|`)) { await tvSelect(i); return; }
       if (i.isButton() && i.customId.startsWith(`${VF}|`))        { await vfButton(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${VF}|`)) { await vfSelect(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${VF}|`))   { await vfModal(i); return; }

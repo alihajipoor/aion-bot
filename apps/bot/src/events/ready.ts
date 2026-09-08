@@ -3,6 +3,9 @@ import { logger } from '../lib/log.js';
 import { startExpiryWorker } from '../modules/expiry.js';
 import { syncVoiceMute } from '../lib/enforce.js';
 import { installLogging, primeInviteCache } from '../modules/logging/index.js';
+import { startActivityTracking } from '../modules/activity.js';
+import { startCounters } from '../modules/counters.js';
+import { installTempVoice, sweepTempChannels } from '../modules/tempvoice.js';
 import { resolveSections } from '../lib/sections.js';
 import { config } from '../config.js';
 import type { AionClient } from '../client.js';
@@ -43,7 +46,13 @@ const handler: EventHandler = {
     installLogging(client);
     if (g) await primeInviteCache(g);   // baseline for working out which invite a joiner used
 
-    if (config.databaseUrl) startExpiryWorker(client);
+    installTempVoice(client);
+    startCounters(client);
+    if (config.databaseUrl) {
+      startExpiryWorker(client);
+      startActivityTracking(client);
+      if (g) await sweepTempChannels(g);
+    }
 
     client.user?.setPresence({
       status: 'online',
