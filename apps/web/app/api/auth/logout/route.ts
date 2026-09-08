@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { env } from '@/lib/env';
 import { clearSession } from '@/lib/auth';
 
-export async function GET() {
+/** POST only: a GET here lets any page log a user out with an <img> tag. */
+export async function POST() {
   await clearSession();
-  return NextResponse.redirect(env.baseUrl());
+  return NextResponse.redirect(env.baseUrl(), { status: 303 });
 }

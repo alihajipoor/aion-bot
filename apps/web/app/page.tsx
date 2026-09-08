@@ -8,6 +8,7 @@ const MESSAGES: Record<string, string> = {
   token: 'Discord rejected the login. Try again.',
   user: 'Could not read your Discord profile.',
   nocode: 'Login was cancelled.',
+  state: 'Login could not be verified. Start again from this page.',
 };
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {

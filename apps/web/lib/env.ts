@@ -1,6 +1,10 @@
 const need = (name: string): string => {
   const v = process.env[name];
   if (!v) throw new Error(`missing env var ${name}`);
+  // A short signing secret is worse than a missing one: it fails silently.
+  if (/SECRET/.test(name) && v.length < 32) {
+    throw new Error(`${name} is too short (${v.length} chars) — use at least 32`);
+  }
   return v;
 };
 

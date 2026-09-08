@@ -8,10 +8,16 @@ aion.neoxify.com {
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+		Content-Security-Policy "default-src 'self'; img-src 'self' https://cdn.discordapp.com data:; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 		-Server
 	}
 
+	# Next's Server Action CSRF check compares Origin against x-forwarded-host,
+	# so the proxy sets it rather than trusting whatever arrives.
+
 	reverse_proxy 127.0.0.1:3100 {
 		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
 	}
 }

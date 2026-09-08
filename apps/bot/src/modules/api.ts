@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
-import { ChannelType, MessageFlags, ContainerBuilder, TextDisplayBuilder, type TextChannel, type GuildChannel } from 'discord.js';
+import { ChannelType, MessageFlags, PermissionFlagsBits, ContainerBuilder, TextDisplayBuilder, type TextChannel, type GuildChannel } from 'discord.js';
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
 import { settings, loadSettings, saveSettings } from '../lib/settings.js';
@@ -19,6 +19,15 @@ const log = logger('api');
  * panel runs on the same box, so this never touches the network. The shared
  * secret guards against other local processes, not remote callers.
  */
+/** Roles the panel may never grant or remove — they gate panel access itself. */
+const PANEL_PROTECTED_ROLES = ['Consultant', 'Dev', 'PowerAdmin'];
+const DANGEROUS_PERMS = [
+  PermissionFlagsBits.Administrator, PermissionFlagsBits.ManageGuild,
+  PermissionFlagsBits.ManageRoles, PermissionFlagsBits.ManageChannels,
+  PermissionFlagsBits.BanMembers, PermissionFlagsBits.KickMembers,
+  PermissionFlagsBits.ManageWebhooks,
+];
+
 const PORT = Number(process.env.BOT_API_PORT ?? 4785);
 const SECRET = process.env.BOT_API_SECRET ?? '';
 
@@ -119,6 +128,15 @@ export function startApi(client: AionClient): void {
                 if (!role) return json(res, 404, { ok: false, message: 'Role not found.' });
                 if (role.position >= (guild.members.me?.roles.highest.position ?? 0)) {
                   return json(res, 400, { ok: false, message: 'That role sits above the bot.' });
+                }
+                // The panel must not be able to mint its own access, nor hand out
+                // anything carrying real power. Those changes belong in Discord,
+                // deliberately, where the audit log attributes a human.
+                if (PANEL_PROTECTED_ROLES.includes(role.name)) {
+                  return json(res, 403, { ok: false, message: `${role.name} cannot be assigned from the panel.` });
+                }
+                if (role.permissions.any(DANGEROUS_PERMS)) {
+                  return json(res, 403, { ok: false, message: `${role.name} carries privileged permissions.` });
                 }
                 if (body.add === true) await member.roles.add(role, 'panel');
                 else await member.roles.remove(role, 'panel');

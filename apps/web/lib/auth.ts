@@ -140,10 +140,17 @@ export async function requireSession(): Promise<Session | null> {
     return null;
   }
 
-  // The owner is resolved once at login. Re-checking it on every request made
-  // access depend on a Discord call succeeding, and a single failed call logged
-  // them out mid-action.
-  if (session.owner) return session;
+  // Owner status is captured at login so a failed API call cannot log them out
+  // mid-action, but it is still re-verified on a cached cadence so a transferred
+  // ownership does not leave the old owner with access for the whole token life.
+  if (session.owner) {
+    try {
+      if (session.id === await guildOwnerId()) return session;
+      console.warn(`[auth] ${session.username} is no longer the guild owner`);
+    } catch {
+      return session;   // Discord unavailable: trust the signed claim
+    }
+  }
 
   try {
     const roles = await fetchMemberRoles(session.id);

@@ -32,11 +32,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <div className="truncate text-[11px] text-mist-400">{session.roles[0] ?? 'member'}</div>
             </div>
           </div>
-          <Link href="/api/auth/logout"
-            className="mt-3 block rounded-lg bg-ink-800 px-3 py-1.5 text-center text-xs
-                       text-mist-400 transition hover:bg-ink-700 hover:text-mist-50">
-            Sign out
-          </Link>
+          <form action="/api/auth/logout" method="post" className="mt-3">
+            <button type="submit"
+              className="w-full rounded-lg bg-ink-800 px-3 py-1.5 text-center text-xs
+                         text-mist-400 transition hover:bg-ink-700 hover:text-mist-50">
+              Sign out
+            </button>
+          </form>
         </div>
       </aside>
 

@@ -1,10 +1,22 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { timingSafeEqual } from 'node:crypto';
+import { cookies } from 'next/headers';
+import { STATE_COOKIE } from '../../login/route';
 import { env } from '@/lib/env';
 import { createSession, setSessionCookie, fetchMemberRoles, canAccess, isGuildOwner } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code');
   if (!code) return NextResponse.redirect(`${env.baseUrl()}/?error=nocode`);
+
+  const jar = await cookies();
+  const expected = jar.get(STATE_COOKIE)?.value ?? '';
+  const given = req.nextUrl.searchParams.get('state') ?? '';
+  jar.delete(STATE_COOKIE);
+  const sameLength = expected.length > 0 && expected.length === given.length;
+  if (!sameLength || !timingSafeEqual(Buffer.from(expected), Buffer.from(given))) {
+    return NextResponse.redirect(`${env.baseUrl()}/?error=state`);
+  }
 
   const token = await fetch('https://discord.com/api/v10/oauth2/token', {
     method: 'POST',
