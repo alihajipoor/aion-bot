@@ -25,6 +25,15 @@ const adminChannel  = (g: Guild) => findChannel(g, /𝙰𝙳𝙼𝙸𝙽-𝚅�
 const logChannel    = (g: Guild) => findChannel(g, /𝙻𝙾𝙶-𝚅𝙴𝚁𝙸𝙵𝚈|log-verify/i);
 const requestChannel= (g: Guild) => findChannel(g, /𝚅𝙴𝚁𝙸𝙵𝚈-𝚁𝙴𝚀𝚄𝙴𝚂𝚃|verify-request/i);
 
+/** Roles pinged when a request lands, in the order they should appear. */
+const NOTIFY_ROLES = ['V . Global', 'PowerAdmin', 'Consultant', 'A I O N'] as const;
+
+function reviewerRoles(g: Guild) {
+  return NOTIFY_ROLES
+    .map(n => g.roles.cache.find(r => r.name === n))
+    .filter((r): r is NonNullable<typeof r> => !!r);
+}
+
 const isStaff = (m: GuildMember): boolean =>
   m.id === m.guild.ownerId ||
   m.permissions.has(PermissionFlagsBits.Administrator) ||
@@ -141,6 +150,9 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
     });
 
     const preview = styleNickname(name);
+    const reviewers = reviewerRoles(i.guild!);
+    const ping = reviewers.map(r => `<@&${r.id}>`).join(' ');
+
     const card = new ContainerBuilder().setAccentColor(C.wait)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent('### 🕐 Darkhaste verify'))
       .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
@@ -152,6 +164,7 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
         `**Jensiat**  ${gender === 'boy' ? '👦 Pesar' : '👧 Dokhtar'}`,
         `**Nick e nahayi**  ${preview}`,
         `-# Request #${id}`,
+        ...(ping ? ['', ping] : []),
       ].join('\n')))
       .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(enc('ok', id)).setLabel('Approve').setEmoji('✅').setStyle(ButtonStyle.Success),
@@ -159,7 +172,13 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
 
     const ch = adminChannel(i.guild!);
     if (!ch) { await i.editReply('Channel e admin-verify peyda nashod. Be admin begoo.'); return; }
-    const msg = await ch.send({ components: [card], flags: MessageFlags.IsComponentsV2 });
+    const msg = await ch.send({
+      components: [card],
+      flags: MessageFlags.IsComponentsV2,
+      // Components V2 forbids `content`, so the mention lives in the card and
+      // must be allow-listed or Discord renders it without notifying anyone.
+      allowedMentions: { roles: reviewers.map(r => r.id) },
+    });
     await attachMessage(id, msg.id);
 
     await i.editReply('Darkhastet ferestade shod ✅ Admin-ha zud check mikonan.');
