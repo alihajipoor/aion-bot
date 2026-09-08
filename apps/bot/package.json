@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@aion/db": "*",
+    "@discordjs/voice": "^0.19.2",
+    "@noble/ciphers": "^2.4.0",
     "@resvg/resvg-js": "^2.6.2",
     "discord.js": "^14.27.0",
     "dotenv": "^17.2.1",

@@ -8,6 +8,7 @@ import { startCounters } from '../modules/counters.js';
 import { installTempVoice, sweepTempChannels } from '../modules/tempvoice.js';
 import { startLeaderboardPoster } from '../modules/leaderboardPoster.js';
 import { startApi } from '../modules/api.js';
+import { startVoicePresence } from '../modules/voicepresence.js';
 import { startSettingsRefresh, loadSettings } from '../lib/settings.js';
 import { resolveSections } from '../lib/sections.js';
 import { config } from '../config.js';
@@ -55,6 +56,7 @@ const handler: EventHandler = {
 
     installTempVoice(client);
     startApi(client);
+    startVoicePresence(client);
     startCounters(client);
     if (config.databaseUrl) {
       await loadSettings(true);
