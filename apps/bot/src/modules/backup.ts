@@ -39,7 +39,7 @@ function dumpDatabase(target: string, excludeMessages: boolean): Promise<void> {
       .catch(reject);
 
     proc.on('error', reject);
-    proc.on('close', code => { if (code !== 0) reject(new Error(`pg_dump exited ${code}: ${stderr.slice(0, 300)}`)); });
+    proc.on('close', (code: number | null) => { if (code !== 0) reject(new Error(`pg_dump exited ${code}: ${stderr.slice(0, 300)}`)); });
   });
 }
 

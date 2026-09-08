@@ -2,8 +2,13 @@
   "name": "aion",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=20" },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "bot:dev": "npm -w @aion/bot run dev",
     "bot:build": "npm -w @aion/bot run build",
@@ -12,5 +17,14 @@
     "db:migrate": "npm -w @aion/db run migrate",
     "typecheck": "tsc -b --pretty"
   },
-  "dependencies": { "discord.js": "^14.27.0", "dotenv": "^17.2.1" }
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1"
+  },
+  "overrides": {
+    "@types/node": "22.20.1"
+  }
 }
