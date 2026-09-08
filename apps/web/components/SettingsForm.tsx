@@ -110,6 +110,26 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
         </Group>
       </div>
 
+      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+        <Group title="Backups" hint="Nightly database dump plus the full server structure, encrypted before it leaves the box.">
+          <Toggle name="backupEnabled" label="Automatic backups" defaultChecked={s.backup.enabled} />
+          <Field label="Run at (UTC hour)" htmlFor="backupHourUtc">
+            <Num name="backupHourUtc" defaultValue={s.backup.hourUtc} min={0} max={23} suffix=": 00 UTC" />
+          </Field>
+          <Field label="Email the archive to" htmlFor="recipients"
+            hint="Comma-separated addresses. Leave empty to keep backups on the server only.">
+            <input id="recipients" name="recipients" className={inputCls}
+              defaultValue={s.backup.recipients.join(', ')} placeholder="you@example.com" />
+          </Field>
+          <Field label="Keep on the server" htmlFor="keepLocal" hint="Older archives are deleted automatically.">
+            <Num name="keepLocal" defaultValue={s.backup.keepLocal} min={1} max={60} suffix="archives" />
+          </Field>
+          <Toggle name="includeMessages" label="Include cached message bodies"
+            hint="They dominate the archive size and expire within 24 hours anyway."
+            defaultChecked={s.backup.includeMessages} />
+        </Group>
+      </div>
+
       <div className="mt-5">
         <Group title="Logging" hint="Untick an event to stop it being logged. Everything is on by default.">
           <Field label="Batch window" htmlFor="batchMs"

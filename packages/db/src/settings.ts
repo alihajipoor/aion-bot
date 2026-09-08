@@ -46,6 +46,13 @@ export interface AionSettings {
     disabledEvents: string[];
     batchMs: number;
   };
+  backup: {
+    enabled: boolean;
+    hourUtc: number;
+    recipients: string[];
+    keepLocal: number;
+    includeMessages: boolean;
+  };
 }
 
 export const DEFAULT_SETTINGS: AionSettings = {
@@ -85,6 +92,14 @@ export const DEFAULT_SETTINGS: AionSettings = {
     messageDebounceSec: 3,
   },
   logging: { disabledEvents: [], batchMs: 1000 },
+  backup: {
+    enabled: true,
+    hourUtc: 3,
+    recipients: [],
+    keepLocal: 7,
+    // Message bodies are the bulk of the dump and expire in 24h anyway.
+    includeMessages: false,
+  },
 };
 
 type Plain = Record<string, unknown>;
@@ -144,6 +159,15 @@ export function sanitise(s: AionSettings): AionSettings {
     activity: {
       ...s.activity,
       messageDebounceSec: clamp(s.activity.messageDebounceSec, 0, 60, 3),
+    },
+    backup: {
+      ...s.backup,
+      hourUtc: clamp(s.backup.hourUtc, 0, 23, 3),
+      keepLocal: clamp(s.backup.keepLocal, 1, 60, 7),
+      recipients: s.backup.recipients
+        .map(r => r.trim())
+        .filter(r => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r))
+        .slice(0, 10),
     },
     logging: {
       ...s.logging,

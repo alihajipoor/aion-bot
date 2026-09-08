@@ -85,3 +85,9 @@ export const memberNickname = (userId: string, nickname: string, byTag: string) 
 export const memberKick = (userId: string, reason: string) => post('/member/kick', { userId, reason });
 export const memberGuildBan = (userId: string, reason: string, deleteDays: number) =>
   post('/member/guildban', { userId, reason, deleteDays });
+
+export const runBackupNow = () =>
+  call<{ ok: boolean; file?: string; bytes?: number; emailed: string[]; error?: string }>(
+    '/backup/run', { method: 'POST' });
+export const getBackupStatus = () =>
+  call<{ smtpConfigured: boolean; encrypted: boolean; dir: string }>('/backup/status');

@@ -5,6 +5,7 @@ import { logger } from '../lib/log.js';
 import { config } from '../config.js';
 import { settings, loadSettings, saveSettings } from '../lib/settings.js';
 import { emitLog } from '../lib/logbus.js';
+import { runBackup } from './backup.js';
 import { decideVerification } from './verification.js';
 import { liftByTarget, liftSanction, createCase, type PunishAction } from '../lib/cases.js';
 import { resolveSections, type Section } from '../lib/sections.js';
@@ -266,6 +267,19 @@ export function startApi(client: AionClient): void {
                 .map(r => ({ id: r.id, name: r.name, color: r.hexColor })),
               inVoice: !!m.voice.channelId,
             })),
+          });
+        }
+
+        if (req.method === 'POST' && url.pathname === '/backup/run') {
+          const result = await runBackup(client);
+          return json(res, result.ok ? 200 : 500, result);
+        }
+
+        if (req.method === 'GET' && url.pathname === '/backup/status') {
+          return json(res, 200, {
+            smtpConfigured: !!process.env.SMTP_HOST,
+            encrypted: !!process.env.BACKUP_PASSPHRASE,
+            dir: process.env.BACKUP_DIR ?? '/opt/aion/backups',
           });
         }
 

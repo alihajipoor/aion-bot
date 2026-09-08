@@ -63,6 +63,13 @@ export async function saveSettings(_prev: SaveResult | null, form: FormData): Pr
       disabledEvents: form.getAll('disabledEvents').map(String),
       batchMs: num(form, 'batchMs', d.logging.batchMs),
     },
+    backup: {
+      enabled: bool(form, 'backupEnabled'),
+      hourUtc: num(form, 'backupHourUtc', d.backup.hourUtc),
+      recipients: list(form, 'recipients'),
+      keepLocal: num(form, 'keepLocal', d.backup.keepLocal),
+      includeMessages: bool(form, 'includeMessages'),
+    },
   };
 
   const res = await putSettings(next);

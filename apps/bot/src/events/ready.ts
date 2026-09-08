@@ -10,6 +10,7 @@ import { startLeaderboardPoster } from '../modules/leaderboardPoster.js';
 import { startApi } from '../modules/api.js';
 import { startVoicePresence } from '../modules/voicepresence.js';
 import { ensureGuide } from '../commands/guide.js';
+import { startBackupWorker } from '../modules/backup.js';
 import { startSettingsRefresh, loadSettings } from '../lib/settings.js';
 import { resolveSections } from '../lib/sections.js';
 import { config } from '../config.js';
@@ -65,6 +66,7 @@ const handler: EventHandler = {
       startExpiryWorker(client);
       startActivityTracking(client);
       startLeaderboardPoster(client);
+      startBackupWorker(client);
       if (g) { await sweepTempChannels(g); await ensureInterfacePanel(g); await ensureGuide(g); }
     }
 
