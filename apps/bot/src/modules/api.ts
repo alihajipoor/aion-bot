@@ -4,6 +4,7 @@ import { ChannelType, MessageFlags, ContainerBuilder, TextDisplayBuilder, type T
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
 import { settings, loadSettings, saveSettings } from '../lib/settings.js';
+import { emitLog } from '../lib/logbus.js';
 import { decideVerification } from './verification.js';
 import { liftByTarget, liftSanction, createCase, type PunishAction } from '../lib/cases.js';
 import { resolveSections, type Section } from '../lib/sections.js';
@@ -146,6 +147,13 @@ export function startApi(client: AionClient): void {
                   moderatorId: String(body.byId ?? ''), moderatorTag: String(body.byTag ?? 'panel'),
                   reason, minutes, roleId,
                 });
+                emitLog(guild, 'punishment', [
+                  `### ${type === 'ban' ? '⛔' : '🔇'} ${type === 'ban' ? 'Ban' : 'Mute'} — ${section} (from panel)`,
+                  `<@${member.id}> ${member.user.tag}`,
+                  `**Duration** ${minutes ? `${minutes} min` : 'permanent'}  ·  **By** <@${String(body.byId ?? '')}>`,
+                  `**Reason** ${reason}`,
+                  `-# Case #${created.caseNumber}`,
+                ].join('\n'), member.displayAvatarURL({ extension: 'png', size: 128 }));
                 if (type === 'ban') await ejectFromSection(member, cfg?.categoryId ?? null, reason);
                 else await syncVoiceMute(member, `panel ${type}`);
                 return json(res, 200, { ok: true, message: `Case #${created.caseNumber} created.` });
@@ -190,6 +198,10 @@ export function startApi(client: AionClient): void {
           }
           if (row) await liftSanction(row.sanctionId, row.caseId, byId);
           if (member) { await releaseVoiceMute(member, 'AION: lifted from panel'); await syncVoiceMute(member); }
+          emitLog(guild, 'punishment', [
+            `### 🔓 ${type === 'ban' ? 'Unban' : 'Unmute'} — ${section} (from panel)`,
+            `<@${userId}>`, `**Lifted by** <@${byId}>`,
+          ].join('\n'));
           return json(res, 200, { ok: true, message: 'Lifted.' });
         }
 

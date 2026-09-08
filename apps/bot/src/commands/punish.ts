@@ -14,6 +14,7 @@ import { createCase, activeSanctionsFor, liftSanction, type PunishAction } from 
 import { syncVoiceMute, releaseVoiceMute, ejectFromSection } from '../lib/enforce.js';
 import { bidi, humanDuration, isolate } from '../lib/text.js';
 import { logger } from '../lib/log.js';
+import { emitLog } from '../lib/logbus.js';
 import type { Command } from '../types.js';
 
 const log = logger('punish');
@@ -255,6 +256,14 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
       await (ch as TextChannel).send({ components: [announce], flags: MessageFlags.IsComponentsV2 });
     }
 
+    emitLog(guild, 'punishment', [
+      `### ${act === 'ban' ? '⛔' : '🔇'} ${act === 'ban' ? 'Ban' : 'Mute'} — ${cfg.label}`,
+      `<@${target.id}> ${isolate(target.user.tag)}`,
+      `**Duration** ${when}  ·  **By** <@${invoker.id}>`,
+      `**Reason** ${isolate(reason)}`,
+      `-# Case #${caseNumber}`,
+    ].join('\n'), target.user.displayAvatarURL({ extension: 'png', size: 128 }));
+
     await i.editReply(`Anjam shod — case #${caseNumber}. ${target.user.tag} be moddate ${when} ${act} shod.`);
     log.info(`case #${caseNumber} ${act} ${target.user.tag} in ${sec} by ${invoker.user.tag}`);
   } catch (e) {
@@ -321,6 +330,13 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
       ],
       flags: MessageFlags.IsComponentsV2,
     });
+
+    emitLog(guild, 'punishment', [
+      `### 🔓 ${act === 'ban' ? 'Unban' : 'Unmute'} — ${cfg.label}`,
+      `<@${targetId}>`,
+      `**Lifted by** <@${i.user.id}>`,
+      row?.caseNumber ? `-# Case #${row.caseNumber} closed` : '-# closed',
+    ].join('\n'));
 
     await i.editReply(`Anjam shod — ${act === 'ban' ? 'ban' : 'mute'} bardashte shod.`);
     log.info(`${act} lifted for ${targetId} in ${sec} by ${i.user.tag}`);

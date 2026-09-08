@@ -2,6 +2,7 @@ import { MessageFlags, ContainerBuilder, TextDisplayBuilder, type TextChannel } 
 import { dueSanctions, clearSanction } from '../lib/cases.js';
 import { resolveSections, type Section } from '../lib/sections.js';
 import { syncVoiceMute, releaseVoiceMute } from '../lib/enforce.js';
+import { emitLog } from '../lib/logbus.js';
 import { logger } from '../lib/log.js';
 import { lt } from 'drizzle-orm';
 import { getDb, logEvents, messageCache } from '@aion/db';
@@ -33,6 +34,10 @@ export function startExpiryWorker(client: AionClient): NodeJS.Timeout {
         await clearSanction(s.id, s.caseId);
         if (member) { await releaseVoiceMute(member, 'AION: punishment expired'); await syncVoiceMute(member); }
         log.info(`expired ${s.type} for ${s.userId} in ${s.section}`);
+        emitLog(guild, 'punishment', [
+          `### ⏱ ${s.type === 'ban' ? 'Ban' : 'Mute'} expired — ${s.section}`,
+          `<@${s.userId}>`, '-# lifted automatically',
+        ].join('\n'));
 
         const cfg = resolveSections(guild).get(s.section as Section);
         const chId = cfg?.banChannelId ?? cfg?.punishChannelId;

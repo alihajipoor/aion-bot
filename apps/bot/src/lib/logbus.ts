@@ -19,7 +19,8 @@ export type LogType =
   | 'messageEdit' | 'messageDelete' | 'messageBulkDelete'
   | 'inviteCreate' | 'inviteDelete'
   | 'webhookUpdate' | 'integrationUpdate'
-  | 'emojiUpdate' | 'stickerUpdate' | 'threadUpdate' | 'guildUpdate' | 'automod';
+  | 'emojiUpdate' | 'stickerUpdate' | 'threadUpdate' | 'guildUpdate' | 'automod'
+  | 'punishment';
 
 /** Target channel per event type, written as the ASCII-folded channel name. */
 const ROUTES: Record<LogType, string> = {
@@ -36,6 +37,8 @@ const ROUTES: Record<LogType, string> = {
   webhookUpdate: 'webhooks', integrationUpdate: 'webhooks',
   emojiUpdate: 'server', stickerUpdate: 'server', threadUpdate: 'server',
   guildUpdate: 'server', automod: 'server',
+  // Central record of every punishment across all sections, staff-only.
+  punishment: 'banned-log',
 };
 
 /** Accent colour per event family, so a channel reads at a glance. */
@@ -52,6 +55,7 @@ const ACCENT: Record<LogType, number> = {
   webhookUpdate: 0xe74c3c, integrationUpdate: 0xe74c3c,
   emojiUpdate: 0x95a5a6, stickerUpdate: 0x95a5a6, threadUpdate: 0x95a5a6,
   guildUpdate: 0x95a5a6, automod: 0xe74c3c,
+  punishment: 0xed4245,
 };
 
 const channelCache = new Map<string, string | null>();   // `${guildId}:${type}` -> channelId
