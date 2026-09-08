@@ -22,6 +22,21 @@ export function snippet(text: string | null | undefined, max = 350): string {
   return clean.length > max ? `${clean.slice(0, max)}…` : clean;
 }
 
+/**
+ * Render user content as a blockquote rather than a code block. Code blocks use
+ * the system monospace font, which has poor Arabic coverage and no bidi
+ * isolation, so Persian messages come out mangled inside them.
+ */
+export function quote(text: string | null | undefined, max = 500): string {
+  if (text === null || text === undefined) return '> *(not cached)*';
+  if (!text.trim()) return '> *(empty)*';
+  const clean = snippet(text, max);
+  return clean.split('\n').map(l => `> ${l}`).join('\n');
+}
+
+/** Card header: an icon and a bold title on its own line. */
+export const title = (icon: string, text: string): string => `### ${icon} ${text}`;
+
 export const userTag = (user: User): string => isolate(user.tag);
 
 /** Render a before/after diff as compact bullet lines. */
