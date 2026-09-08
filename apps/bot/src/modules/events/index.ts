@@ -100,12 +100,10 @@ export async function interfacePanel(guild: Guild): Promise<MessageCreateOptions
 }
 
 /**
- * Keeps exactly one panel in the interface channel.
- *
- * It is deliberately delete-and-repost rather than edit. Editing a Components
- * V2 message with `attachments: []` and fresh `files` drops the upload but
- * keeps the media gallery pointing at it, which leaves a broken image — and
- * an untouched panel is not worth that risk on every restart.
+ * Keeps exactly one panel in the interface channel, editing in place so the
+ * message id survives. Components V2 files referenced by a media gallery do
+ * not appear in `message.attachments` — that array is empty by design and is
+ * not a sign the upload failed.
  */
 export async function ensureEventPanel(guild: Guild): Promise<void> {
   const ch = interfaceChannel(guild);
@@ -113,12 +111,24 @@ export async function ensureEventPanel(guild: Guild): Promise<void> {
   try {
     const recent = await ch.messages.fetch({ limit: 30 });
     const mine = recent.filter(m => m.author.id === guild.client.user?.id && !m.reference && m.components.length);
+    // Per-event control cards live in the same channel and are not the panel.
     const cards = new Set((await liveEvents(guild.id).catch(() => []))
       .map(e => e.panelMessageId).filter(Boolean) as string[]);
     const panels = mine.filter(m => !cards.has(m.id));
-    if (panels.size === 1) return;                       // already correct
+
+    const payload = await interfacePanel(guild);
+    const existing = panels.last();
+    if (existing && panels.size === 1) {
+      await existing.edit({
+        components: payload.components,
+        files: payload.files,
+        attachments: [],
+        flags: MessageFlags.IsComponentsV2,
+      });
+      return;
+    }
     for (const m of panels.values()) await m.delete().catch(() => {});
-    await ch.send(await interfacePanel(guild));
+    await ch.send(payload);
     log.info('event panel posted');
   } catch (e) { log.warn('event panel failed', (e as Error).message); }
 }
