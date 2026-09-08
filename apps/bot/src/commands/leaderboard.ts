@@ -3,8 +3,10 @@ import {
   SeparatorBuilder, SeparatorSpacingSize,
 } from 'discord.js';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { PermissionFlagsBits, type GuildMember } from 'discord.js';
 import { getDb, activityDaily } from '@aion/db';
 import { isolate } from '../lib/text.js';
+import { postDailyNow, postWeeklyNow } from '../modules/leaderboardPoster.js';
 import type { Command } from '../types.js';
 
 type Metric = 'voice' | 'chat' | 'admin';
@@ -40,9 +42,29 @@ const command: Command = {
         { name: 'Emrooz', value: 'today' },
         { name: '7 rooz', value: 'week' },
         { name: '30 rooz', value: 'month' },
-        { name: 'Hamishe', value: 'all' })),
+        { name: 'Hamishe', value: 'all' }))
+    .addStringOption(o => o.setName('post').setDescription('Alan post kon (faghat admin)')
+      .addChoices(
+        { name: 'Daily public boards -> top-active', value: 'daily' },
+        { name: 'Weekly staff board -> admin-active', value: 'weekly' })),
 
   async execute(i) {
+    const forcePost = i.options.getString('post');
+    if (forcePost) {
+      const member = i.member as GuildMember;
+      const allowed = member.permissions.has(PermissionFlagsBits.ManageGuild) ||
+        member.roles.cache.some(r => ['Consultant', 'PowerAdmin', 'A I O N'].includes(r.name));
+      if (!allowed) {
+        await i.reply({ content: 'Faghat admin-ha mitunan post konan.', flags: 64 });
+        return;
+      }
+      await i.deferReply({ flags: 64 });
+      if (forcePost === 'daily') await postDailyNow(i.guild!);
+      else await postWeeklyNow(i.guild!);
+      await i.editReply('Post shod ✅');
+      return;
+    }
+
     await i.deferReply();
     const metric = (i.options.getString('type') ?? 'voice') as Metric;
     const period = (i.options.getString('period') ?? 'week') as Period;

@@ -6,6 +6,7 @@ import { installLogging, primeInviteCache } from '../modules/logging/index.js';
 import { startActivityTracking } from '../modules/activity.js';
 import { startCounters } from '../modules/counters.js';
 import { installTempVoice, sweepTempChannels } from '../modules/tempvoice.js';
+import { startLeaderboardPoster } from '../modules/leaderboardPoster.js';
 import { resolveSections } from '../lib/sections.js';
 import { config } from '../config.js';
 import type { AionClient } from '../client.js';
@@ -55,6 +56,7 @@ const handler: EventHandler = {
     if (config.databaseUrl) {
       startExpiryWorker(client);
       startActivityTracking(client);
+      startLeaderboardPoster(client);
       if (g) await sweepTempChannels(g);
     }
 
