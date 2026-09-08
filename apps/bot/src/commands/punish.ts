@@ -11,7 +11,10 @@ import { resolveSections, type Section } from '../lib/sections.js';
 import { authorityOf, canBan, canMute, type Authority } from '../lib/perms.js';
 import { checkCooldown, markUsed } from '../lib/cooldown.js';
 import { settings } from '../lib/settings.js';
-import { createCase, activeSanctionsFor, liftSanction, type PunishAction } from '../lib/cases.js';
+import {
+  createCase, activeSanctionsFor, liftSanction, historyFor, suggestedMinutes,
+  type PunishAction, type CaseAction, type History,
+} from '../lib/cases.js';
 import { syncVoiceMute, releaseVoiceMute, ejectFromSection } from '../lib/enforce.js';
 import { bidi, humanDuration, isolate } from '../lib/text.js';
 import { logger } from '../lib/log.js';
@@ -105,7 +108,7 @@ const command: Command = {
 
     // One section available -> skip straight to the action step.
     if (allowed.length === 1) {
-      await i.reply(actionStep(target.id, allowed[0]!, auth, i.guild));
+      await i.reply(await actionStep(target.id, allowed[0]!, auth, i.guild));
       return;
     }
 
@@ -125,9 +128,28 @@ const command: Command = {
   },
 };
 
-function actionStep(targetId: string, section: Section, auth: Authority, guild: NonNullable<ChatInputCommandInteraction['guild']>) {
+/** One line summarising what is already on record, in Finglish. */
+function historyLine(h: History, days: number): string {
+  const parts = [
+    h.warns ? `**${h.warns}** warn` : null,
+    h.mutes ? `**${h.mutes}** mute` : null,
+    h.bans ? `**${h.bans}** ban` : null,
+  ].filter(Boolean);
+  return parts.length
+    ? `-# 📋 Sabeghe (${days} rooze gozashte): ${parts.join(' · ')}`
+    : `-# 📋 Sabeghe-i nadare too ${days} rooze gozashte.`;
+}
+
+async function actionStep(targetId: string, section: Section, auth: Authority, guild: NonNullable<ChatInputCommandInteraction['guild']>) {
   const cfg = resolveSections(guild).get(section)!;
+  const days = settings().moderation.warnWindowDays;
+  const hist = await historyFor(guild.id, targetId, days).catch(() => null);
+
   const opts: StringSelectMenuOptionBuilder[] = [];
+  // Anyone who can mute can warn — a warn restricts nothing.
+  if (canMute(auth, section)) opts.push(new StringSelectMenuOptionBuilder()
+    .setLabel('Warn').setValue('warn').setEmoji('⚠️')
+    .setDescription('Hich mahdoodiati nemizare — faghat sabt mishe'));
   if (canMute(auth, section)) opts.push(new StringSelectMenuOptionBuilder()
     .setLabel('Mute').setValue('mute').setEmoji('🔇')
     .setDescription('Too in section nemitoone harf bezane ya message bede'));
@@ -140,9 +162,15 @@ function actionStep(targetId: string, section: Section, auth: Authority, guild: 
     .setPlaceholder('Chikar konim?')
     .addOptions(opts);
 
+  const box = panel(`Punish — ${cfg.emoji} ${cfg.label}`, 'Noe punishment ro entekhab kon.')
+    .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu));
+  if (hist) {
+    box.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(historyLine(hist, days)));
+  }
+
   return {
-    components: [panel(`Punish — ${cfg.emoji} ${cfg.label}`, 'Noe punishment ro entekhab kon.')
-      .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu))],
+    components: [box],
     flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
   };
 }
@@ -153,36 +181,63 @@ export async function handleComponent(i: StringSelectMenuInteraction): Promise<v
 
   if (step === 'sec') {
     const chosen = i.values[0] as Section;
-    await i.update(actionStep(targetId!, chosen, auth, i.guild!));
+    await i.update(await actionStep(targetId!, chosen, auth, i.guild!));
     return;
   }
 
   if (step === 'act') {
-    const act = i.values[0] as PunishAction;
+    const act = i.values[0] as CaseAction;
+
+    // A warn has no duration, so it goes straight to the reason.
+    if (act === 'warn') {
+      await i.showModal(reasonModal(targetId!, section!, act, 0, 'Dalile warn'));
+      return;
+    }
+
+    const mod = settings().moderation;
+    const hist = await historyFor(i.guildId!, targetId!, mod.warnWindowDays).catch(() => null);
+    const suggested = hist ? suggestedMinutes(hist, mod.durationsMinutes, mod.warnEscalateAt) : null;
+
     const menu = new StringSelectMenuBuilder()
       .setCustomId(enc('dur', targetId!, section!, act))
       .setPlaceholder('Chand vaght?')
-      .addOptions(durations().map(([label, m]) =>
-        new StringSelectMenuOptionBuilder().setLabel(label).setValue(String(m))));
+      .addOptions(durations().map(([label, m]) => {
+        const opt = new StringSelectMenuOptionBuilder().setLabel(label).setValue(String(m));
+        // Pre-selected, not enforced. The moderator still decides.
+        if (m === suggested) opt.setDefault(true).setDescription('Pishnahad bar asase sabeghe');
+        return opt;
+      }));
+
+    const box = panel(`Punish — ${act === 'ban' ? '⛔ Ban' : '🔇 Mute'}`, 'Moddat ro entekhab kon.')
+      .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu));
+    if (hist) {
+      box.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          suggested !== null
+            ? `${historyLine(hist, mod.warnWindowDays)}\n-# ⬆️ Ba in sabeghe **${humanDuration(suggested)}** pishnahad mishe.`
+            : historyLine(hist, mod.warnWindowDays)));
+    }
+
     await i.update({
-      components: [panel(`Punish — ${act === 'ban' ? '⛔ Ban' : '🔇 Mute'}`, 'Moddat ro entekhab kon.')
-        .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu))],
+      components: [box],
       flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
     });
     return;
   }
 
   if (step === 'dur') {
-    const minutes = i.values[0]!;
-    const modal = new ModalBuilder()
-      .setCustomId(enc('rsn', targetId!, section!, action!, minutes))
-      .setTitle('Dalile punishment')
-      .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder().setCustomId('reason').setLabel('Chera?')
-          .setStyle(TextInputStyle.Paragraph).setRequired(true)
-          .setMaxLength(400).setPlaceholder('Mesal: fohsh dadan too voice')));
-    await i.showModal(modal);
+    await i.showModal(reasonModal(targetId!, section!, action as CaseAction, Number(i.values[0]!)));
   }
+}
+
+function reasonModal(targetId: string, section: string, act: CaseAction, minutes: number, title = 'Dalile punishment') {
+  return new ModalBuilder()
+    .setCustomId(enc('rsn', targetId, section, act, minutes))
+    .setTitle(title)
+    .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(
+      new TextInputBuilder().setCustomId('reason').setLabel('Chera?')
+        .setStyle(TextInputStyle.Paragraph).setRequired(true)
+        .setMaxLength(400).setPlaceholder('Mesal: fohsh dadan too voice')));
 }
 
 export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
@@ -191,7 +246,7 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
   const invoker = i.member as GuildMember;
   const auth = authorityOf(invoker);
   const sec = section as Section;
-  const act = action as PunishAction;
+  const act = action as CaseAction;
   const minutes = Number(minutesRaw);
   const reason = i.fields.getTextInputValue('reason').trim();
 
@@ -199,6 +254,8 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
 
   const ok = act === 'ban' ? canBan(auth, sec) : canMute(auth, sec);
   if (!ok) { await i.editReply('Dastresi nadari.'); return; }
+
+  if (act === 'warn') { await submitWarn(i, sec, targetId!, reason); return; }
 
   // Globals are rate-limited; elevated staff are not.
   if (!auth.elevated) {
@@ -347,5 +404,79 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
   } catch (e) {
     log.error('lift failed', e);
     await i.editReply('Nashod. Ehtemalan bot dastresi nadare.');
+  }
+}
+
+/**
+ * A warn changes nothing about what someone can do — it only goes on record.
+ * That is the point: the quiet incidents stop leaving no trace, so the next
+ * moderator decides with the same facts rather than from scratch.
+ */
+async function submitWarn(
+  i: ModalSubmitInteraction, sec: Section, targetId: string, reason: string,
+): Promise<void> {
+  const guild = i.guild!;
+  const invoker = i.member as GuildMember;
+  const cfg = resolveSections(guild).get(sec)!;
+
+  const target = await guild.members.fetch(targetId).catch(() => null);
+  if (!target) { await i.editReply('User dige too server nist.'); return; }
+
+  const mod = settings().moderation;
+  try {
+    const { caseNumber } = await createCase({
+      guildId: guild.id, section: sec, action: 'warn',
+      targetId: target.id, targetTag: target.user.tag,
+      moderatorId: invoker.id, moderatorTag: invoker.user.tag,
+      reason, minutes: 0,
+    });
+
+    // Counted after the insert, so the number the card shows includes this one.
+    const hist = await historyFor(guild.id, target.id, mod.warnWindowDays).catch(() => null);
+    const next = hist ? suggestedMinutes(hist, mod.durationsMinutes, mod.warnEscalateAt) : null;
+
+    const card = new ContainerBuilder().setAccentColor(0xfaa61a)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## ⚠️ Warn  ·  ${cfg.emoji} ${cfg.label}`))
+      .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addSectionComponents(new SectionBuilder()
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`<@${target.id}>  ${isolate(target.user.tag)}`),
+          new TextDisplayBuilder().setContent(`📝  ${isolate(reason)}`),
+          new TextDisplayBuilder().setContent(
+            hist ? historyLine(hist, mod.warnWindowDays) : '-# Sabeghe dar dastres nist.'))
+        .setThumbnailAccessory(new ThumbnailBuilder()
+          .setURL(target.user.displayAvatarURL({ extension: 'png', size: 256 }))))
+      .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `-# Case #${caseNumber}  ·  tavassote <@${invoker.id}>`
+        + (next !== null ? `  ·  dafeye badi **${humanDuration(next)}** pishnahad mishe` : '')));
+
+    const chId = cfg.punishChannelId ?? cfg.banChannelId;
+    const ch = chId ? await guild.channels.fetch(chId).catch(() => null) : null;
+    if (ch?.isTextBased()) {
+      await (ch as TextChannel).send({ components: [card], flags: MessageFlags.IsComponentsV2 });
+    }
+
+    emitLog(guild, 'punishment', [
+      `### ⚠️ Warn — ${cfg.label}`,
+      `<@${target.id}> ${isolate(target.user.tag)}`,
+      `**By** <@${invoker.id}>`,
+      `**Reason** ${isolate(reason)}`,
+      `-# Case #${caseNumber}`,
+    ].join('\n'), target.user.displayAvatarURL({ extension: 'png', size: 128 }));
+
+    if (mod.warnDm) {
+      await target.send(
+        `⚠️ **Warn** gerefti too **${cfg.label}**.\n**Dalil:** ${reason}\n\n`
+        + 'Hich mahdoodiati barat nazashtim — vali sabt shod va dafeye badi hesab mishe.',
+      ).catch(() => {});
+    }
+
+    await i.editReply(`Warn sabt shod ✅ Case #${caseNumber}`);
+    log.info(`warn #${caseNumber} for ${target.user.tag} by ${invoker.user.tag}`);
+  } catch (e) {
+    log.error('warn failed', e);
+    await i.editReply('Nashod — log ro check kon.');
   }
 }

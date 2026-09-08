@@ -25,6 +25,9 @@ export async function saveSettings(_prev: SaveResult | null, form: FormData): Pr
       globalCooldownSec: num(form, 'globalCooldownSec', d.moderation.globalCooldownSec),
       durationsMinutes: list(form, 'durationsMinutes').map(Number).filter(n => Number.isFinite(n) && n > 0),
       allowPermanent: bool(form, 'allowPermanent'),
+      warnWindowDays: num(form, 'warnWindowDays', d.moderation.warnWindowDays),
+      warnEscalateAt: num(form, 'warnEscalateAt', d.moderation.warnEscalateAt),
+      warnDm: bool(form, 'warnDm'),
     },
     verification: {
       enabled: bool(form, 'verificationEnabled'),

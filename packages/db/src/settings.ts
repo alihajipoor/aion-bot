@@ -8,6 +8,12 @@ export interface AionSettings {
     globalCooldownSec: number;
     durationsMinutes: number[];
     allowPermanent: boolean;
+    /** How far back the escalation ladder looks. */
+    warnWindowDays: number;
+    /** Priors needed before the ladder suggests a longer default. */
+    warnEscalateAt: number;
+    /** DM the member when they are warned. */
+    warnDm: boolean;
   };
   verification: {
     enabled: boolean;
@@ -80,6 +86,9 @@ export const DEFAULT_SETTINGS: AionSettings = {
     globalCooldownSec: 10,
     durationsMinutes: [10, 30, 60, 180, 360, 720, 1440, 4320, 10080],
     allowPermanent: true,
+    warnWindowDays: 30,
+    warnEscalateAt: 3,
+    warnDm: true,
   },
   verification: {
     enabled: true,
@@ -167,6 +176,8 @@ export function sanitise(s: AionSettings): AionSettings {
     moderation: {
       ...s.moderation,
       globalCooldownSec: clamp(s.moderation.globalCooldownSec, 0, 600, 10),
+      warnWindowDays: clamp(s.moderation.warnWindowDays, 1, 365, 30),
+      warnEscalateAt: clamp(s.moderation.warnEscalateAt, 2, 20, 3),
       durationsMinutes: [...new Set(s.moderation.durationsMinutes.filter(n => n > 0 && n <= 525600))]
         .sort((a, b) => a - b).slice(0, 20),
     },

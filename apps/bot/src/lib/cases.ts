@@ -1,20 +1,24 @@
-import { and, desc, eq, isNotNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, lte, sql } from 'drizzle-orm';
 import { getDb, cases, sanctions, activityDaily } from '@aion/db';
 import type { Section } from './sections.js';
 
+/** Actions that put a role on someone and therefore need lifting. */
 export type PunishAction = 'ban' | 'mute';
+/** Everything /punish can record. A warn restricts nothing; it only counts. */
+export type CaseAction = PunishAction | 'warn';
 
 export interface NewCase {
   guildId: string;
   section: Section;
-  action: PunishAction;
+  action: CaseAction;
   targetId: string;
   targetTag: string;
   moderatorId: string;
   moderatorTag: string;
   reason: string;
   minutes: number;          // 0 = permanent
-  roleId: string;
+  /** Absent for a warn — there is no role to add and nothing to expire. */
+  roleId?: string;
 }
 
 export interface CreatedCase { caseNumber: number; caseId: number; expiresAt: Date | null }
@@ -25,7 +29,8 @@ export interface CreatedCase { caseNumber: number; caseId: number; expiresAt: Da
  */
 export async function createCase(c: NewCase): Promise<CreatedCase> {
   const db = getDb();
-  const expiresAt = c.minutes > 0 ? new Date(Date.now() + c.minutes * 60_000) : null;
+  const warn = c.action === 'warn';
+  const expiresAt = !warn && c.minutes > 0 ? new Date(Date.now() + c.minutes * 60_000) : null;
 
   return db.transaction(async (tx) => {
     const [prev] = await tx.select({ n: cases.caseNumber })
@@ -37,16 +42,22 @@ export async function createCase(c: NewCase): Promise<CreatedCase> {
       guildId: c.guildId, caseNumber, type: c.action, section: c.section,
       targetId: c.targetId, targetTag: c.targetTag,
       moderatorId: c.moderatorId, moderatorTag: c.moderatorTag,
-      reason: c.reason, durationMinutes: c.minutes || null, expiresAt, active: true,
+      reason: c.reason, durationMinutes: warn ? null : (c.minutes || null), expiresAt,
+      // A warn is never "in force", so it is filed closed. Otherwise it would
+      // sit in activeCaseFor forever with nothing able to resolve it.
+      active: !warn,
+      resolvedAt: warn ? new Date() : null,
     }).returning({ id: cases.id });
 
-    await tx.insert(sanctions).values({
-      guildId: c.guildId, userId: c.targetId, roleId: c.roleId,
-      section: c.section, type: c.action, caseId: row!.id, expiresAt,
-    }).onConflictDoUpdate({
-      target: [sanctions.guildId, sanctions.userId, sanctions.roleId],
-      set: { expiresAt, caseId: row!.id, type: c.action },
-    });
+    if (!warn && c.roleId) {
+      await tx.insert(sanctions).values({
+        guildId: c.guildId, userId: c.targetId, roleId: c.roleId,
+        section: c.section, type: c.action, caseId: row!.id, expiresAt,
+      }).onConflictDoUpdate({
+        target: [sanctions.guildId, sanctions.userId, sanctions.roleId],
+        set: { expiresAt, caseId: row!.id, type: c.action },
+      });
+    }
 
     // Credit the moderator for the admin activity leaderboard.
     const day = new Date().toISOString().slice(0, 10);
@@ -129,4 +140,48 @@ export async function liftByTarget(
 ): Promise<ActiveSanctionRow | null> {
   const rows = await activeSanctionsFor(guildId, userId);
   return rows.find(r => r.section === section && r.type === type) ?? null;
+}
+
+/* ── history, so ten moderators reach the same decision ────────── */
+
+export interface History {
+  warns: number;
+  mutes: number;
+  bans: number;
+  /** Most recent first, capped for display. */
+  recent: { caseNumber: number; type: string; reason: string | null; createdAt: Date; section: string | null }[];
+}
+
+/** Everything on record for one member inside the window. */
+export async function historyFor(guildId: string, userId: string, days: number): Promise<History> {
+  const since = new Date(Date.now() - days * 86_400_000);
+  const rows = await getDb()
+    .select({
+      caseNumber: cases.caseNumber, type: cases.type, reason: cases.reason,
+      createdAt: cases.createdAt, section: cases.section,
+    })
+    .from(cases)
+    .where(and(eq(cases.guildId, guildId), eq(cases.targetId, userId), gte(cases.createdAt, since)))
+    .orderBy(desc(cases.caseNumber));
+
+  const count = (t: string) => rows.filter(r => r.type === t).length;
+  return {
+    warns: count('warn'),
+    mutes: count('mute'),
+    bans: count('ban'),
+    recent: rows.slice(0, 5) as History['recent'],
+  };
+}
+
+/**
+ * The duration the ladder points at. It is a suggestion, not a rule — the
+ * moderator can still pick anything. The point is that the default reflects
+ * what already happened rather than who is on shift.
+ */
+export function suggestedMinutes(h: History, ladder: number[], escalateAt: number): number | null {
+  const priors = h.warns + h.mutes + h.bans;
+  if (priors < escalateAt || !ladder.length) return null;
+  // One step further up the configured ladder for every threshold crossed.
+  const steps = Math.floor(priors / escalateAt);
+  return ladder[Math.min(ladder.length - 1, steps)] ?? null;
 }

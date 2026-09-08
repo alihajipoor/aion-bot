@@ -36,6 +36,17 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
           </Field>
           <Toggle name="allowPermanent" label="Offer permanent punishments"
             defaultChecked={s.moderation.allowPermanent} />
+          <Field label="History window" htmlFor="warnWindowDays"
+            hint="How far back /punish looks when it shows a member's record and suggests a duration.">
+            <Num name="warnWindowDays" defaultValue={s.moderation.warnWindowDays} min={1} max={365} suffix="days" />
+          </Field>
+          <Field label="Escalate after" htmlFor="warnEscalateAt"
+            hint="Priors inside the window before the ladder pre-selects a longer duration. It is a suggestion — the moderator can still pick anything.">
+            <Num name="warnEscalateAt" defaultValue={s.moderation.warnEscalateAt} min={2} max={20} suffix="priors" />
+          </Field>
+          <Toggle name="warnDm" label="DM the member when warned"
+            hint="A warning nobody sees teaches nothing."
+            defaultChecked={s.moderation.warnDm} />
         </Group>
 
         <Group title="Verification" hint="The gate new members pass through before seeing the server.">
