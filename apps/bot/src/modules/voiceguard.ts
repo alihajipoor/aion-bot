@@ -4,6 +4,7 @@ import { settings } from '../lib/settings.js';
 import { isolate, humanDuration } from '../lib/text.js';
 import { logger } from '../lib/log.js';
 import type { AionClient } from '../client.js';
+import { hasRole } from '../lib/roles.js';
 
 const log = logger('voiceguard');
 
@@ -36,7 +37,7 @@ function exempt(member: GuildMember): boolean {
   if (member.permissions.has(PermissionFlagsBits.Administrator)) return true;
   if (member.permissions.has(PermissionFlagsBits.ModerateMembers)) return true;
   const names = settings().voiceGuard.exemptRoles;
-  return member.roles.cache.some(r => names.includes(r.name));
+  return hasRole(member, names);
 }
 
 /** Records one event and reports whether it tipped the member over. */

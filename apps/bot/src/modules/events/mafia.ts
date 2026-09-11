@@ -15,6 +15,7 @@ import {
   SCENARIOS, CITIZEN, scenarioOf, distribution, MAFIA_DEFAULTS,
   type RoleDef, type MafiaConfig,
 } from './games.js';
+import { hasRole } from '../../lib/roles.js';
 
 const log = logger('mafia');
 export const MAFIA_ID = 'mf';
@@ -217,7 +218,7 @@ const canRun = (i: MessageComponentInteraction, ev: EventRow): boolean => {
   const m = i.member as GuildMember;
   return i.user.id === ev.hostId
     || m.permissions.has(PermissionFlagsBits.Administrator)
-    || m.roles.cache.some(r => ['Consultant', 'PowerAdmin', 'Dev'].includes(r.name));
+    || hasRole(m, ['Consultant', 'PowerAdmin', 'Dev']);
 };
 
 export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInteraction): Promise<void> {

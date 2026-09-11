@@ -1,5 +1,6 @@
 import { PermissionFlagsBits, type GuildMember } from 'discord.js';
 import { ELEVATED_ROLES, resolveSections, type Section } from './sections.js';
+import { hasRole } from './roles.js';
 
 export type Rank = 'elevated' | 'global' | 'mod';
 
@@ -14,7 +15,7 @@ export function authorityOf(member: GuildMember): Authority {
   const elevated =
     member.id === member.guild.ownerId ||
     member.permissions.has(PermissionFlagsBits.Administrator) ||
-    member.roles.cache.some(r => (ELEVATED_ROLES as readonly string[]).includes(r.name));
+    hasRole(member, ELEVATED_ROLES as readonly string[]);
 
   const perSection = new Map<Section, Rank>();
   const sections = resolveSections(member.guild);

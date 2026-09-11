@@ -13,6 +13,7 @@ import { isolate } from '../lib/text.js';
 import { renderHeaderBanner } from '../lib/banner.js';
 import { logger } from '../lib/log.js';
 import type { AionClient } from '../client.js';
+import { hasRole, roleId } from '../lib/roles.js';
 
 const log = logger('tempvoice');
 export const TV = 'tv';
@@ -27,9 +28,9 @@ const STAFF_ROLES = ['Consultant', 'PowerAdmin', 'Dev'];
 const owners = new Map<string, string>();   // channelId -> ownerId
 
 const memberRoleIds = (g: Guild) =>
-  MEMBER_ROLES.map(n => g.roles.cache.find(r => r.name === n)?.id).filter((x): x is string => !!x);
+  MEMBER_ROLES.map(n => roleId(g, n)).filter((x): x is string => !!x);
 const staffRoleIds = (g: Guild) =>
-  STAFF_ROLES.map(n => g.roles.cache.find(r => r.name === n)?.id).filter((x): x is string => !!x);
+  STAFF_ROLES.map(n => roleId(g, n)).filter((x): x is string => !!x);
 
 /**
  * Which room does this click apply to? Buttons live both inside each room and
@@ -53,7 +54,7 @@ function resolveRoom(guild: Guild, userId: string, channelId: string | null): Vo
 
 const isStaff = (m: GuildMember) =>
   m.permissions.has(PermissionFlagsBits.Administrator) ||
-  m.roles.cache.some(r => STAFF_ROLES.includes(r.name));
+  hasRole(m, STAFF_ROLES);
 
 /* ── control panel ─────────────────────────────────────────────── */
 
@@ -149,7 +150,7 @@ export async function ensureInterfacePanel(guild: Guild): Promise<void> {
 /** Staff who may move people regardless of section. */
 const ELEVATED = ['Consultant', 'PowerAdmin', 'Dev'];
 const elevatedRoleIds = (guild: Guild): string[] =>
-  ELEVATED.map(n => guild.roles.cache.find(r => r.name === n)?.id)
+  ELEVATED.map(n => roleId(guild, n))
     .filter((id): id is string => Boolean(id));
 
 /* ── lifecycle ─────────────────────────────────────────────────── */

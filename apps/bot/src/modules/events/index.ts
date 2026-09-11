@@ -25,6 +25,7 @@ import { startMafia, endMafia, mafiaComponent, mafiaModal, MAFIA_ID } from './ma
 import { startEsmFamil, endEsmFamil, esmComponent, esmModal, esmSelect, ESM_ID } from './esmfamil.js';
 import { startSoali, endSoali, soaliComponent, soaliModal, SOALI_ID } from './soali.js';
 import type { AionClient } from '../../client.js';
+import { hasRole } from '../../lib/roles.js';
 
 const log = logger('events');
 
@@ -49,7 +50,7 @@ const quidditchCat = (g: Guild) =>
 const isStaff = (m: GuildMember): boolean =>
   m.id === m.guild.ownerId ||
   m.permissions.has(PermissionFlagsBits.Administrator) ||
-  m.roles.cache.some(r => ['Consultant', 'PowerAdmin', 'Dev', 'E . Global', 'E . MODERATOR'].includes(r.name));
+  hasRole(m, ['Consultant', 'PowerAdmin', 'Dev', 'E . Global', 'E . MODERATOR']);
 
 /* ── the staff panel ───────────────────────────────────────────── */
 
@@ -367,7 +368,7 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
     if (step === 'join') {
       const roster = await players(ev.id);
       if (ev.capacity > 0 && roster.length >= ev.capacity) return;
-      if (i.member && (i.member as GuildMember).roles.cache.some(r => r.name === 'Event Banned')) {
+      if (i.member && hasRole(i.member as GuildMember, ['Event Banned'])) {
         await i.followUp({ content: 'To az event-ha ban shodi.', flags: MessageFlags.Ephemeral });
         return;
       }

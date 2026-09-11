@@ -1,5 +1,6 @@
 import type { Guild, GuildBasedChannel } from 'discord.js';
 import { ChannelType } from 'discord.js';
+import { findRole } from './roles.js';
 
 export type Section = 'public' | 'game' | 'entertainment';
 
@@ -54,7 +55,7 @@ let cache: Map<Section, ResolvedSection> | undefined;
 
 export function resolveSections(guild: Guild, force = false): Map<Section, ResolvedSection> {
   if (cache && !force) return cache;
-  const roleId = (n: string) => guild.roles.cache.find(r => r.name === n)?.id ?? null;
+  const roleId = (n: string) => findRole(guild, n)?.id ?? null;
   const out = new Map<Section, ResolvedSection>();
 
   for (const [key, spec] of Object.entries(SPEC) as [Section, SectionSpec][]) {

@@ -7,6 +7,7 @@ import {
 import { renderLeaderboardBanner, renderStatsBanner } from '../lib/banner.js';
 import { postDailyNow, postWeeklyNow } from '../modules/leaderboardPoster.js';
 import type { Command } from '../types.js';
+import { hasRole } from '../lib/roles.js';
 
 /** Every board gets the same branded header, whichever slice was asked for. */
 async function banner(guild: Guild, kind: string, window: string, rows: Row[]): Promise<Buffer | null> {
@@ -77,7 +78,7 @@ const command: Command = {
     if (forcePost) {
       const member = i.member as GuildMember;
       const allowed = member.permissions.has(PermissionFlagsBits.ManageGuild) ||
-        member.roles.cache.some(r => ['Consultant', 'PowerAdmin', 'Dev'].includes(r.name));
+        hasRole(member, ['Consultant', 'PowerAdmin', 'Dev']);
       if (!allowed) {
         await i.reply({ content: 'Faghat admin-ha mitunan post konan.', flags: 64 });
         return;

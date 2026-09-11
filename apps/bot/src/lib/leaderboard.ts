@@ -5,6 +5,7 @@ import {
 } from 'discord.js';
 import { getDb, activityDaily } from '@aion/db';
 import { isolate } from './text.js';
+import { hasRole } from './roles.js';
 
 /** Puts the banner at the top of a card — an image that trails the list reads
  *  as an afterthought rather than a header. */
@@ -94,7 +95,7 @@ export function renderBoard(opts: {
 export function staffRows(guild: Guild, rows: Row[]): Row[] {
   const staffIds = new Set(
     guild.members.cache
-      .filter(m => !m.user.bot && m.roles.cache.some(r => STAFF_ROLE_NAMES.includes(r.name)))
+      .filter(m => !m.user.bot && hasRole(m, STAFF_ROLE_NAMES))
       .map(m => m.id),
   );
   // Voice alone rewards idling, so rank on a weighted blend of all three.

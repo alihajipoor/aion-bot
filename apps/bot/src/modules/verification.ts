@@ -13,6 +13,7 @@ import { styleNickname, isolate } from '../lib/text.js';
 import { welcomeBanner } from '../lib/banner.js';
 import { settings } from '../lib/settings.js';
 import { logger } from '../lib/log.js';
+import { hasRole, findRole } from '../lib/roles.js';
 
 const log = logger('verify');
 export const VF = 'vf';
@@ -34,14 +35,14 @@ const notifyRoleNames = () => settings().verification.notifyRoles;
 
 function reviewerRoles(g: Guild) {
   return notifyRoleNames()
-    .map(n => g.roles.cache.find(r => r.name === n))
+    .map(n => findRole(g, n))
     .filter((r): r is NonNullable<typeof r> => !!r);
 }
 
 const isStaff = (m: GuildMember): boolean =>
   m.id === m.guild.ownerId ||
   m.permissions.has(PermissionFlagsBits.Administrator) ||
-  m.roles.cache.some(r => ['Consultant', 'PowerAdmin', 'Dev', 'V . Global'].includes(r.name));
+  hasRole(m, ['Consultant', 'PowerAdmin', 'Dev', 'V . Global']);
 
 /* ── the public panel ──────────────────────────────────────────── */
 
@@ -98,7 +99,7 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
   const member = i.member as GuildMember;
 
   if (step === 'start') {
-    if (member.roles.cache.some(r => r.name === ROLE.boy || r.name === ROLE.girl)) {
+    if (hasRole(member, [ROLE.boy, ROLE.girl])) {
       await i.reply({ content: 'To ghablan verify shodi ✅', flags: MessageFlags.Ephemeral });
       return;
     }
@@ -291,7 +292,7 @@ export async function decideVerification(
   }
 
   if (approve) {
-    const role = guild.roles.cache.find(r => r.name === ROLE[row.gender as Gender]);
+    const role = findRole(guild, ROLE[row.gender as Gender]);
     const nick = styleNickname(row.name, settings().verification.nickStyle, settings().verification.nickPrefix);
     if (role) await member.roles.add(role, `verified by ${staffTag}`);
     await member.setNickname(nick, `verified by ${staffTag}`).catch(e =>
@@ -355,7 +356,7 @@ async function handleDecision(i: ButtonInteraction, step: 'ok' | 'no', id: numbe
   }
 
   const roleName = ROLE[row.gender as Gender];
-  const role = guild.roles.cache.find(r => r.name === roleName);
+  const role = findRole(guild, roleName);
   const nick = styleNickname(row.name, settings().verification.nickStyle, settings().verification.nickPrefix);
 
   try {
