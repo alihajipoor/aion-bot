@@ -61,6 +61,11 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
               <option value="plain">Plain — Ali</option>
             </select>
           </Field>
+          <Field label="Nickname prefix" htmlFor="nickPrefix"
+            hint="Written in front of every verified name, e.g. Λ | Ali. It counts against Discord's 32-character limit, so a long prefix leaves less room for the name.">
+            <input id="nickPrefix" name="nickPrefix" className={inputCls} maxLength={8}
+              defaultValue={s.verification.nickPrefix} />
+          </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Minimum age" htmlFor="minAge"><Num name="minAge" defaultValue={s.verification.minAge} min={5} max={99} /></Field>
             <Field label="Maximum age" htmlFor="maxAge"><Num name="maxAge" defaultValue={s.verification.maxAge} min={6} max={120} /></Field>

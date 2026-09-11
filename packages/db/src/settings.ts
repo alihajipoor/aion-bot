@@ -18,6 +18,8 @@ export interface AionSettings {
   verification: {
     enabled: boolean;
     nickStyle: 'sansBold' | 'mono' | 'smallCaps' | 'plain';
+    /** Written in front of every verified nickname, e.g. "Λ | ". */
+    nickPrefix: string;
     persianWrap: boolean;
     minAge: number;
     maxAge: number;
@@ -114,6 +116,7 @@ export const DEFAULT_SETTINGS: AionSettings = {
   verification: {
     enabled: true,
     nickStyle: 'sansBold',
+    nickPrefix: 'Λ | ',
     persianWrap: true,
     minAge: 10,
     maxAge: 99,
@@ -228,6 +231,8 @@ export function sanitise(s: AionSettings): AionSettings {
       minAge: clamp(s.verification.minAge, 5, 99, 10),
       maxAge: clamp(s.verification.maxAge, 6, 120, 99),
       notifyRoles: s.verification.notifyRoles.slice(0, 10),
+      // Leave room for a name; a prefix that fills the field is a broken one.
+      nickPrefix: s.verification.nickPrefix.slice(0, 8),
     },
     tempVoice: {
       ...s.tempVoice,

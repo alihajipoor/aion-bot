@@ -102,23 +102,37 @@ function render(name: string, style: NickStyle): string {
  * fall back to small caps, which are BMP characters costing 1 each and fit the
  * full 32. Plain is only the last resort.
  */
-export function styleNickname(rawName: string, style: NickStyle = 'sansBold'): string {
+/**
+ * Builds the server nickname: a fixed prefix, then the name in the house font.
+ *
+ * The prefix counts against Discord's 32-character nickname limit, and styled
+ * glyphs are astral — two UTF-16 units each — so the budget is checked against
+ * the finished string, not the bare name. When it will not fit, the ladder
+ * steps down to a narrower style before it resorts to truncation.
+ */
+export function styleNickname(rawName: string, style: NickStyle = 'sansBold', prefix = ''): string {
   const name = rawName.replace(/\s+/g, ' ').trim();
   if (!name) return '';
+  const fits = (body: string) => (prefix + body).length <= NICK_LIMIT;
+  const room = NICK_LIMIT - prefix.length;
 
   if (hasPersian(name)) {
     const clean = normalizePersian(name);
     const decorated = `${PERSIAN_WRAP[0]}${clean}${PERSIAN_WRAP[1]}`;
-    return decorated.length <= NICK_LIMIT ? decorated : clean.slice(0, NICK_LIMIT);
+    if (fits(decorated)) return prefix + decorated;
+    if (fits(clean)) return prefix + clean;
+    return (prefix + clean).slice(0, NICK_LIMIT);
   }
 
   const ladder: NickStyle[] = style === 'plain' ? [] : [style, 'smallCaps'];
   for (const s of ladder) {
     const out = render(name, s);
-    if (out.length <= NICK_LIMIT) return out;
+    if (fits(out)) return prefix + out;
   }
-  return name.slice(0, NICK_LIMIT);
+  // Truncate the name, never the prefix — a half-eaten prefix reads as a typo.
+  return prefix + name.slice(0, Math.max(0, room));
 }
+
 
 /** Human-readable duration in Finglish, e.g. "2 saat va 30 daghighe". */
 export function humanDuration(minutes: number): string {

@@ -210,7 +210,7 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
       name, age, city, gender,
     });
 
-    const preview = styleNickname(name, settings().verification.nickStyle);
+    const preview = styleNickname(name, settings().verification.nickStyle, settings().verification.nickPrefix);
     const reviewers = reviewerRoles(i.guild!);
     const ping = reviewers.map(r => `<@&${r.id}>`).join(' ');
 
@@ -289,7 +289,7 @@ export async function decideVerification(
 
   if (approve) {
     const role = guild.roles.cache.find(r => r.name === ROLE[row.gender as Gender]);
-    const nick = styleNickname(row.name, settings().verification.nickStyle);
+    const nick = styleNickname(row.name, settings().verification.nickStyle, settings().verification.nickPrefix);
     if (role) await member.roles.add(role, `verified by ${staffTag}`);
     await member.setNickname(nick, `verified by ${staffTag}`).catch(e =>
       log.warn(`could not set nickname for ${member.user.tag}: ${e.message}`));
@@ -353,7 +353,7 @@ async function handleDecision(i: ButtonInteraction, step: 'ok' | 'no', id: numbe
 
   const roleName = ROLE[row.gender as Gender];
   const role = guild.roles.cache.find(r => r.name === roleName);
-  const nick = styleNickname(row.name, settings().verification.nickStyle);
+  const nick = styleNickname(row.name, settings().verification.nickStyle, settings().verification.nickPrefix);
 
   try {
     if (role) await member.roles.add(role, `verified by ${i.user.tag}`);

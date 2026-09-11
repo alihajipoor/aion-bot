@@ -146,6 +146,12 @@ export async function ensureInterfacePanel(guild: Guild): Promise<void> {
   } catch (e) { log.warn('could not post interface panel', (e as Error).message); }
 }
 
+/** Staff who may move people regardless of section. */
+const ELEVATED = ['Consultant', 'PowerAdmin', 'Dev'];
+const elevatedRoleIds = (guild: Guild): string[] =>
+  ELEVATED.map(n => guild.roles.cache.find(r => r.name === n)?.id)
+    .filter((id): id is string => Boolean(id));
+
 /* ── lifecycle ─────────────────────────────────────────────────── */
 
 async function createRoom(member: GuildMember, hub: VoiceChannel): Promise<void> {
@@ -169,6 +175,13 @@ async function createRoom(member: GuildMember, hub: VoiceChannel): Promise<void>
         id: o.id,
         allow: o.allow.toArray(),
         deny: o.deny.toArray().filter(p => !['Speak', 'SendMessages', 'UseVAD', 'Stream'].includes(p)),
+      })),
+      // The hub denies MoveMembers to @everyone and the clone inherits it, so
+      // without this every private room is one nobody can move anyone out of.
+      ...elevatedRoleIds(guild).map(id => ({
+        id,
+        allow: ['ViewChannel' as const, 'Connect' as const, 'MoveMembers' as const],
+        deny: [] as const,
       })),
       ...memberRoleIds(guild).map(id => ({
         id,
