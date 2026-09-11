@@ -66,6 +66,9 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
             <input id="nickPrefix" name="nickPrefix" className={inputCls} maxLength={8}
               defaultValue={s.verification.nickPrefix} />
           </Field>
+          <Toggle name="enforceNick" label="Keep the format when members rename themselves"
+            hint="A member who changes their nickname keeps the name they chose; only its styling is re-applied."
+            defaultChecked={s.verification.enforceNick} />
           <div className="grid grid-cols-2 gap-4">
             <Field label="Minimum age" htmlFor="minAge"><Num name="minAge" defaultValue={s.verification.minAge} min={5} max={99} /></Field>
             <Field label="Maximum age" htmlFor="maxAge"><Num name="maxAge" defaultValue={s.verification.maxAge} min={6} max={120} /></Field>

@@ -37,6 +37,7 @@ export async function saveSettings(_prev: SaveResult | null, form: FormData): Pr
       maxAge: num(form, 'maxAge', d.verification.maxAge),
       notifyRoles: list(form, 'notifyRoles'),
       nickPrefix: String(form.get('nickPrefix') ?? d.verification.nickPrefix).slice(0, 8),
+      enforceNick: bool(form, 'enforceNick'),
       dmOnDecision: bool(form, 'dmOnDecision'),
     },
     tempVoice: {

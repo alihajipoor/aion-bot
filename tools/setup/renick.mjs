@@ -8,7 +8,10 @@
 // Dry run by default: renaming the whole server is visible to the whole server.
 import 'dotenv/config';
 import { Client, GatewayIntentBits } from 'discord.js';
-import { styleNickname, plainName } from '../../apps/bot/dist/lib/text.js';
+import { plainName } from '../../apps/bot/dist/lib/text.js';
+// The same rule the live nickname guard applies, so a backfill cannot write
+// names the bot turns around and rewrites.
+import { desiredNick } from '../../apps/bot/dist/lib/nick.js';
 
 const APPLY = process.argv.includes('--apply');
 // Members whose nickname is already styled went through verification with a
@@ -18,16 +21,6 @@ const ALL = process.argv.includes('--all');
 const STYLE = process.env.NICK_STYLE ?? 'sansBold';
 const PREFIX = process.env.NICK_PREFIX ?? 'Λ | ';
 const MEMBER_ROLES = ['ʙᴏʏ│𝙼𝙴𝙼𝙱𝙴𝚁│•', 'ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•'];
-
-/** Drops a prefix already applied, and the Persian decoration, to get the name back. */
-function bareName(nick) {
-  let s = nick;
-  const p = PREFIX.trim();
-  if (p && s.startsWith(p)) s = s.slice(p.length);
-  s = s.replace(/^\s*[|｜]\s*/, '').trim();
-  s = s.replace(/^꒰\s*/, '').replace(/\s*꒱$/, '').trim();
-  return s;
-}
 
 const c = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 c.once('clientReady', async () => {
@@ -45,22 +38,13 @@ c.once('clientReady', async () => {
     for (const m of g.members.cache.values()) {
       if (m.user.bot) continue;
       if (!m.roles.cache.hasAny(...roleIds)) continue;      // only verified members
-      // Three names exist and they are not interchangeable: the server
-      // nickname, the account's display name (globalName), and the login
-      // handle (username). Only the first two are things a person chose to be
-      // called; the handle is an address.
-      const bareNick = m.nickname ? plainName(bareName(m.nickname)) : '';
-      // A nickname that reduces to the handle carries nothing — that is either
-      // untouched, or an earlier pass of this tool reaching for the wrong field.
-      const nickIsHandle = bareNick.toLowerCase() === m.user.username.toLowerCase();
-      const display = m.user.globalName ?? m.user.username;
-
-      const source = (m.nickname && !nickIsHandle) ? m.nickname : display;
-      const styled = Boolean(m.nickname) && plainName(m.nickname) !== m.nickname && !nickIsHandle;
+      const want = desiredNick(m, STYLE, PREFIX);
+      const source = m.nickname ?? m.user.globalName ?? m.user.username;
+      // Only members already wearing a styled nickname unless --all: the rest
+      // carry a raw handle, and stamping the house format onto that is not a name.
+      const styled = Boolean(m.nickname) && plainName(m.nickname) !== m.nickname;
       if (!styled && !ALL) { unstyled++; continue; }
-      // Fold styled glyphs back to letters; Persian passes through untouched.
-      const bare = plainName(bareName(source)) || bareName(source);
-      const want = styleNickname(bare, STYLE, PREFIX);
+
       if (!want || m.nickname === want) continue;
       if (!m.manageable) { skipped++; continue; }
       plan.push({ m, want, from: source });

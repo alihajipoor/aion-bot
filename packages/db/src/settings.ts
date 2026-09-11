@@ -20,6 +20,8 @@ export interface AionSettings {
     nickStyle: 'sansBold' | 'mono' | 'smallCaps' | 'plain';
     /** Written in front of every verified nickname, e.g. "Λ | ". */
     nickPrefix: string;
+    /** Re-apply the format when a member renames themselves. */
+    enforceNick: boolean;
     persianWrap: boolean;
     minAge: number;
     maxAge: number;
@@ -117,6 +119,7 @@ export const DEFAULT_SETTINGS: AionSettings = {
     enabled: true,
     nickStyle: 'sansBold',
     nickPrefix: 'Λ | ',
+    enforceNick: true,
     persianWrap: true,
     minAge: 10,
     maxAge: 99,
