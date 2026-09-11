@@ -10,6 +10,8 @@
 // Look in Channel Settings › Permissions › <role>, not in the role editor.
 import 'dotenv/config';
 import { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits as P } from 'discord.js';
+// Role names are written in the server's font; match them the way the bot does.
+import { foldRole } from '../../apps/bot/dist/lib/roles.js';
 
 const c = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 c.once('clientReady', async () => {
@@ -33,7 +35,7 @@ c.once('clientReady', async () => {
     console.log('-'.repeat(76));
 
     for (const name of [...ELEVATED, ...Object.keys(SCOPED)]) {
-      const r = g.roles.cache.find(x => x.name === name);
+      const r = g.roles.cache.find(x => foldRole(x.name) === foldRole(name));
       if (!r) { console.log(`${name.padEnd(22)} MISSING`); bad++; continue; }
       const can = voice.filter(v => v.permissionsFor(r).has(P.MoveMembers));
       const cats = [...new Set(can.map(v => catName(v.parentId)))];
@@ -54,7 +56,7 @@ c.once('clientReady', async () => {
 
     // Anyone else who can move people is worth knowing about.
     const extra = [...g.roles.cache.values()].filter(r =>
-      r.name !== '@everyone' && !ELEVATED.includes(r.name) && !SCOPED[r.name]
+      r.name !== '@everyone' && !ELEVATED.some(n => foldRole(n) === foldRole(r.name)) && !Object.keys(SCOPED).some(n => foldRole(n) === foldRole(r.name))
       && voice.some(v => v.permissionsFor(r).has(P.MoveMembers)));
     if (extra.length) {
       console.log('\nalso able to move people:');
@@ -67,7 +69,7 @@ c.once('clientReady', async () => {
 
     console.log('\nreal members, which is the only proof that counts:');
     for (const [name, cat] of Object.entries(SCOPED)) {
-      const r = g.roles.cache.find(x => x.name === name);
+      const r = g.roles.cache.find(x => foldRole(x.name) === foldRole(name));
       const m = r?.members.first();
       if (!m) { console.log(`  ${name.padEnd(15)} nobody holds this role`); continue; }
       const can = voice.filter(v => v.permissionsFor(m).has(P.MoveMembers));

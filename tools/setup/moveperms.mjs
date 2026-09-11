@@ -12,6 +12,8 @@
 // it back.
 import 'dotenv/config';
 import { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits as P } from 'discord.js';
+// Role names are written in the server's font; match them the way the bot does.
+import { foldRole } from '../../apps/bot/dist/lib/roles.js';
 
 const APPLY = process.argv.includes('--apply');
 
@@ -33,7 +35,7 @@ c.once('clientReady', async () => {
     const g = await c.guilds.fetch(process.env.LIVE_GUILD_ID);
     await g.roles.fetch(); await g.channels.fetch();
 
-    const role = n => g.roles.cache.find(r => r.name === n);
+    const role = n => g.roles.cache.find(r => foldRole(r.name) === foldRole(n));
     const plan = [];   // { channel, roleName, roleId }
 
     const want = (channel, names) => {
