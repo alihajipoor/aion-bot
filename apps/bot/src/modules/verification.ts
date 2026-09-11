@@ -178,7 +178,10 @@ export async function handleSelect(i: StringSelectMenuInteraction): Promise<void
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder().setCustomId('name').setLabel('Esm')
           .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(24)
-          .setPlaceholder('Esmi ke mikhay too server bashe')),
+          .setPlaceholder('Esmi ke mikhay too server bashe')
+          // Pre-filled with the display name they already chose, not the login
+          // handle. Left editable — this is a suggestion, not a decision.
+          .setValue((i.user.globalName ?? i.user.username).slice(0, 24))),
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder().setCustomId('age').setLabel('Sen')
           .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(2).setPlaceholder('18')),

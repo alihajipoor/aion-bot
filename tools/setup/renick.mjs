@@ -45,8 +45,18 @@ c.once('clientReady', async () => {
     for (const m of g.members.cache.values()) {
       if (m.user.bot) continue;
       if (!m.roles.cache.hasAny(...roleIds)) continue;      // only verified members
-      const source = m.nickname ?? m.user.username;
-      const styled = Boolean(m.nickname) && plainName(m.nickname) !== m.nickname;
+      // Three names exist and they are not interchangeable: the server
+      // nickname, the account's display name (globalName), and the login
+      // handle (username). Only the first two are things a person chose to be
+      // called; the handle is an address.
+      const bareNick = m.nickname ? plainName(bareName(m.nickname)) : '';
+      // A nickname that reduces to the handle carries nothing — that is either
+      // untouched, or an earlier pass of this tool reaching for the wrong field.
+      const nickIsHandle = bareNick.toLowerCase() === m.user.username.toLowerCase();
+      const display = m.user.globalName ?? m.user.username;
+
+      const source = (m.nickname && !nickIsHandle) ? m.nickname : display;
+      const styled = Boolean(m.nickname) && plainName(m.nickname) !== m.nickname && !nickIsHandle;
       if (!styled && !ALL) { unstyled++; continue; }
       // Fold styled glyphs back to letters; Persian passes through untouched.
       const bare = plainName(bareName(source)) || bareName(source);
