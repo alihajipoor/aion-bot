@@ -17,7 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <aside className="hidden w-56 shrink-0 flex-col md:flex">
         <div className="mb-7">
           <div className="text-base font-bold tracking-[0.38em] text-mist-50
-                          [text-shadow:0_0_24px_rgba(74,168,255,0.55)]">AION</div>
+                          [text-shadow:0_0_24px_rgba(74,168,255,0.55)]">ΛION</div>
           {/* The same lit rift the bot draws under the wordmark. */}
           <div className="mt-1.5 h-px w-32 bg-gradient-to-r from-transparent via-sky-glow to-transparent
                           shadow-[0_0_10px_1px_rgba(74,168,255,0.5)]" />

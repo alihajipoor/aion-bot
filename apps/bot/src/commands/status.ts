@@ -36,7 +36,7 @@ const command: Command = {
     const healthy = dbOk !== false;
     const banner = await renderStatsBanner({
       title: 'System Status', subtitle: `${guild?.name ?? 'AION'} · ${healthy ? 'salem' : 'moshkel dare'}`,
-      accent: healthy ? '#57f287' : '#ed4245', kicker: 'BOT · HEALTH', footer: 'AION RUNTIME',
+      accent: healthy ? '#57f287' : '#ed4245', kicker: 'BOT · HEALTH', footer: 'ΛION RUNTIME',
       tiles: [
         { label: 'UPTIME', value: fmtUptime(Date.now() - client.startedAt) },
         { label: 'PING', value: `${Math.round(client.ws.ping)} ms`, hint: 'gateway' },
@@ -53,7 +53,7 @@ const command: Command = {
     }
     container
       .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent('## 🩺 AION — System Status'),
+        new TextDisplayBuilder().setContent('## 🩺 ΛION — System Status'),
       )
       .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
       .addTextDisplayComponents(

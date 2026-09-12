@@ -84,7 +84,7 @@ const handler: EventHandler = {
 
     client.user?.setPresence({
       status: 'online',
-      activities: [{ name: 'AION', type: ActivityType.Watching }],
+      activities: [{ name: 'ΛION', type: ActivityType.Watching }],
     });
   },
 };

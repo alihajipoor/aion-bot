@@ -157,7 +157,15 @@ const FROM_SMALL_CAPS: Record<string, string> = Object.fromEntries(
  * capitals (U+1D00-U+1D2B have no compatibility decomposition), so those are
  * mapped explicitly.
  */
+/**
+ * The wordmark writes its A as a Greek capital lambda, so channel and role
+ * names carry Λ where code says A. Folding it here keeps every name lookup
+ * working across the change instead of each matcher growing a special case.
+ */
+const LAMBDA = /[\u039B\u03BB]/g;
+
 export function asciiFold(input: string): string {
+  input = input.replace(LAMBDA, 'A');
   const mapped = [...input].map(c => FROM_SMALL_CAPS[c] ?? c).join('');
   return mapped.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }

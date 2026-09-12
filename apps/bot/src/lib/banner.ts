@@ -347,7 +347,9 @@ export async function renderHeaderBanner(opts: {
       }, [
         el('div', { display: 'flex', gap: 26 }, (opts.tags ?? []).slice(0, 5).map(t =>
           el('div', { display: 'flex', fontSize: 15, letterSpacing: 4, color: BRAND.faint }, t))),
-        el('div', { display: 'flex', fontSize: 15, letterSpacing: 5, color: BRAND.faint }, 'AION'),
+        el('div', {
+          display: 'flex', alignItems: 'center', fontSize: 15, letterSpacing: 5, color: BRAND.faint,
+        }, [lambda(15), el('div', { display: 'flex' }, WORDMARK)]),
       ]),
     ]);
 

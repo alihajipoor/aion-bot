@@ -9,7 +9,8 @@ import { humanDuration } from '../lib/text.js';
 import { renderHeaderBanner } from '../lib/banner.js';
 import type { Command } from '../types.js';
 
-const GUIDE_CHANNEL = /ᴀɪᴏɴ-ɢᴜɪᴅᴇ|aion-guide/i;
+// Λ is the wordmark's A; both spellings must match.
+const GUIDE_CHANNEL = /[ᴀΛλ]ɪᴏɴ-ɢᴜɪᴅᴇ|[aΛλ]ion-guide/i;
 
 function page(accent: number, title: string, body: string[]): ContainerBuilder {
   return new ContainerBuilder().setAccentColor(accent)
@@ -24,7 +25,7 @@ function pages(): ContainerBuilder[] {
   const durations = s.moderation.durationsMinutes.slice(0, 5).map(humanDuration).join(' · ');
 
   return [
-    page(0x5865f2, '📖 AION — Rahnamaye Admin', [
+    page(0x5865f2, '📖 ΛION — Rahnamaye Admin', [
       'Hameye emkanate bot, ba mesal. In safhe khodkar sakhte mishe — ba `/guide` dobare besazesh.',
       '',
       '**Section-ha**  🏛️ Public (Townhall) · 🎮 Game (GameTown) · 🎭 Entertainment (Quidditch)',

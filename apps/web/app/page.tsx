@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 
 const MESSAGES: Record<string, string> = {
   forbidden: 'Your Discord account does not hold a role with panel access.',
-  notmember: 'You are not a member of the AION server.',
+  notmember: 'You are not a member of the ΛION server.',
   token: 'Discord rejected the login. Try again.',
   user: 'Could not read your Discord profile.',
   nocode: 'Login was cancelled.',
@@ -23,7 +23,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         <div className="mb-9 text-center">
           <div className="text-5xl font-bold tracking-[0.28em] text-mist-50
                           [text-shadow:0_0_46px_rgba(74,168,255,0.85)]">
-            AION
+            ΛION
           </div>
           <div className="relative mx-auto mt-3 h-px w-full max-w-sm
                           bg-gradient-to-r from-transparent via-white to-transparent

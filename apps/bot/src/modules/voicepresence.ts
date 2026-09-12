@@ -10,7 +10,7 @@ import type { AionClient } from '../client.js';
 const log = logger('presence');
 
 /** The members counter channel in SERVER INFO — the bot sits here permanently. */
-const TARGET = /^a\s*i\s*o\s*n\s*[•·]/i;
+const TARGET = /^[aΛλ]\s*i\s*o\s*n\s*[•·]/i;
 const CHECK_MS = 60_000;
 
 function findChannel(guild: Guild): VoiceChannel | null {

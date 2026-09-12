@@ -60,7 +60,7 @@ export async function panelMessage(): Promise<MessageCreateOptions> {
 
   box
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      '# Khosh oomadi be AION 🌠',
+      '# Khosh oomadi be ΛION 🌠',
       'Ye bar verify sho — badesh hameye server barat baze.',
     ].join('\n')))
     .addSeparatorComponents(rule(true))
@@ -306,7 +306,7 @@ export async function decideVerification(
       flags: MessageFlags.IsComponentsV2,
     }).catch(() => {});
     if (settings().verification.dmOnDecision) {
-      await member.send(`Verify shodi ✅ Khosh oomadi be AION!\nEsmet shod: ${nick}`).catch(() => {});
+      await member.send(`Verify shodi ✅ Khosh oomadi be ΛION!\nEsmet shod: ${nick}`).catch(() => {});
     }
     return { ok: true, message: `Approved. Nickname set to ${nick}.` };
   }
@@ -376,7 +376,7 @@ async function handleDecision(i: ButtonInteraction, step: 'ok' | 'no', id: numbe
       flags: MessageFlags.IsComponentsV2,
     }).catch(() => {});
 
-    await member.send(`Verify shodi ✅ Khosh oomadi be AION!\nEsmet shod: ${nick}`).catch(() => {});
+    await member.send(`Verify shodi ✅ Khosh oomadi be ΛION!\nEsmet shod: ${nick}`).catch(() => {});
     log.info(`verify #${id} approved for ${member.user.tag} by ${i.user.tag}`);
   } catch (e) {
     log.error('approve failed', e);
