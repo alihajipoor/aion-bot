@@ -222,26 +222,86 @@ export interface NightAction {
   /** Can they point at themselves? Doctors can, shooters cannot. */
   allowSelf: boolean;
   /**
-   * True only for the detective: the bot answers them directly, because that
-   * information is theirs by right and a narrator signalling it by gesture is
-   * the single most error-prone moment in the game. Everything else is
-   * reported to the narrator, who keeps deciding what actually happens.
+   * True for the roles the bot answers directly — the detective and Saul.
+   * That information is theirs by right, and a narrator signalling it by
+   * gesture with everyone's eyes shut is the most error-prone moment in the
+   * game. Everything else is reported to the narrator, who keeps deciding
+   * what actually happens.
    */
   answersActor: boolean;
+  /** What the answer reveals, when it answers at all. */
+  reveals?: 'side' | 'role';
+  /** Total uses for the whole game. Absent means every night. */
+  uses?: number;
+  /** A tighter cap on pointing at yourself — both doctors get exactly one. */
+  selfUses?: number;
+  /** Who may be pointed at. Lecter only ever saves his own team. */
+  targets?: 'alive' | 'mafia';
+  /** A second question after the target, e.g. a real or a fake gun. */
+  followUp?: { label: string; options: [string, string] };
 }
 
 export const NIGHT_ACTIONS: Record<string, NightAction> = {
-  detective: { label: 'Estelam', prompt: 'Emshab ki ro estelam mikoni?', allowSelf: false, answersActor: true },
-  doctor:    { label: 'Nejat',   prompt: 'Emshab ki ro nejat midi?',     allowSelf: true,  answersActor: false },
-  lecter:    { label: 'Nejat',   prompt: 'Emshab kodoom mafia ro nejat midi?', allowSelf: true, answersActor: false },
-  sniper:    { label: 'Shellik', prompt: 'Emshab be ki shellik mikoni?', allowSelf: false, answersActor: false },
-  matador:   { label: 'Block',   prompt: 'Emshab ki ro block mikoni?',   allowSelf: false, answersActor: false },
-  saul:      { label: 'Saul',    prompt: 'Naghshe ki ro mikhay bedooni?', allowSelf: false, answersActor: false },
-  bomber:    { label: 'Bomb',    prompt: 'Ki ro bomb gozari mikoni?',    allowSelf: false, answersActor: false },
-  gunsmith:  { label: 'Aslahe',  prompt: 'Be ki aslahe midi?',           allowSelf: false, answersActor: false },
-  godfather: { label: 'Shellik', prompt: 'Emshab mafia be ki shellik mikone?', allowSelf: false, answersActor: false },
-  mafia:     { label: 'Shellik', prompt: 'Emshab be ki shellik mikonin?', allowSelf: false, answersActor: false },
+  detective: {
+    label: 'Estelam', prompt: 'Emshab ki ro estelam mikoni?',
+    allowSelf: false, answersActor: true, reveals: 'side',
+  },
+  doctor: {
+    label: 'Nejat', prompt: 'Emshab ki ro nejat midi?',
+    allowSelf: true, selfUses: 1, answersActor: false,
+  },
+  lecter: {
+    label: 'Nejat', prompt: 'Emshab kodoom mafia ro nejat midi?',
+    allowSelf: true, selfUses: 1, answersActor: false, targets: 'mafia',
+  },
+  sniper: {
+    label: 'Shellik', prompt: 'Emshab be ki shellik mikoni?',
+    allowSelf: false, answersActor: false, uses: 2,
+  },
+  matador: {
+    label: 'Block', prompt: 'Emshab ki ro block mikoni?',
+    allowSelf: false, answersActor: false,
+  },
+  saul: {
+    label: 'Saul', prompt: 'Naghshe ki ro mikhay bedooni?',
+    allowSelf: false, answersActor: true, reveals: 'role', uses: 1,
+  },
+  bomber: {
+    label: 'Bomb', prompt: 'Ki ro bomb gozari mikoni?',
+    allowSelf: false, answersActor: false, uses: 1,
+  },
+  gunsmith: {
+    label: 'Aslahe', prompt: 'Be ki aslahe midi?',
+    allowSelf: false, answersActor: false,
+    followUp: { label: 'Che joor aslahe-i?', options: ['Vagheie', 'Masnooei'] },
+  },
+  godfather: {
+    label: 'Shellik', prompt: 'Emshab mafia be ki shellik mikone?',
+    allowSelf: false, answersActor: false,
+  },
+  mafia: {
+    label: 'Shellik', prompt: 'Emshab be ki shellik mikonin?',
+    allowSelf: false, answersActor: false,
+  },
 };
 
 export const nightActionFor = (roleKey: string | null): NightAction | null =>
   (roleKey && NIGHT_ACTIONS[roleKey]) || null;
+
+/**
+ * Abilities with no night choice to make. Nobody presses a button for these —
+ * they are facts the narrator must not forget while resolving a shot or a
+ * vote, so the console keeps them on screen instead of in someone's head.
+ */
+export const PASSIVES: Record<string, string> = {
+  godfather:   'Shellik e shab roosh asar nadare · baraye karagah shahrvand e',
+  tough:       'Do jan dare — bare aval ke behesh shellik beshe zende mimoone',
+  armored:     'Yek bar dar barabare ray giri mosoon e',
+  bulletproof: 'Yek shellik ro tahammol mikone',
+  psycho:      'Solo — barande mishe age akharin nafar bemoone',
+  sniper:      'Age be shahrvand shellik kone, khodesh mimire',
+  gunsmith:    'Aslaheye masnooei sahebesh ro mikoshe, na hadaf ro',
+};
+
+export const passiveFor = (roleKey: string | null): string | null =>
+  (roleKey && PASSIVES[roleKey]) || null;

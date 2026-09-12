@@ -12,8 +12,8 @@ import {
   killPlayer, revivePlayer, type EventRow, type PlayerRow,
 } from './store.js';
 import {
-  SCENARIOS, CITIZEN, scenarioOf, distribution, MAFIA_DEFAULTS, nightActionFor,
-  type RoleDef, type MafiaConfig,
+  SCENARIOS, CITIZEN, scenarioOf, distribution, MAFIA_DEFAULTS, nightActionFor, passiveFor,
+  type RoleDef, type MafiaConfig, type NightAction,
 } from './games.js';
 import { hasRole } from '../../lib/roles.js';
 
@@ -35,10 +35,13 @@ const C = { night: 0x2b2d5c, day: 0xfee75c, mafia: 0xed4245, town: 0x57f287 } as
  * decides when it has heard enough — not a clock.
  */
 /** What each role-holder pointed at tonight, keyed by their user id. */
-interface NightPick { role: string; target: string; at: number }
+interface NightPick { role: string; target: string; at: number; variant?: string }
 
 interface DayState {
   nightPicks?: Record<string, NightPick>;
+  /** Nights a limited ability has been spent, and self-targets used. */
+  uses?: Record<string, number>;
+  selfUses?: Record<string, number>;
   ejma?: { votes: Record<string, string[]>; messageId?: string; open?: boolean };
   nominees?: string[];
   defense?: { order: string[]; at: number; until?: number };
@@ -228,11 +231,26 @@ async function console_(ev: EventRow, note?: string) {
         ...acting.map(p => {
           const pick = state.nightPicks?.[p.userId];
           const target = pick ? roster.find(t => t.userId === pick.target) : null;
+          const action = nightActionFor(p.role);
+          const left = action ? usesLeft(ev, p.userId, action) : null;
+          const budget = left !== null ? `  -# (${left} bar dige)` : '';
           return pick
             ? `✅ **${roleOf(p.role).fa}** <@${p.userId}> → <@${pick.target}>`
+              + (pick.variant ? ` · **${pick.variant}**` : '')
               + (target?.role === 'godfather' && p.role === 'detective' ? '  -# (shahrvand didesh)' : '')
-            : `⏳ **${roleOf(p.role).fa}** <@${p.userId}> — hanooz entekhab nakarde`;
+            : `⏳ **${roleOf(p.role).fa}** <@${p.userId}> — hanooz entekhab nakarde${budget}`;
         }),
+      ].join('\n')));
+  }
+
+  // Passives have no button to press; they are facts that decide whether a
+  // shot lands, and forgetting one mid-night is how a game goes wrong.
+  const passives = roster.filter(p => p.alive && passiveFor(p.role));
+  if (passives.length && phase !== 'setup') {
+    box.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+        '### 🧠 Yadet bashe',
+        ...passives.map(p => `**${roleOf(p.role).fa}** <@${p.userId}>\n-# ${passiveFor(p.role)}`),
       ].join('\n')));
   }
 
@@ -281,6 +299,7 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
   if (step === 'ballot' && i.isStringSelectMenu()) { await castVote(i, ev); return; }
   if (step === 'ejmavote' && i.isStringSelectMenu()) { await castEjma(i, ev); return; }
   if (step === 'night' && i.isStringSelectMenu()) { await recordNightPick(i, ev); return; }
+  if (step === 'variant' && i.isButton()) { await recordVariant(i, ev, arg ?? '0'); return; }
 
   if (!canRun(i, ev)) {
     await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral });
@@ -401,6 +420,30 @@ async function announcePhase(guild: Guild, ev: EventRow, phase: 'night' | 'day')
 
 /* ── night actions ─────────────────────────────────────────────── */
 
+/** How many nights this ability has left, or null when it is unlimited. */
+function usesLeft(ev: EventRow, userId: string, action: NightAction): number | null {
+  if (action.uses === undefined) return null;
+  const spent = (ev.state as DayState).uses?.[userId] ?? 0;
+  return Math.max(0, action.uses - spent);
+}
+
+const selfLeft = (ev: EventRow, userId: string, action: NightAction): number =>
+  action.selfUses === undefined
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, action.selfUses - ((ev.state as DayState).selfUses?.[userId] ?? 0));
+
+/** Who this role may point at tonight, with its own limits applied. */
+function legalTargets(ev: EventRow, actor: PlayerRow, roster: PlayerRow[], action: NightAction): PlayerRow[] {
+  const alive = roster.filter(p => p.alive);
+  const pool = action.targets === 'mafia' ? alive.filter(p => p.side === 'mafia') : alive;
+  return pool.filter(t => {
+    if (t.userId !== actor.userId) return true;
+    return action.allowSelf && selfLeft(ev, actor.userId, action) > 0;
+  });
+}
+
+
+
 /**
  * DMs every living role-holder their night choice.
  *
@@ -426,7 +469,9 @@ async function promptNightActions(
     const action = nightActionFor(p.role);
     if (!action) continue;
 
-    const targets = alive.filter(t => action.allowSelf || t.userId !== p.userId);
+    const left = usesLeft(ev, p.userId, action);
+    if (left === 0) continue;                 // spent; nothing to ask them
+    const targets = legalTargets(ev, p, roster, action);
     if (!targets.length) continue;
 
     const member = guild.members.cache.get(p.userId);
@@ -436,7 +481,12 @@ async function promptNightActions(
           `## 🌙 Shab ${night} — ${action.label}\n${action.prompt}`))
         .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
         .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-          `-# Naghshe to: **${roleOf(p.role).fa}** · ta sobh mitooni avazesh koni.`))
+          [
+            `-# Naghshe to: **${roleOf(p.role).fa}** · ta sobh mitooni avazesh koni.`,
+            left !== null ? `-# **${left}** bar dige mitooni estefade koni.` : null,
+            action.allowSelf && selfLeft(ev, p.userId, action) > 0 && action.selfUses !== undefined
+              ? '-# Khodet ro faghat yek bar mitooni entekhab koni.' : null,
+          ].filter(Boolean).join('\n')))
         .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
           new StringSelectMenuBuilder().setCustomId(enc('night', ev.id, p.role ?? ''))
             .setPlaceholder(action.prompt.slice(0, 100))
@@ -467,15 +517,61 @@ async function recordNightPick(i: StringSelectMenuInteraction, ev: EventRow): Pr
   if (!action) return;
 
   const target = i.values[0]!;
-  const picks = { ...((ev.state as DayState).nightPicks ?? {}) };
-  picks[i.user.id] = { role: me.role ?? '', target, at: Date.now() };
-  await mergeState(ev.id, { nightPicks: picks });
+  const st = ev.state as DayState;
+  const already = st.nightPicks?.[i.user.id];
+
+  // Spend a use only on the first pick of the night — changing your mind
+  // before morning is free, or a misclick would cost the sniper a bullet.
+  const patch: Record<string, unknown> = {};
+  if (!already) {
+    if (action.uses !== undefined) {
+      patch.uses = { ...(st.uses ?? {}), [i.user.id]: (st.uses?.[i.user.id] ?? 0) + 1 };
+    }
+  }
+  if (target === i.user.id && action.selfUses !== undefined && already?.target !== i.user.id) {
+    patch.selfUses = { ...(st.selfUses ?? {}), [i.user.id]: (st.selfUses?.[i.user.id] ?? 0) + 1 };
+  }
+
+  const picks = { ...(st.nightPicks ?? {}) };
+  picks[i.user.id] = { role: me.role ?? '', target, at: Date.now(), variant: already?.variant };
+  await mergeState(ev.id, { nightPicks: picks, ...patch });
+
+  // A gun is two decisions, not one.
+  if (action.followUp) {
+    await i.update({
+      components: [new ContainerBuilder().setAccentColor(C.night)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          `## 🔫 ${action.followUp.label}\nHadaf: <@${target}>`))
+        .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId(enc('variant', ev.id, '0')).setLabel(action.followUp.options[0])
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(enc('variant', ev.id, '1')).setLabel(action.followUp.options[1])
+            .setStyle(ButtonStyle.Danger)))],
+      flags: MessageFlags.IsComponentsV2,
+    }).catch(() => {});
+    return;
+  }
 
   // The detective is answered on the spot. Everyone else's choice goes to the
   // narrator, who still decides what the night actually does.
   if (action.answersActor) {
     const t = roster.find(p => p.userId === target);
-    // The Godfather reads as a citizen — the point of the scenario.
+
+    // Saul learns the actual role; the detective learns only a side, and the
+    // Godfather reads as a citizen to them — the point of the scenario.
+    if (action.reveals === 'role') {
+      await i.update({
+        components: [new ContainerBuilder().setAccentColor(C.mafia)
+          .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            `## 🕵️ Naghshe <@${target}>\n**${roleOf(t?.role ?? null).fa}**`))
+          .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+          .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            '-# Faghat to in ro didi. In tavanayi tamoom shod.'))],
+        flags: MessageFlags.IsComponentsV2,
+      }).catch(() => {});
+      return;
+    }
+
     const shown = t?.role === 'godfather' ? 'town' : t?.side;
     await i.update({
       components: [new ContainerBuilder().setAccentColor(shown === 'mafia' ? C.mafia : C.town)
@@ -503,6 +599,33 @@ async function recordNightPick(i: StringSelectMenuInteraction, ev: EventRow): Pr
     components: [new ContainerBuilder().setAccentColor(C.night)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         `## ✅ Sabt shod\n${action.label} → <@${target}>`))
+      .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        '-# Gardanande in ro mibine. Ta sobh mitooni avazesh koni.'))],
+    flags: MessageFlags.IsComponentsV2,
+  }).catch(() => {});
+}
+
+/** The second half of a two-part night action, e.g. which gun was handed over. */
+async function recordVariant(i: ButtonInteraction, ev: EventRow, which: string): Promise<void> {
+  const roster = await players(ev.id);
+  const me = roster.find(p => p.userId === i.user.id);
+  const action = nightActionFor(me?.role ?? null);
+  if (!me || !action?.followUp) return;
+
+  const st = ev.state as DayState;
+  const pick = st.nightPicks?.[i.user.id];
+  if (!pick) return;
+
+  const label = action.followUp.options[Number(which) === 1 ? 1 : 0]!;
+  await mergeState(ev.id, {
+    nightPicks: { ...st.nightPicks, [i.user.id]: { ...pick, variant: label } },
+  });
+
+  await i.update({
+    components: [new ContainerBuilder().setAccentColor(C.night)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## ✅ Sabt shod\n${action.label} → <@${pick.target}> · **${label}**`))
       .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         '-# Gardanande in ro mibine. Ta sobh mitooni avazesh koni.'))],
