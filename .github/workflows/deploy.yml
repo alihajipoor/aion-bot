@@ -55,19 +55,11 @@ jobs:
             webdist
           ls -lh aion.tar.gz
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: aion-bundle
-          path: aion.tar.gz
-          retention-days: 14
-
-      - name: Deploy over SSH
-        if: ${{ env.HAVE_KEY == 'true' }}
-        env:
-          HAVE_KEY: ${{ secrets.VPS_SSH_KEY != '' }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: echo "configured below"
+      # The bundle is not uploaded as an artifact. Ship to VPS scps it straight
+      # from the workspace in this same job, so nothing ever consumed it — it
+      # only spent ~200 MB of account storage per deploy, and eventually filled
+      # the quota and failed the whole workflow. The bundle is reproducible
+      # from the commit, and the VPS keeps the last three releases anyway.
 
       - name: Ship to VPS
         env:
