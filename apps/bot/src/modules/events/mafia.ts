@@ -9,7 +9,7 @@ import { isolate } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
 import {
   getEvent, patchEvent, mergeState, players, alivePlayers, assignRole,
-  killPlayer, revivePlayer, type EventRow,
+  killPlayer, revivePlayer, type EventRow, type PlayerRow,
 } from './store.js';
 import {
   SCENARIOS, CITIZEN, scenarioOf, distribution, MAFIA_DEFAULTS,
@@ -23,6 +23,25 @@ const enc = (...p: (string | number)[]) => [MAFIA_ID, ...p].join('|');
 const dec = (s: string) => s.split('|').slice(1);
 
 const C = { night: 0x2b2d5c, day: 0xfee75c, mafia: 0xed4245, town: 0x57f287 } as const;
+
+/**
+ * The day runs in three stages, the way a گرداننده actually runs it:
+ *
+ *   ejma     everyone accuses as many people as they like; nobody dies
+ *   defense  each accused gets the floor, one at a time
+ *   final    a single vote, and only the accused are on the ballot
+ *
+ * No stage closes on a timer. The narrator ends each one, because the room
+ * decides when it has heard enough — not a clock.
+ */
+interface DayState {
+  ejma?: { votes: Record<string, string[]>; messageId?: string; open?: boolean };
+  nominees?: string[];
+  defense?: { order: string[]; at: number; until?: number };
+  votes?: Record<string, string>;
+  voteMessageId?: string;
+  voteOpen?: boolean;
+}
 
 /**
  * Members the game is holding muted. The scoped-mute invariant in enforce.ts
@@ -174,8 +193,9 @@ export async function endMafia(guild: Guild, ev: EventRow): Promise<void> {
 async function console_(ev: EventRow, note?: string) {
   const roster = await players(ev.id);
   const alive = roster.filter(p => p.alive);
-  const state = ev.state as { phase?: string; night?: number };
+  const state = ev.state as { phase?: string; night?: number } & DayState;
   const phase = state.phase ?? 'setup';
+  const nominees = state.nominees ?? [];
 
   const mafiaAlive = alive.filter(p => p.side === 'mafia').length;
   const townAlive = alive.length - mafiaAlive;
@@ -197,7 +217,11 @@ async function console_(ev: EventRow, note?: string) {
       .setStyle(phase === 'night' ? ButtonStyle.Secondary : ButtonStyle.Primary).setDisabled(phase === 'night'),
     new ButtonBuilder().setCustomId(enc('phase', ev.id, 'day')).setLabel('Rooz').setEmoji('☀️')
       .setStyle(phase === 'day' ? ButtonStyle.Secondary : ButtonStyle.Primary).setDisabled(phase === 'day'),
-    new ButtonBuilder().setCustomId(enc('vote', ev.id)).setLabel('Ray giri').setEmoji('🗳️').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(enc('ejma', ev.id)).setLabel('Ejma').setEmoji('🖐️').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(enc('defense', ev.id)).setLabel('Defa').setEmoji('🗣️')
+      .setStyle(ButtonStyle.Primary).setDisabled(!nominees.length),
+    new ButtonBuilder().setCustomId(enc('vote', ev.id)).setLabel('Ray giri').setEmoji('🗳️')
+      .setStyle(ButtonStyle.Danger).setDisabled(!nominees.length),
   ));
 
   box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -209,7 +233,9 @@ async function console_(ev: EventRow, note?: string) {
 
   box.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      '-# Shab hameye bazikon-ha mute mishan. Rooz zende-ha baz mishan va morde-ha mute mimoonan.'));
+      nominees.length
+        ? `-# Roo miz: ${nominees.map(id => `<@${id}>`).join(' · ')}  —  Defa va bad Ray giri.`
+        : '-# Ejma aval: hame har chand nafar ke bekhan ray midan, kesi hazf nemishe.'));
 
   return { components: [box], flags: (MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral) as number };
 }
@@ -229,6 +255,7 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
 
   // Players vote; everything else is the narrator's.
   if (step === 'ballot' && i.isStringSelectMenu()) { await castVote(i, ev); return; }
+  if (step === 'ejmavote' && i.isStringSelectMenu()) { await castEjma(i, ev); return; }
 
   if (!canRun(i, ev)) {
     await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral });
@@ -305,6 +332,10 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
     return;
   }
 
+  if (step === 'ejma' && i.isButton()) { await openEjma(i, ev); return; }
+  if (step === 'ejmaend' && i.isButton()) { await endEjma(i, ev); return; }
+  if (step === 'nominate' && i.isStringSelectMenu()) { await setNominees(i, ev); return; }
+  if (step === 'defense' && i.isButton()) { await advanceDefense(i, ev); return; }
   if (step === 'vote' && i.isButton()) { await openVote(i, ev); return; }
   if (step === 'closevote' && i.isButton()) { await closeVote(i, ev); return; }
 }
@@ -335,102 +366,289 @@ async function announcePhase(guild: Guild, ev: EventRow, phase: 'night' | 'day')
   }).catch(() => {});
 }
 
-/* ── voting ────────────────────────────────────────────────────── */
+/* ── stage 1: ejma, the accusation round ──────────────────────── */
 
-async function openVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
-  const ch = ev.textChannelId ? i.guild!.channels.cache.get(ev.textChannelId) as TextChannel | undefined : undefined;
+const chatOf = (ev: EventRow, guild: Guild): TextChannel | undefined =>
+  ev.textChannelId ? guild.channels.cache.get(ev.textChannelId) as TextChannel | undefined : undefined;
+
+function ejmaCard(ev: EventRow, alive: PlayerRow[], open: boolean) {
+  const st = ev.state as DayState;
+  const votes = st.ejma?.votes ?? {};
+
+  const tally = new Map<string, string[]>();
+  for (const [voter, targets] of Object.entries(votes)) {
+    for (const t of targets) tally.set(t, [...(tally.get(t) ?? []), voter]);
+  }
+  const ranked = [...tally.entries()].sort((a, b) => b[1].length - a[1].length);
+
+  const box = new ContainerBuilder().setAccentColor(C.day)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      open
+        ? '## 🖐️ Ejma\nHar chand nafar ke mikhay entekhab kon — yeki, se ta, hame. Kesi ba in ray hazf nemishe.'
+        : '## 🖐️ Ejma — baste shod'))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      ranked.length
+        ? ranked.map(([target, voters]) =>
+            `**${voters.length}** → <@${target}>\n-# ${voters.map(v => `<@${v}>`).join(' ')}`).join('\n')
+        : '-# Hanooz kesi ray nadade.'));
+
+  if (open) {
+    box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder().setCustomId(enc('ejmavote', ev.id))
+        .setPlaceholder('Har chand nafar ke mikhay')
+        .setMinValues(0).setMaxValues(Math.max(1, Math.min(25, alive.length)))
+        .addOptions(alive.slice(0, 25).map(p =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(`${p.seat ?? '?'} · ${(p.userTag ?? p.userId).slice(0, 60)}`)
+            .setValue(p.userId)
+            .setDefault((votes[''] ?? []).includes(p.userId))))))
+      .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(enc('ejmaend', ev.id)).setLabel('Bastane ejma')
+          .setEmoji('🔒').setStyle(ButtonStyle.Danger)));
+  }
+
+  return {
+    components: [box],
+    flags: MessageFlags.IsComponentsV2 as const,
+    allowedMentions: { parse: [] as never[] },
+  };
+}
+
+async function openEjma(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  const ch = chatOf(ev, i.guild!);
   if (!ch) { await i.reply({ content: 'Channel e chat peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
 
+  await mergeState(ev.id, { ejma: { votes: {}, open: true }, nominees: [], defense: undefined });
+  const fresh = (await getEvent(ev.id))!;
   const alive = await alivePlayers(ev.id);
-  await mergeState(ev.id, { votes: {} });
 
-  const msg = await ch.send({
+  const msg = await ch.send(ejmaCard(fresh, alive, true));
+  await mergeState(ev.id, { ejma: { votes: {}, open: true, messageId: msg.id } });
+  await i.reply({ content: `Ejma baz shod too <#${ch.id}>. Ba dokme khodet mibandi.`, flags: MessageFlags.Ephemeral });
+}
+
+async function castEjma(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
+  const st = ev.state as DayState;
+  if (!st.ejma?.open) { await i.reply({ content: 'Ejma baste shode.', flags: MessageFlags.Ephemeral }); return; }
+
+  const roster = await players(ev.id);
+  const me = roster.find(p => p.userId === i.user.id);
+  if (!me?.alive) { await i.reply({ content: 'Faghat bazikon-haye zende ray midan.', flags: MessageFlags.Ephemeral }); return; }
+
+  await i.deferUpdate();
+  const votes = { ...st.ejma.votes, [i.user.id]: i.values };
+  await mergeState(ev.id, { ejma: { ...st.ejma, votes } });
+
+  const fresh = (await getEvent(ev.id))!;
+  await i.message.edit(ejmaCard(fresh, roster.filter(p => p.alive), true)).catch(() => {});
+}
+
+/** Ends accusations and asks the narrator to confirm who goes to defence. */
+async function endEjma(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  const st = ev.state as DayState;
+  const votes = st.ejma?.votes ?? {};
+  const roster = await players(ev.id);
+  const alive = roster.filter(p => p.alive);
+
+  const counts = new Map<string, number>();
+  for (const targets of Object.values(votes)) {
+    for (const t of targets) counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  const top = Math.max(0, ...counts.values());
+  // Everyone level with the highest count is the natural slate; the narrator
+  // can still add or drop names before defence begins.
+  const suggested = [...counts.entries()].filter(([, n]) => n === top && n > 0).map(([id]) => id);
+
+  await mergeState(ev.id, { ejma: { ...(st.ejma ?? { votes: {} }), open: false } });
+  const fresh = (await getEvent(ev.id))!;
+  await i.message.edit(ejmaCard(fresh, alive, false)).catch(() => {});
+
+  await i.reply({
     components: [new ContainerBuilder().setAccentColor(C.day)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        `## 🗳️ Ray giri\nFaghat zende-ha ray midan. Har kas yek ray — avaz kardan azad e.`))
-      .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent('-# Hanooz kesi ray nadade.'))
+        `### 🗣️ Ki bere roo miz?\n${suggested.length
+          ? `Bishtarin ray: ${suggested.map(id => `<@${id}>`).join(' · ')} (${top} ray)`
+          : 'Hich ray-i sabt nashod — khodet entekhab kon.'}`))
       .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-        new StringSelectMenuBuilder().setCustomId(enc('ballot', ev.id))
-          .setPlaceholder('Ray et ro bede')
+        new StringSelectMenuBuilder().setCustomId(enc('nominate', ev.id))
+          .setPlaceholder('Kasaani ke defa mikonan')
+          .setMinValues(1).setMaxValues(Math.max(1, Math.min(25, alive.length)))
           .addOptions(alive.slice(0, 25).map(p =>
             new StringSelectMenuOptionBuilder()
               .setLabel(`${p.seat ?? '?'} · ${(p.userTag ?? p.userId).slice(0, 60)}`)
-              .setValue(p.userId)))))
-      .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId(enc('closevote', ev.id)).setLabel('Bastane ray giri')
-          .setEmoji('🔒').setStyle(ButtonStyle.Danger)))],
-    flags: MessageFlags.IsComponentsV2,
+              .setDescription(`${counts.get(p.userId) ?? 0} ray`)
+              .setValue(p.userId)
+              .setDefault(suggested.includes(p.userId))))))],
+    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
   });
-
-  await mergeState(ev.id, { voteMessageId: msg.id });
-  await i.reply({ content: `Ray giri baz shod too <#${ch.id}>.`, flags: MessageFlags.Ephemeral });
 }
 
-async function castVote(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
-  const roster = await players(ev.id);
-  const me = roster.find(p => p.userId === i.user.id);
-  if (!me || !me.alive) {
-    await i.reply({ content: 'Faghat bazikon-haye zende ray midan.', flags: MessageFlags.Ephemeral });
+/* ── stage 2: defence ─────────────────────────────────────────── */
+
+async function setNominees(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
+  await mergeState(ev.id, { nominees: i.values, defense: { order: i.values, at: -1 } });
+  const fresh = (await getEvent(ev.id))!;
+
+  const ch = chatOf(fresh, i.guild!);
+  await ch?.send({
+    components: [new ContainerBuilder().setAccentColor(C.day)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## 🗣️ Roo miz\n${i.values.map((id, n) => `\`${n + 1}\` <@${id}>`).join('\n')}`))
+      .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        '-# Be tartib defa mikonan. Gardanande nobat ro rad mikone.'))],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },
+  }).catch(() => {});
+
+  await i.update(await console_(fresh, `${i.values.length} nafar rafan roo miz.`));
+}
+
+/** Hands the floor to the next nominee, or reports that everyone has spoken. */
+async function advanceDefense(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  const st = ev.state as DayState;
+  const order = st.defense?.order ?? st.nominees ?? [];
+  if (!order.length) { await i.reply({ content: 'Aval ejma ro tamoom kon.', flags: MessageFlags.Ephemeral }); return; }
+
+  const at = (st.defense?.at ?? -1) + 1;
+  const cfg = configOf(ev);
+  const ch = chatOf(ev, i.guild!);
+
+  if (at >= order.length) {
+    await ch?.send({
+      components: [new ContainerBuilder().setAccentColor(C.day)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          '## ✅ Defa ha tamoom shod\nHala ray giri.'))],
+      flags: MessageFlags.IsComponentsV2,
+    }).catch(() => {});
+    await i.update(await console_(ev, 'Hameye defa ha anjam shod — Ray giri bezan.'));
     return;
   }
-  await i.deferUpdate();
 
-  const votes = { ...(ev.state as { votes?: Record<string, string> }).votes ?? {} };
-  votes[i.user.id] = i.values[0]!;
-  await mergeState(ev.id, { votes });
+  const until = Math.floor((Date.now() + cfg.defenseSeconds * 1000) / 1000);
+  await mergeState(ev.id, { defense: { order, at, until } });
 
+  await ch?.send({
+    components: [new ContainerBuilder().setAccentColor(C.day)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## 🗣️ Nobate <@${order[at]}>\n\`${at + 1}\` az \`${order.length}\` · vaght ta <t:${until}:R>`))],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { users: [order[at]!] },
+  }).catch(() => {});
+
+  const fresh = (await getEvent(ev.id))!;
+  await i.update(await console_(fresh, `Nobate defa: <@${order[at]}> (${at + 1}/${order.length}).`));
+}
+
+/* ── stage 3: the final vote, nominees only ───────────────────── */
+
+function finalCard(ev: EventRow, nominees: PlayerRow[], aliveCount: number, open: boolean) {
+  const st = ev.state as DayState;
+  const votes = st.votes ?? {};
   const tally = new Map<string, string[]>();
   for (const [voter, target] of Object.entries(votes)) {
     tally.set(target, [...(tally.get(target) ?? []), voter]);
   }
-  const alive = roster.filter(p => p.alive).length;
-  const majority = Math.floor(alive / 2) + 1;
   const ranked = [...tally.entries()].sort((a, b) => b[1].length - a[1].length);
+  const majority = Math.floor(aliveCount / 2) + 1;
 
-  await i.message.edit({
-    components: [new ContainerBuilder().setAccentColor(C.day)
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        `## 🗳️ Ray giri\nFaghat zende-ha ray midan. Har kas yek ray — avaz kardan azad e.`))
-      .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        ranked.length
-          ? ranked.map(([target, voters]) =>
-              `${voters.length >= majority ? '⚠️' : '▫️'} **${voters.length}** → <@${target}>\n-# ${voters.map(v => `<@${v}>`).join(' ')}`,
-            ).join('\n') + `\n\n-# Aksariat: ${majority} az ${alive}`
-          : '-# Hanooz kesi ray nadade.'))
-      .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-        new StringSelectMenuBuilder().setCustomId(enc('ballot', ev.id))
-          .setPlaceholder('Ray et ro bede')
-          .addOptions(roster.filter(p => p.alive).slice(0, 25).map(p =>
-            new StringSelectMenuOptionBuilder()
-              .setLabel(`${p.seat ?? '?'} · ${(p.userTag ?? p.userId).slice(0, 60)}`)
-              .setValue(p.userId)))))
+  const box = new ContainerBuilder().setAccentColor(open ? C.day : C.mafia)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      open
+        ? '## 🗳️ Ray giri\nFaghat kasaani ke defa kardan roo ballot an. Yek ray har nafar.'
+        : '## 🗳️ Ray giri — baste shod'))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      ranked.length
+        ? ranked.map(([target, voters]) =>
+            `${voters.length >= majority ? '⚠️' : '▫️'} **${voters.length}** → <@${target}>\n-# ${voters.map(v => `<@${v}>`).join(' ')}`,
+          ).join('\n') + `\n\n-# Aksariat: ${majority} az ${aliveCount}`
+        : '-# Hanooz kesi ray nadade.'));
+
+  if (open) {
+    box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder().setCustomId(enc('ballot', ev.id))
+        .setPlaceholder('Ray et ro bede')
+        .addOptions(nominees.slice(0, 25).map(p =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(`${p.seat ?? '?'} · ${(p.userTag ?? p.userId).slice(0, 60)}`)
+            .setValue(p.userId)))))
       .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(enc('closevote', ev.id)).setLabel('Bastane ray giri')
-          .setEmoji('🔒').setStyle(ButtonStyle.Danger)))],
-    flags: MessageFlags.IsComponentsV2,
-    allowedMentions: { parse: [] },
-  }).catch(() => {});
+          .setEmoji('🔒').setStyle(ButtonStyle.Danger)));
+  }
+
+  return {
+    components: [box],
+    flags: MessageFlags.IsComponentsV2 as const,
+    allowedMentions: { parse: [] as never[] },
+  };
+}
+
+async function openVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  const ch = chatOf(ev, i.guild!);
+  if (!ch) { await i.reply({ content: 'Channel e chat peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
+
+  const st = ev.state as DayState;
+  const ids = st.nominees ?? [];
+  if (!ids.length) { await i.reply({ content: 'Aval ejma va defa.', flags: MessageFlags.Ephemeral }); return; }
+
+  const roster = await players(ev.id);
+  const nominees = roster.filter(p => ids.includes(p.userId));
+  const alive = roster.filter(p => p.alive).length;
+
+  await mergeState(ev.id, { votes: {}, voteOpen: true });
+  const fresh = (await getEvent(ev.id))!;
+  const msg = await ch.send(finalCard(fresh, nominees, alive, true));
+  await mergeState(ev.id, { voteMessageId: msg.id });
+  await i.reply({ content: `Ray giri baz shod too <#${ch.id}>. Ba dokme khodet mibandi.`, flags: MessageFlags.Ephemeral });
+}
+
+async function castVote(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
+  const st = ev.state as DayState;
+  if (!st.voteOpen) { await i.reply({ content: 'Ray giri baste shode.', flags: MessageFlags.Ephemeral }); return; }
+
+  const roster = await players(ev.id);
+  const me = roster.find(p => p.userId === i.user.id);
+  if (!me?.alive) { await i.reply({ content: 'Faghat bazikon-haye zende ray midan.', flags: MessageFlags.Ephemeral }); return; }
+
+  await i.deferUpdate();
+  const votes = { ...(st.votes ?? {}), [i.user.id]: i.values[0]! };
+  await mergeState(ev.id, { votes });
+
+  const fresh = (await getEvent(ev.id))!;
+  const ids = (fresh.state as DayState).nominees ?? [];
+  await i.message.edit(finalCard(fresh, roster.filter(p => ids.includes(p.userId)), roster.filter(p => p.alive).length, true))
+    .catch(() => {});
 }
 
 async function closeVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
-  const votes = (ev.state as { votes?: Record<string, string> }).votes ?? {};
-  const tally = new Map<string, number>();
-  for (const target of Object.values(votes)) tally.set(target, (tally.get(target) ?? 0) + 1);
-  const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+  const st = ev.state as DayState;
+  const votes = st.votes ?? {};
+  const counts = new Map<string, number>();
+  for (const t of Object.values(votes)) counts.set(t, (counts.get(t) ?? 0) + 1);
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const top = ranked[0];
   const tied = ranked.filter(r => r[1] === top?.[1]).length > 1;
 
-  await i.update({
-    components: [new ContainerBuilder().setAccentColor(C.day)
+  await mergeState(ev.id, { voteOpen: false });
+  const fresh = (await getEvent(ev.id))!;
+  const roster = await players(ev.id);
+  const ids = (fresh.state as DayState).nominees ?? [];
+
+  await i.update(finalCard(fresh, roster.filter(p => ids.includes(p.userId)), roster.filter(p => p.alive).length, false));
+
+  const ch = chatOf(fresh, i.guild!);
+  await ch?.send({
+    components: [new ContainerBuilder().setAccentColor(C.mafia)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         top && !tied
-          ? `## 🗳️ Ray giri baste shod\nBishtarin ray: <@${top[0]}> ba **${top[1]}** ray.\n-# Tasmim ba gardanande ast.`
+          ? `## 🗳️ Natije\nBishtarin ray: <@${top[0]}> ba **${top[1]}** ray.\n-# Tasmime akhar ba gardanande ast — ba Bokosh anjam bede.`
           : top && tied
-            ? `## 🗳️ Ray giri baste shod\n**Mosavi** — chand nafar ${top[1]} ray daran.\n-# Tasmim ba gardanande ast.`
-            : '## 🗳️ Ray giri baste shod\nHich ray-i sabt nashod.'))],
+            ? `## 🗳️ Mosavi\nChand nafar ${top[1]} ray daran. Tasmim ba gardanande.`
+            : '## 🗳️ Hich ray-i sabt nashod.'))],
     flags: MessageFlags.IsComponentsV2,
     allowedMentions: { parse: [] },
-  });
+  }).catch(() => {});
 }
