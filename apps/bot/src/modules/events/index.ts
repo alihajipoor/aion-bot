@@ -492,6 +492,51 @@ async function doStart(guild: Guild, ev: EventRow): Promise<void> {
   log.info(`event #${ev.id} started with ${roster.length} players`);
 }
 
+/**
+ * Clears the event's own channels, walking anyone still in voice over to the
+ * hall first.
+ *
+ * Deleting a voice channel drops everyone in it out of voice entirely, which
+ * ends the evening for people who were still talking. Moving them costs two
+ * API calls and keeps the room together — the game is over, not the night.
+ */
+async function sweep(guild: Guild, ev: EventRow, reason: string): Promise<void> {
+  const hall = hallChannel(guild);
+
+  for (const id of ev.ownedChannelIds) {
+    const channel = guild.channels.cache.get(id);
+    if (!channel) continue;
+
+    if (channel.isVoiceBased() && channel.members.size) {
+      // Never herd people into the very channel being deleted.
+      const to = hall && hall.id !== id
+        ? hall
+        : [...guild.channels.cache.values()].find(v =>
+            v.isVoiceBased() && v.id !== id && !ev.ownedChannelIds.includes(v.id)
+            && v.parentId === channel.parentId);
+
+      // Snapshot the occupants: the cache empties as they move, so counting
+      // afterwards reports nobody every time.
+      const leaving = [...channel.members.values()];
+      if (to) {
+        for (const m of leaving) {
+          await m.voice.setChannel(to.id, reason)
+            .catch(e => log.warn(`could not move ${m.user.tag} out of ${channel.name}: ${(e as Error).message}`));
+        }
+        log.info(`moved ${leaving.length} member(s) from ${channel.name} to ${to.name}`);
+      } else {
+        log.warn(`no room to move ${leaving.length} member(s) out of ${channel.name}`);
+      }
+    }
+
+    await guild.channels.delete(id, reason).catch(() => {});
+  }
+
+  if (ev.scheduledEventId) {
+    await guild.scheduledEvents.delete(ev.scheduledEventId).catch(() => {});
+  }
+}
+
 async function end(i: ButtonInteraction, ev: EventRow): Promise<void> {
   await i.deferUpdate();
   await doEnd(i.guild!, ev);
@@ -538,12 +583,7 @@ async function doEnd(guild: Guild, ev: EventRow): Promise<void> {
   }).catch(() => {});
 
   // Everything the event made, and nothing else.
-  for (const id of ev.ownedChannelIds) {
-    await guild.channels.delete(id, `AION event #${ev.id} ended`).catch(() => {});
-  }
-  if (ev.scheduledEventId) {
-    await guild.scheduledEvents.delete(ev.scheduledEventId).catch(() => {});
-  }
+  await sweep(guild, ev, `AION event #${ev.id} ended`);
 
   await refreshCard(guild, fresh);
   await ensureEventPanel(guild);
@@ -569,8 +609,7 @@ async function doCancel(guild: Guild, ev: EventRow): Promise<void> {
       }))
       .catch(() => {});
   }
-  for (const id of ev.ownedChannelIds) await guild.channels.delete(id, 'AION event cancelled').catch(() => {});
-  if (ev.scheduledEventId) await guild.scheduledEvents.delete(ev.scheduledEventId).catch(() => {});
+  await sweep(guild, ev, 'AION event cancelled');
 
   await refreshCard(guild, (await getEvent(ev.id))!);
   await ensureEventPanel(guild);
