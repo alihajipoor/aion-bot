@@ -87,14 +87,25 @@ export function installLogging(client: AionClient): void {
       const before = inviteUses.get(member.guild.id);
       const after = await member.guild.invites.fetch();
       if (before) {
+        // An invite we already knew about that went up by one is certain.
+        // An invite we have never seen that already has uses is a guess, and
+        // only worth making when nothing certain matched — that is how a join
+        // through an invite created while the cache was cold gets attributed
+        // instead of being written off as undeterminable.
+        let guess: { code: string; inviterId: string | null } | null = null;
         for (const inv of after.values()) {
           const prev = before.get(inv.code);
-          if (prev && (inv.uses ?? 0) > prev.uses) {
+          const uses = inv.uses ?? 0;
+          if (prev && uses > prev.uses) {
             inviteCode = inv.code;
             inviterId = inv.inviterId ?? null;
-            via = ` · invite \`${inv.code}\`${inviterId ? ` from <@${inviterId}>` : ''}`;
             break;
           }
+          if (!prev && uses > 0 && !guess) guess = { code: inv.code, inviterId: inv.inviterId ?? null };
+        }
+        if (!inviteCode && guess) { inviteCode = guess.code; inviterId = guess.inviterId; }
+        if (inviteCode) {
+          via = ` · invite \`${inviteCode}\`${inviterId ? ` from <@${inviterId}>` : ''}`;
         }
       }
       const m = new Map<string, { uses: number; inviter: string | null }>();
@@ -362,12 +373,17 @@ export function installLogging(client: AionClient): void {
   /* ── invites, expressions, threads, guild ──────────────────────── */
   client.on(Events.InviteCreate, (invite) => {
     if (!invite.guild) return;
+    // Without this the cache goes stale the instant anyone makes an invite,
+    // and the next join through it cannot be attributed to anybody.
+    inviteUses.get(invite.guild.id)
+      ?.set(invite.code, { uses: invite.uses ?? 0, inviter: invite.inviterId ?? null });
     emitLog(invite.guild as Guild, 'inviteCreate',
       `${now()} 📩 Invite \`${invite.code}\` created${invite.inviterId ? ` by <@${invite.inviterId}>` : ''}` +
       `${invite.maxUses ? ` · max ${invite.maxUses} uses` : ''}`);
   });
   client.on(Events.InviteDelete, (invite) => {
     if (!invite.guild) return;
+    inviteUses.get(invite.guild.id)?.delete(invite.code);
     emitLog(invite.guild as Guild, 'inviteDelete', `${now()} 📪 Invite \`${invite.code}\` deleted`);
   });
 
