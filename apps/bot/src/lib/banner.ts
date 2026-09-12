@@ -49,6 +49,30 @@ const BRAND = {
   track: 'rgba(255,255,255,0.055)',
 } as const;
 
+/**
+ * The wordmark. The first letter is a Greek capital lambda, not a Latin A —
+ * the same mark that fronts every verified nickname, so the server header, the
+ * banners and the member list all carry one glyph.
+ */
+const WORDMARK = 'ION';
+
+/**
+ * Vazirmatn carries no Greek, so U+039B renders as nothing and "ΛION" comes
+ * out as "ION".
+ *
+ * A capital lambda is a capital V turned through 180°, so the mark is drawn by
+ * rotating the font's own V rather than by shipping a second font for one
+ * glyph or hand-drawing bars that never quite match. The weight, the stroke
+ * contrast and the glow are the typeface's, because it is the typeface.
+ */
+const lambda = (size: number) => el('div', {
+  display: 'flex', transform: 'rotate(180deg)',
+  // A rotated V carries its baseline at the top and its apex where the
+  // descender space was, so it lands low against the rest of the word. The
+  // margins lift it back onto the same line.
+  marginTop: -size * 0.30, marginBottom: size * 0.06, marginRight: size * 0.06,
+}, 'V');
+
 const WIDTH = 1200;
 const PAD = 56;
 const CONTENT = WIDTH - PAD * 2;
@@ -88,9 +112,9 @@ const header = (opts: { kicker: string; title: string; subtitle: string; accent:
     ]),
     el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 7 }, [
       el('div', {
-        display: 'flex', fontSize: 38, fontWeight: 700, letterSpacing: 11, color: BRAND.text,
-        textShadow: `0 0 30px ${opts.accent}e6`,
-      }, 'AION'),
+        display: 'flex', alignItems: 'center', fontSize: 38, fontWeight: 700,
+        letterSpacing: 11, color: BRAND.text, textShadow: `0 0 30px ${opts.accent}e6`,
+      }, [lambda(38), el('div', { display: 'flex' }, WORDMARK)]),
       rift(148, opts.accent),
     ]),
   ]);
@@ -122,7 +146,9 @@ async function frame(opts: {
       justifyContent: 'space-between', alignItems: 'center',
     }, [
       el('div', { display: 'flex', fontSize: 15, letterSpacing: 4, color: BRAND.faint }, opts.footer),
-      el('div', { display: 'flex', fontSize: 15, letterSpacing: 5, color: BRAND.faint }, 'AION'),
+      el('div', {
+        display: 'flex', alignItems: 'center', fontSize: 15, letterSpacing: 5, color: BRAND.faint,
+      }, [lambda(15), el('div', { display: 'flex' }, WORDMARK)]),
     ]),
   ]);
 
@@ -308,9 +334,9 @@ export async function renderHeaderBanner(opts: {
         ]),
         el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 7 }, [
           el('div', {
-            display: 'flex', fontSize: 38, fontWeight: 700, letterSpacing: 11, color: BRAND.text,
-            textShadow: `0 0 30px ${accent}e6`,
-          }, 'AION'),
+            display: 'flex', alignItems: 'center', fontSize: 38, fontWeight: 700,
+            letterSpacing: 11, color: BRAND.text, textShadow: `0 0 30px ${accent}e6`,
+          }, [lambda(38), el('div', { display: 'flex' }, WORDMARK)]),
           rift(148, accent),
         ]),
       ]),
@@ -364,9 +390,9 @@ export async function renderServerArt(w: number, h: number, tagline: string): Pr
 
       el('div', {
         ...absolute, top: h * 0.28, left: 0, width: w, justifyContent: 'center',
-        fontSize: px(150), fontWeight: 700, letterSpacing: px(24), color: BRAND.text,
-        textShadow: `0 0 ${px(44)}px ${BRAND.blue}f2`,
-      }, 'AION'),
+        alignItems: 'center', fontSize: px(150), fontWeight: 700, letterSpacing: px(24),
+        color: BRAND.text, textShadow: `0 0 ${px(44)}px ${BRAND.blue}f2`,
+      }, [lambda(px(150)), el('div', { display: 'flex' }, WORDMARK)]),
 
       el('div', { ...absolute, top: h * 0.52, left: px(60) }, [rift(w - px(120), BRAND.blue)]),
 
@@ -415,9 +441,9 @@ async function renderWelcomeBanner(): Promise<Buffer | null> {
       ...glows(BRAND.blue),
       el('div', {
         ...absolute, top: 96, left: 0, width: WIDTH, justifyContent: 'center',
-        fontSize: 168, fontWeight: 700, letterSpacing: 26, color: BRAND.text,
-        textShadow: `0 0 46px ${BRAND.blue}f2`,
-      }, 'AION'),
+        alignItems: 'center', fontSize: 168, fontWeight: 700, letterSpacing: 26,
+        color: BRAND.text, textShadow: `0 0 46px ${BRAND.blue}f2`,
+      }, [lambda(168), el('div', { display: 'flex' }, WORDMARK)]),
       el('div', { ...absolute, top: 198, left: 40 }, [rift(WIDTH - 80, BRAND.blue)]),
       el('div', { ...absolute, top: 176, left: 0, width: WIDTH, justifyContent: 'center' }, [
         el('div', {
