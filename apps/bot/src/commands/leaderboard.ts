@@ -22,6 +22,12 @@ async function banner(guild: Guild, kind: string, window: string, rows: Row[]): 
       rows: top(r => r.voice).map(r => ({ name: named(r), value: hhmm(r.voice), amount: r.voice })),
     });
   }
+  if (kind === 'invites') {
+    return renderLeaderboardBanner({
+      title: 'Top Inviters', subtitle, accent: '#9b6cff', kicker: `INVITES · ${window.toUpperCase()}`,
+      rows: top(r => r.invites).map(r => ({ name: named(r), value: `${r.invites} nafar`, amount: r.invites })),
+    });
+  }
   if (kind === 'chat') {
     return renderLeaderboardBanner({
       title: 'Top Chatters', subtitle, accent: '#fee75c', kicker: `CHAT · ${window.toUpperCase()}`,
@@ -38,6 +44,7 @@ async function banner(guild: Guild, kind: string, window: string, rows: Row[]): 
         { label: 'VOICE', value: hhmm(sum(r => r.voice)) },
         { label: 'MESSAGE', value: `${sum(r => r.chat)}` },
         { label: 'PUNISH', value: `${sum(r => r.punishments)}` },
+        { label: 'DAVAT', value: `${sum(r => r.invites)}` },
         { label: "FA'AL", value: `${staff.filter(r => r.voice + r.chat + r.punishments > 0).length}`,
           hint: `az ${staff.length} admin` },
       ],
@@ -61,6 +68,7 @@ const command: Command = {
         { name: 'Hame (voice + chat)', value: 'all' },
         { name: 'Voice (bishtarin voice)', value: 'voice' },
         { name: 'Chat (bishtarin message)', value: 'chat' },
+        { name: 'Invite (ki chand nafar avorde)', value: 'invites' },
         { name: 'Admin (punishment-ha)', value: 'admin' }))
     .addStringOption(o => o.setName('period').setDescription('Che bazei zamani?')
       .addChoices(
@@ -105,6 +113,7 @@ const command: Command = {
       kind === 'admin' ? renderStaffBoard(i.guild!, rows, window, file)
       : kind === 'voice' ? renderBoard({ title: 'Top Voice', icon: '🎧', accent: 0x4aa6ff, metric: 'voice', rows, footer: window, banner: file })
       : kind === 'chat' ? renderBoard({ title: 'Top Chatters', icon: '💬', accent: 0xfee75c, metric: 'chat', rows, footer: window, banner: file })
+      : kind === 'invites' ? renderBoard({ title: 'Top Inviters', icon: '📨', accent: 0x9b6cff, metric: 'invites', rows, footer: window, banner: file })
       : renderCombined(rows, window, 10, file);
 
     await i.editReply({

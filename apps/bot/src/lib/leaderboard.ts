@@ -1,9 +1,9 @@
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
 import {
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize,
   MediaGalleryBuilder, MediaGalleryItemBuilder, type Guild,
 } from 'discord.js';
-import { getDb, activityDaily } from '@aion/db';
+import { getDb, activityDaily, memberJoins } from '@aion/db';
 import { isolate } from './text.js';
 import { hasRole } from './roles.js';
 
@@ -15,7 +15,7 @@ const withArt = (box: ContainerBuilder, file?: string): ContainerBuilder =>
         .addItems(new MediaGalleryItemBuilder().setURL(`attachment://${file}`)))
     : box;
 
-export type Metric = 'voice' | 'chat' | 'punishments';
+export type Metric = 'voice' | 'chat' | 'punishments' | 'invites';
 export type Period = 'today' | 'day' | 'week' | 'month' | 'all';
 
 export const STAFF_ROLE_NAMES = [
@@ -41,7 +41,27 @@ export const hhmm = (seconds: number): string => {
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
-export interface Row { userId: string; voice: number; chat: number; punishments: number }
+export interface Row { userId: string; voice: number; chat: number; punishments: number; invites: number }
+
+/**
+ * People who joined through someone's invite inside the window.
+ *
+ * This lives in its own table on a real timestamp, not the daily activity
+ * rollup, so it is queried separately and folded in rather than bolted onto a
+ * GROUP BY that means something else.
+ */
+export async function queryInvites(guildId: string, fromDay: string): Promise<Map<string, number>> {
+  const rows = await getDb()
+    .select({ inviterId: memberJoins.inviterId, n: sql<number>`count(*)::int` })
+    .from(memberJoins)
+    .where(and(
+      eq(memberJoins.guildId, guildId),
+      isNotNull(memberJoins.inviterId),
+      gte(memberJoins.joinedAt, new Date(`${fromDay}T00:00:00Z`)),
+    ))
+    .groupBy(memberJoins.inviterId);
+  return new Map(rows.filter(r => r.inviterId).map(r => [r.inviterId!, r.n]));
+}
 
 export async function queryActivity(guildId: string, fromDay: string): Promise<Row[]> {
   const rows = await getDb()
@@ -55,14 +75,29 @@ export async function queryActivity(guildId: string, fromDay: string): Promise<R
     .where(and(eq(activityDaily.guildId, guildId), gte(activityDaily.day, fromDay)))
     .groupBy(activityDaily.userId)
     .orderBy(desc(sql`sum(${activityDaily.voiceSeconds})`));
-  return rows as Row[];
+
+  // Someone can have invited people without speaking a word, so the invite
+  // rows are unioned in rather than joined onto the activity rows.
+  const invites = await queryInvites(guildId, fromDay).catch(() => new Map<string, number>());
+  const byUser = new Map<string, Row>(
+    rows.map(r => [r.userId, { ...(r as Omit<Row, 'invites'>), invites: invites.get(r.userId) ?? 0 }]),
+  );
+  for (const [userId, n] of invites) {
+    if (!byUser.has(userId)) {
+      byUser.set(userId, { userId, voice: 0, chat: 0, punishments: 0, invites: n });
+    }
+  }
+  return [...byUser.values()];
 }
 
 const value = (r: Row, m: Metric): number =>
-  m === 'voice' ? r.voice : m === 'chat' ? r.chat : r.punishments;
+  m === 'voice' ? r.voice : m === 'chat' ? r.chat : m === 'invites' ? r.invites : r.punishments;
 
 const label = (r: Row, m: Metric): string =>
-  m === 'voice' ? hhmm(r.voice) : m === 'chat' ? `${r.chat} message` : `${r.punishments} punishment`;
+  m === 'voice' ? hhmm(r.voice)
+  : m === 'chat' ? `${r.chat} message`
+  : m === 'invites' ? `${r.invites} nafar`
+  : `${r.punishments} punishment`;
 
 /** Single-metric board, used for the public top-voice / top-chat posts. */
 export function renderBoard(opts: {
@@ -115,7 +150,7 @@ export function renderStaffBoard(guild: Guild, rows: Row[], footer: string, bann
         return [
           `${MEDALS[i] ?? `\`${String(i + 1).padStart(2, ' ')}\``}  <@${r.userId}>` +
           (role ? `  ·  ${isolate(role.name)}` : ''),
-          `　　🎧 ${hhmm(r.voice)}　💬 ${r.chat}　⚖️ ${r.punishments}`,
+          `　　🎧 ${hhmm(r.voice)}　💬 ${r.chat}　⚖️ ${r.punishments}　📨 ${r.invites}`,
         ].join('\n');
       }).join('\n\n')
     : '*Hich fa\'aliati az admin-ha sabt nashode.*';
@@ -126,7 +161,7 @@ export function renderStaffBoard(guild: Guild, rows: Row[], footer: string, bann
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `-# 🎧 voice · 💬 messages · ⚖️ punishments — ${footer}`));
+      `-# 🎧 voice · 💬 messages · ⚖️ punishments · 📨 invites — ${footer}`));
 }
 
 /**
@@ -142,7 +177,7 @@ export function renderCombined(rows: Row[], footer: string, limit = 10, banner?:
   const body = ranked.length
     ? ranked.map((r, i) =>
         `${MEDALS[i] ?? `\`${String(i + 1).padStart(2, ' ')}\``}  <@${r.userId}>\n` +
-        `　　🎧 ${hhmm(r.voice)}　💬 ${r.chat}`,
+        `　　🎧 ${hhmm(r.voice)}　💬 ${r.chat}${r.invites ? `　📨 ${r.invites}` : ''}`,
       ).join('\n')
     : '*Hanooz data-i sabt nashode. Chand daghighe sabr kon.*';
 
@@ -151,5 +186,5 @@ export function renderCombined(rows: Row[], footer: string, limit = 10, banner?:
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(`-# 🎧 voice · 💬 messages — ${footer}`));
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(`-# 🎧 voice · 💬 messages · 📨 invites — ${footer}`));
 }

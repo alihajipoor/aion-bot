@@ -97,12 +97,20 @@ async function postDaily(guild: Guild): Promise<void> {
 
   const voice = [...rows].filter(r => r.voice > 0).sort((a, b) => b.voice - a.voice).slice(0, 8);
   const chat = [...rows].filter(r => r.chat > 0).sort((a, b) => b.chat - a.chat).slice(0, 8);
+  const invites = [...rows].filter(r => r.invites > 0).sort((a, b) => b.invites - a.invites).slice(0, 8);
 
   const voiceBanner = await renderLeaderboardBanner({
     title: 'Top Voice — 24 saat', subtitle, accent: '#4aa6ff',
     kicker: 'DAILY · VOICE', footer: 'TOP ACTIVE',
     rows: voice.map(r => ({ name: named(r), value: hhmm(r.voice), amount: r.voice })),
   });
+  // Only posted when somebody actually invited someone; an empty third board
+  // every night is noise.
+  const inviteBanner = invites.length ? await renderLeaderboardBanner({
+    title: 'Top Inviters — 24 saat', subtitle, accent: '#9b6cff',
+    kicker: 'DAILY · INVITES', footer: 'TOP ACTIVE',
+    rows: invites.map(r => ({ name: named(r), value: `${r.invites} nafar`, amount: r.invites })),
+  }) : null;
   const chatBanner = await renderLeaderboardBanner({
     title: 'Top Chatters — 24 saat', subtitle, accent: '#fee75c',
     kicker: 'DAILY · CHAT', footer: 'TOP ACTIVE',
@@ -131,9 +139,18 @@ async function postDaily(guild: Guild): Promise<void> {
   });
 
   // Re-read: the tick may have written its own marks while this was posting.
+  const inviteMsg = invites.length ? await channel.send({
+    components: [renderBoard({
+      title: 'Top Inviters', icon: '📨', accent: 0x9b6cff, metric: 'invites', rows, footer,
+      banner: inviteBanner ? 'top-invites.png' : undefined,
+    })],
+    ...art(inviteBanner, 'top-invites.png'),
+    flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
+  }) : null;
+
   await writeMarks(guild.id, {
     ...(await readMarks(guild.id, guild.name)),
-    dailyIds: [voiceMsg.id, chatMsg.id],
+    dailyIds: [voiceMsg.id, chatMsg.id, ...(inviteMsg ? [inviteMsg.id] : [])],
   });
   log.info('posted daily public leaderboards');
 }
@@ -144,8 +161,9 @@ async function postWeekly(guild: Guild): Promise<void> {
   const rows = await queryActivity(guild.id, sinceDay('week'));
   const staff = staffRows(guild, rows);
   const totals = staff.reduce((a, r) => ({
-    voice: a.voice + r.voice, chat: a.chat + r.chat, punish: a.punish + r.punishments,
-  }), { voice: 0, chat: 0, punish: 0 });
+    voice: a.voice + r.voice, chat: a.chat + r.chat,
+    punish: a.punish + r.punishments, invites: a.invites + r.invites,
+  }), { voice: 0, chat: 0, punish: 0, invites: 0 });
 
   const banner = await renderStatsBanner({
     title: 'Admin Report — 7 rooz',
@@ -155,8 +173,7 @@ async function postWeekly(guild: Guild): Promise<void> {
       { label: 'VOICE', value: hhmm(totals.voice), hint: 'majmoo e admin-ha' },
       { label: 'MESSAGE', value: `${totals.chat}`, hint: 'too hameye channel-ha' },
       { label: 'PUNISH', value: `${totals.punish}`, hint: 'sabt shode' },
-      { label: 'FA\'AL', value: `${staff.filter(r => r.voice + r.chat + r.punishments > 0).length}`,
-        hint: `az ${staff.length} admin` },
+      { label: 'DAVAT', value: `${totals.invites}`, hint: 'nafar avordan' },
     ],
   });
 
