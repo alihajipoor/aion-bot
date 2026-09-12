@@ -1,4 +1,5 @@
-// Grants MoveMembers where it is actually needed.
+// Grants the voice moderation permissions where they are actually needed:
+// MoveMembers, MuteMembers and DeafenMembers.
 //
 // Discord requires MoveMembers in BOTH the source and the destination channel,
 // which is what makes scoped moves enforceable without any code: give a
@@ -16,6 +17,11 @@ import { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits as P } from
 import { foldRole } from '../../apps/bot/dist/lib/roles.js';
 
 const APPLY = process.argv.includes('--apply');
+
+// Move needs both source and destination, which is what makes scoping it
+// enforce itself. Mute and deafen only need the one channel, so they scope
+// naturally: granted inside a category, useless outside it.
+const VOICE_PERMS = ['MoveMembers', 'MuteMembers', 'DeafenMembers'];
 
 /** Move anyone, anywhere. */
 const ELEVATED = ['Consultant', 'PowerAdmin', 'Dev'];
@@ -36,15 +42,16 @@ c.once('clientReady', async () => {
     await g.roles.fetch(); await g.channels.fetch();
 
     const role = n => g.roles.cache.find(r => foldRole(r.name) === foldRole(n));
-    const plan = [];   // { channel, roleName, roleId }
+    const plan = [];   // { channel, roleName, roleId, perms[] }
 
     const want = (channel, names) => {
       for (const n of names) {
         const r = role(n);
         if (!r) { console.warn(`! role not found: ${n}`); continue; }
-        // Only write where it is actually missing — every edit is an audit entry.
-        if (channel.permissionsFor(r).has(P.MoveMembers)) continue;
-        plan.push({ channel, roleName: n, roleId: r.id });
+        // Only write what is actually missing — every edit is an audit entry.
+        const missing = VOICE_PERMS.filter(perm => !channel.permissionsFor(r).has(P[perm]));
+        if (!missing.length) continue;
+        plan.push({ channel, roleName: n, roleId: r.id, perms: missing });
       }
     };
 
@@ -68,24 +75,27 @@ c.once('clientReady', async () => {
 
     const byChannel = new Map();
     for (const p of plan) {
-      byChannel.set(p.channel.id, [...(byChannel.get(p.channel.id) ?? []), p.roleName]);
+      byChannel.set(p.channel.id, [...(byChannel.get(p.channel.id) ?? []),
+        `${p.roleName} (${p.perms.map(x => x.replace('Members', '')).join('+')})`]);
     }
     for (const [id, roles] of byChannel) {
       const ch = g.channels.cache.get(id);
-      console.log(`${APPLY ? 'GRANT ' : 'WOULD '} ${ch.name.slice(0, 30).padEnd(32)} ${roles.join(', ')}`);
+      console.log(`${APPLY ? 'GRANT ' : 'WOULD '} ${ch.name.slice(0, 26).padEnd(28)} ${roles.join(', ')}`);
     }
-    console.log(`\n${plan.length} grant(s) across ${byChannel.size} channel(s)`);
+    const bits = plan.reduce((n, p) => n + p.perms.length, 0);
+    console.log(`\n${bits} permission(s) across ${byChannel.size} channel(s)`);
 
     if (!APPLY) { console.log('dry run — pass --apply to write'); return c.destroy(); }
 
     let done = 0;
     for (const p of plan) {
-      await p.channel.permissionOverwrites.edit(p.roleId, { MoveMembers: true },
-        { reason: 'AION: scoped move permissions' })
+      const patch = Object.fromEntries(p.perms.map(perm => [perm, true]));
+      await p.channel.permissionOverwrites.edit(p.roleId, patch,
+        { reason: 'AION: scoped voice moderation' })
         .then(() => done++)
         .catch(e => console.error(`  failed on ${p.channel.name} / ${p.roleName}: ${e.message}`));
     }
-    console.log(`applied ${done}/${plan.length}`);
+    console.log(`applied ${done}/${plan.length} edit(s)`);
   } catch (e) { console.error(e); process.exitCode = 1; }
   finally { c.destroy(); }
 });

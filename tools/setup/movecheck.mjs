@@ -1,4 +1,4 @@
-// Audits who can move whom, and where.
+// Audits the voice moderation permissions — move, mute and deafen.
 //
 // Scoped roles deliberately carry NO guild-level MoveMembers — Server Settings
 // › Roles will show it off for every Global and Moderator, and that is the
@@ -30,28 +30,29 @@ c.once('clientReady', async () => {
     };
     const ELEVATED = ['Consultant', 'PowerAdmin', 'Dev'];
 
+    const PERMS = [['move', P.MoveMembers], ['mute', P.MuteMembers], ['deafen', P.DeafenMembers]];
     let bad = 0;
-    console.log('ROLE'.padEnd(22) + 'ROLE EDITOR'.padEnd(14) + 'CAN MOVE IN');
-    console.log('-'.repeat(76));
+    console.log('ROLE'.padEnd(22) + 'move'.padEnd(10) + 'mute'.padEnd(10) + 'deafen'.padEnd(10) + 'WHERE');
+    console.log('-'.repeat(82));
 
     for (const name of [...ELEVATED, ...Object.keys(SCOPED)]) {
       const r = g.roles.cache.find(x => foldRole(x.name) === foldRole(name));
       if (!r) { console.log(`${name.padEnd(22)} MISSING`); bad++; continue; }
-      const can = voice.filter(v => v.permissionsFor(r).has(P.MoveMembers));
-      const cats = [...new Set(can.map(v => catName(v.parentId)))];
-      const editor = r.permissions.has(P.Administrator) ? 'admin'
-        : r.permissions.has(P.MoveMembers) ? 'move on' : 'move OFF';
-
       const wantCat = SCOPED[name];
-      let ok;
-      if (wantCat) {
-        const mine = voice.filter(v => catName(v.parentId) === wantCat);
-        ok = can.length === mine.length && cats.length === 1 && cats[0] === wantCat;
-      } else {
-        ok = can.length === voice.length;
-      }
+      const mine = wantCat ? voice.filter(v => catName(v.parentId) === wantCat) : voice;
+
+      let ok = true;
+      const cells = PERMS.map(([, bit]) => {
+        const can = voice.filter(v => v.permissionsFor(r).has(bit));
+        const inside = can.filter(v => !wantCat || catName(v.parentId) === wantCat).length;
+        const outside = can.length - inside;
+        if (inside !== mine.length || outside > 0) ok = false;
+        return `${can.length}/${voice.length}`.padEnd(10);
+      });
+      const cats = [...new Set(voice.filter(v => v.permissionsFor(r).has(P.MoveMembers))
+        .map(v => catName(v.parentId)))];
       if (!ok) bad++;
-      console.log(`${(ok ? '  ' : '! ') + name.slice(0, 20).padEnd(20)}${editor.padEnd(14)}${can.length}/${voice.length}  ${cats.join(' + ') || '(nowhere)'}`);
+      console.log(`${(ok ? '  ' : '! ') + name.slice(0, 20).padEnd(20)}${cells.join('')}${cats.join(' + ') || '(nowhere)'}`);
     }
 
     // Anyone else who can move people is worth knowing about.
