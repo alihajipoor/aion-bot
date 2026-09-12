@@ -333,6 +333,57 @@ export async function renderHeaderBanner(opts: {
   }
 }
 
+/* ── server identity art ───────────────────────────────────────── */
+
+/**
+ * The banner above the channel list and the splash behind an invite.
+ *
+ * Discord lays the server name over the lower-left of the banner, so that
+ * corner is deliberately left empty — anything placed there is read through
+ * white text at a size nobody chose.
+ */
+export async function renderServerArt(w: number, h: number, tagline: string): Promise<Buffer | null> {
+  try {
+    const k = w / 960;                       // one composition, two sizes
+    const px = (n: number) => Math.round(n * k);
+
+    const tree = el('div', {
+      display: 'flex', position: 'relative', width: w, height: h,
+      background: BRAND.ink, fontFamily: 'Vazirmatn',
+    }, [
+      // Lit from the upper right, so the lower left stays quiet for the name.
+      el('div', {
+        ...absolute, top: -h * 0.55, right: -w * 0.22, width: w * 0.95, height: w * 0.95,
+        borderRadius: w, backgroundImage:
+          `radial-gradient(circle, ${BRAND.blue}52 0%, ${BRAND.blue}1a 40%, rgba(5,6,12,0) 68%)`,
+      }),
+      el('div', {
+        ...absolute, bottom: -h * 0.5, left: -w * 0.12, width: w * 0.6, height: w * 0.6,
+        borderRadius: w, backgroundImage: `radial-gradient(circle, ${BRAND.blue}1c 0%, rgba(5,6,12,0) 66%)`,
+      }),
+
+      el('div', {
+        ...absolute, top: h * 0.28, left: 0, width: w, justifyContent: 'center',
+        fontSize: px(150), fontWeight: 700, letterSpacing: px(24), color: BRAND.text,
+        textShadow: `0 0 ${px(44)}px ${BRAND.blue}f2`,
+      }, 'AION'),
+
+      el('div', { ...absolute, top: h * 0.52, left: px(60) }, [rift(w - px(120), BRAND.blue)]),
+
+      el('div', {
+        ...absolute, top: h * 0.60, left: 0, width: w, justifyContent: 'center',
+        fontSize: px(26), letterSpacing: px(9), color: BRAND.dim,
+      }, tagline),
+    ]);
+
+    const svg = await satori(tree as never, { width: w, height: h, fonts: await loadFonts() });
+    return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: w } }).render().asPng());
+  } catch (e) {
+    log.error('server art render failed', e);
+    return null;
+  }
+}
+
 /* ── verify panel banner ───────────────────────────────────────── */
 
 export interface Art { data: Buffer; name: string }
