@@ -17,7 +17,7 @@ interface CounterSpec { match: RegExp; value: (g: Guild) => number }
 
 const COUNTERS: CounterSpec[] = [
   {
-    match: /^[aΛλ]\s*i\s*o\s*n\s*[•·]/i,
+    match: /^[aΛλʌ]\s*i\s*o\s*n\s*[•·]/i,
     // memberCount is authoritative; the cache can be partial right after boot
     // and would otherwise publish a wildly wrong number.
     value: g => {

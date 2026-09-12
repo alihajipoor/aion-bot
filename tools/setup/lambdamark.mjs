@@ -11,7 +11,10 @@ const APPLY = process.argv.includes('--apply');
 
 /** Each entry is [current, replacement]; spelled out so nothing is guessed. */
 const RENAMES = [
-  ['│📖│ᴀɪᴏɴ-ɢᴜɪᴅᴇ', '│📖│Λɪᴏɴ-ɢᴜɪᴅᴇ'],
+  // Discord lowercases text channel names and would turn Λ into the curly λ,
+  // so this one uses ʌ — already lowercase, and shaped for the small caps
+  // around it.
+  ['│📖│λɪᴏɴ-ɢᴜɪᴅᴇ', '│📖│ʌɪᴏɴ-ɢᴜɪᴅᴇ'],
   ['ᴀ ɪ ᴏ ɴ │𝙼𝚄𝚂𝙸𝙲 𝚁𝙾𝙱𝙾𝚃│•', 'Λ ɪ ᴏ ɴ │𝙼𝚄𝚂𝙸𝙲 𝚁𝙾𝙱𝙾𝚃│•'],
 ];
 

@@ -158,11 +158,12 @@ const FROM_SMALL_CAPS: Record<string, string> = Object.fromEntries(
  * mapped explicitly.
  */
 /**
- * The wordmark writes its A as a Greek capital lambda, so channel and role
- * names carry Λ where code says A. Folding it here keeps every name lookup
- * working across the change instead of each matcher growing a special case.
+ * The wordmark writes its A as a lambda, so names carry it where code says A.
+ * Three glyphs, because Discord forces text channel names to lowercase and
+ * turns Λ into the curly λ, which sits badly beside small caps — ʌ is the
+ * lowercase-category form that survives untouched and matches the styling.
  */
-const LAMBDA = /[\u039B\u03BB]/g;
+const LAMBDA = /[\u039B\u03BB\u028C]/g;
 
 export function asciiFold(input: string): string {
   input = input.replace(LAMBDA, 'A');

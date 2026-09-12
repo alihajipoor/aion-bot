@@ -10,7 +10,7 @@ import { renderHeaderBanner } from '../lib/banner.js';
 import type { Command } from '../types.js';
 
 // Λ is the wordmark's A; both spellings must match.
-const GUIDE_CHANNEL = /[ᴀΛλ]ɪᴏɴ-ɢᴜɪᴅᴇ|[aΛλ]ion-guide/i;
+const GUIDE_CHANNEL = /[ᴀΛλʌ]ɪᴏɴ-ɢᴜɪᴅᴇ|[aΛλʌ]ion-guide/i;
 
 function page(accent: number, title: string, body: string[]): ContainerBuilder {
   return new ContainerBuilder().setAccentColor(accent)
