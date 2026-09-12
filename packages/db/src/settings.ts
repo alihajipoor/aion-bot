@@ -74,6 +74,13 @@ export interface AionSettings {
     heartbeatStaleSec: number;
     diskWarnPercent: number;
   };
+  content: {
+    enabled: boolean;
+    /** Channels where a post must carry an upload. Matched on folded names. */
+    mediaOnly: string[];
+    /** Channels where uploads are removed. */
+    textOnly: string[];
+  };
   events: {
     enabled: boolean;
     /** Defaults the setup wizard opens with; a host can still override them. */
@@ -163,6 +170,11 @@ export const DEFAULT_SETTINGS: AionSettings = {
     recipients: [],
     heartbeatStaleSec: 300,
     diskWarnPercent: 85,
+  },
+  content: {
+    enabled: true,
+    mediaOnly: ['picture', 'romantic', 'foodland'],
+    textOnly: ['goof', 'birthday', 'botcommand'],
   },
   events: {
     enabled: true,
@@ -257,6 +269,11 @@ export function sanitise(s: AionSettings): AionSettings {
     activity: {
       ...s.activity,
       messageDebounceSec: clamp(s.activity.messageDebounceSec, 0, 60, 3),
+    },
+    content: {
+      ...s.content,
+      mediaOnly: s.content.mediaOnly.map(c => c.trim()).filter(Boolean).slice(0, 20),
+      textOnly: s.content.textOnly.map(c => c.trim()).filter(Boolean).slice(0, 20),
     },
     events: {
       ...s.events,

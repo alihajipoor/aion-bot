@@ -177,6 +177,26 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
+        <Group title="Board channel rules"
+          hint="Keeps each board channel to one kind of post. Matched on folded channel names, so styling does not matter.">
+          <Toggle name="contentEnabled" label="Enforce board rules" defaultChecked={s.content.enabled} />
+          <Field label="Media only" htmlFor="mediaOnly"
+            hint="A post here must carry an upload. A caption on a picture is still a picture, so words alongside media are fine.">
+            <input id="mediaOnly" name="mediaOnly" className={inputCls}
+              defaultValue={s.content.mediaOnly.join(', ')} placeholder="picture, romantic, foodland" />
+          </Field>
+          <Field label="Text only" htmlFor="textOnly"
+            hint="Uploads are removed here. Links are left alone in both directions — a Tenor link renders as an image but is not an upload.">
+            <input id="textOnly" name="textOnly" className={inputCls}
+              defaultValue={s.content.textOnly.join(', ')} placeholder="goof, birthday, botcommand" />
+          </Field>
+          <p className="text-xs leading-relaxed text-mist-400">
+            Anyone with Manage Messages is exempt. Run{' '}
+            <code className="rounded bg-ink-900 px-1">tools/setup/contentcheck.mjs</code>{' '}
+            after editing to see exactly which channels match.
+          </p>
+        </Group>
+
         <Group title="Events and games"
           hint="What the setup wizard opens with. A host can still change any of it per event.">
           <Toggle name="eventsEnabled" label="Events enabled" defaultChecked={s.events.enabled} />

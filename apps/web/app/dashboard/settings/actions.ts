@@ -83,6 +83,11 @@ export async function saveSettings(_prev: SaveResult | null, form: FormData): Pr
       heartbeatStaleSec: num(form, 'heartbeatStaleSec', d.alerts.heartbeatStaleSec),
       diskWarnPercent: num(form, 'diskWarnPercent', d.alerts.diskWarnPercent),
     },
+    content: {
+      enabled: bool(form, 'contentEnabled'),
+      mediaOnly: String(form.get('mediaOnly') ?? '').split(',').map(c => c.trim()).filter(Boolean).slice(0, 20),
+      textOnly: String(form.get('textOnly') ?? '').split(',').map(c => c.trim()).filter(Boolean).slice(0, 20),
+    },
     events: {
       enabled: bool(form, 'eventsEnabled'),
       defaultScenario: String(form.get('defaultScenario') ?? d.events.defaultScenario),

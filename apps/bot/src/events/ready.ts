@@ -11,6 +11,7 @@ import { startApi } from '../modules/api.js';
 import { startVoicePresence } from '../modules/voicepresence.js';
 import { installVoiceGuard } from '../modules/voiceguard.js';
 import { installNickGuard } from '../modules/nickguard.js';
+import { installContentRules } from '../modules/contentrules.js';
 import { installEvents, ensureEventPanel } from '../modules/events/index.js';
 import { ensureGuide } from '../commands/guide.js';
 import { startBackupWorker } from '../modules/backup.js';
@@ -65,6 +66,7 @@ const handler: EventHandler = {
     startVoicePresence(client);
     installVoiceGuard(client);
     installNickGuard(client);
+    installContentRules(client);
     installEvents(client);
     startCounters(client);
     if (config.databaseUrl) {
