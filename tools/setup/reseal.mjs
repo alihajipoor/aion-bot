@@ -30,31 +30,54 @@ c.once('clientReady', async () => {
     await g.roles.fetch(); await g.channels.fetch(); await g.members.fetch();
     const R = n => g.roles.cache.find(x => foldRole(x.name) === foldRole(n));
 
-    let total = 0;
+    let total = 0, cleared = 0;
     for (const spec of SECTIONS) {
       const cat = [...g.channels.cache.values()]
         .find(x => x.type === ChannelType.GuildCategory && spec.cat.test(asciiFold(x.name)));
       if (!cat) continue;
-      const targets = [cat, ...[...g.channels.cache.values()].filter(x => x.parentId === cat.id)];
+      const targets = [cat, ...[...g.channels.cache.values()].filter(x => x.parentId === cat.id)]
+        .filter(ch => 'permissionOverwrites' in ch);
       const banRole = R(spec.banned), muteRole = R(spec.muted);
 
-      for (const [role, patch, kind] of [[banRole, BAN_PATCH, 'ban'], [muteRole, MUTE_PATCH, 'mute']]) {
-        if (!role) continue;
-        for (const m of role.members.values()) {
-          console.log(`${APPLY ? 'SEAL' : 'plan'}  ${m.user.username.padEnd(20)} ${kind.padEnd(5)} ${asciiFold(cat.name).replace(/[^A-Za-z ]/g,'').trim()}  (${targets.length} channels)`);
-          total++;
-          if (!APPLY) continue;
-          for (const ch of targets) {
-            if (!('permissionOverwrites' in ch)) continue;
-            await ch.permissionOverwrites.edit(m.id, patch, { reason: `AION: ${kind} enforcement` })
+      // Derive the whole state per member, both directions. Applying only is
+      // how a lifted sanction leaves somebody silently locked out.
+      const involved = new Set();
+      for (const r of [banRole, muteRole]) for (const m of r?.members.keys() ?? []) involved.add(m);
+      for (const ch of targets) {
+        for (const [id, ow] of ch.permissionOverwrites.cache) {
+          if (g.roles.cache.has(id)) continue;              // role overwrites are not ours
+          if (ow.deny.bitfield) involved.add(id);
+        }
+      }
+
+      for (const id of involved) {
+        const m = g.members.cache.get(id);
+        if (!m) continue;
+        const banned = banRole && m.roles.cache.has(banRole.id);
+        const muted = muteRole && m.roles.cache.has(muteRole.id);
+        const patch = banned ? BAN_PATCH : muted ? MUTE_PATCH : null;
+        const has = targets.some(ch => ch.permissionOverwrites.cache.has(id));
+        if (!patch && !has) continue;
+
+        const verb = patch ? (banned ? 'ban' : 'mute') : 'CLEAR (no sanction role)';
+        console.log(`${APPLY ? 'FIX ' : 'plan'}  ${m.user.username.padEnd(20)} ${verb.padEnd(24)} ${asciiFold(cat.name).replace(/[^A-Za-z ]/g,'').trim()}`);
+        patch ? total++ : cleared++;
+        if (!APPLY) continue;
+
+        for (const ch of targets) {
+          if (patch) {
+            await ch.permissionOverwrites.edit(id, patch, { reason: 'AION: sanction enforcement' })
               .catch(e => console.error(`   ${asciiFold(ch.name)}: ${e.message}`));
+          } else if (ch.permissionOverwrites.cache.has(id)) {
+            await ch.permissionOverwrites.delete(id, 'AION: sanction lifted')
+              .catch(() => {});
           }
         }
       }
     }
 
-    if (!total) { console.log('nobody is currently carrying a sanction role'); return c.destroy(); }
-    console.log(`\n${total} member/section sanction(s)`);
+    if (!total && !cleared) { console.log('every sanction matches its role — nothing to do'); return c.destroy(); }
+    console.log(`\n${total} sanction(s) enforced, ${cleared} stale seal(s) cleared`);
     if (!APPLY) console.log('dry run — pass --apply to write');
   } catch (e) { console.error(e); process.exitCode = 1; }
   finally { c.destroy(); }
