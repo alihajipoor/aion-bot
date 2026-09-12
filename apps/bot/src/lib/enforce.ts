@@ -1,4 +1,4 @@
-import type { GuildMember, VoiceBasedChannel } from 'discord.js';
+import type { GuildMember, VoiceBasedChannel, GuildChannel } from 'discord.js';
 import { resolveSections, type Section } from './sections.js';
 import { logger } from './log.js';
 
@@ -98,4 +98,74 @@ export async function ejectFromSection(
     log.warn(`could not disconnect ${member.user.tag}`, e);
     return false;
   }
+}
+
+/* ── section sanctions ─────────────────────────────────────────── */
+
+/**
+ * Sanction roles cannot enforce themselves.
+ *
+ * Discord applies every role deny first and every role allow afterwards, so
+ * the member roles' explicit `ViewChannel`, `Connect` and `SendMessages`
+ * allows beat the ban and mute roles' denies outright. A banned member walked
+ * straight back into the section; a muted one kept typing. Only the voice half
+ * of a mute ever worked, and that was the bot's server-mute doing it.
+ *
+ * Member-level overwrites are the one thing Discord evaluates after every
+ * role, so the sanction is written there and the role stays what it always
+ * was: the record of who is serving one.
+ *
+ * This is deliberately one function that derives the whole state rather than
+ * an apply and a separate clear. Two half-rules pointing opposite directions
+ * is exactly how a member was once left muted after an unpunish.
+ */
+export async function resealSection(
+  member: GuildMember, section: Section, reason: string,
+): Promise<number> {
+  const cfg = resolveSections(member.guild).get(section);
+  if (!cfg?.categoryId) return 0;
+
+  const banned = Boolean(cfg.bannedRoleId && member.roles.cache.has(cfg.bannedRoleId));
+  const muted = Boolean(cfg.mutedRoleId && member.roles.cache.has(cfg.mutedRoleId));
+
+  // A ban subsumes a mute: there is nothing to silence in a section you
+  // cannot see.
+  const patch = banned
+    ? { ViewChannel: false, Connect: false }
+    : muted
+      ? { SendMessages: false, SendMessagesInThreads: false, AddReactions: false,
+          Speak: false, RequestToSpeak: false }
+      : null;
+
+  const guild = member.guild;
+  // Per channel, not just the category: a channel carrying its own overwrites
+  // never inherits a later category edit.
+  // Thread channels have no overwrites of their own; everything else in a
+  // category does.
+  const targets: GuildChannel[] = [];
+  const category = guild.channels.cache.get(cfg.categoryId);
+  if (category && 'permissionOverwrites' in category) targets.push(category as GuildChannel);
+  for (const ch of guild.channels.cache.values()) {
+    if (ch.parentId === cfg.categoryId && 'permissionOverwrites' in ch) targets.push(ch as GuildChannel);
+  }
+
+  let touched = 0;
+  for (const channel of targets) {
+    const existing = channel.permissionOverwrites.cache.get(member.id);
+    try {
+      if (patch) {
+        await channel.permissionOverwrites.edit(member.id, patch, { reason });
+        touched++;
+      } else if (existing) {
+        await channel.permissionOverwrites.delete(member.id, reason);
+        touched++;
+      }
+    } catch (e) {
+      log.warn(`reseal failed on ${channel.name} for ${member.user.tag}: ${(e as Error).message}`);
+    }
+  }
+  if (touched) {
+    log.info(`${banned ? 'sealed' : muted ? 'silenced' : 'cleared'} ${touched} channel(s) for ${member.user.tag} in ${section}`);
+  }
+  return touched;
 }

@@ -13,7 +13,7 @@ import { resolveSections, type Section } from '../lib/sections.js';
 import { queryActivity, sinceDay, hhmm, staffRows } from '../lib/leaderboard.js';
 import { renderLeaderboardBanner, renderStatsBanner } from '../lib/banner.js';
 import { panelList, panelAction, panelCreate } from './events/index.js';
-import { releaseVoiceMute, syncVoiceMute, ejectFromSection } from '../lib/enforce.js';
+import { releaseVoiceMute, syncVoiceMute, ejectFromSection, resealSection } from '../lib/enforce.js';
 import type { AionSettings } from '@aion/db';
 import type { AionClient } from '../client.js';
 
@@ -206,6 +206,7 @@ export function startApi(client: AionClient): void {
                   `**Reason** ${reason}`,
                   `-# Case #${created.caseNumber}`,
                 ].join('\n'), member.displayAvatarURL({ extension: 'png', size: 128 }));
+                await resealSection(member, section as Section, reason);
                 if (type === 'ban') await ejectFromSection(member, cfg?.categoryId ?? null, reason);
                 else await syncVoiceMute(member, `panel ${type}`);
                 return json(res, 200, { ok: true, message: `Case #${created.caseNumber} created.` });
@@ -249,7 +250,11 @@ export function startApi(client: AionClient): void {
             await member.roles.remove(roleId, `lifted from panel by ${byId}`);
           }
           if (row) await liftSanction(row.sanctionId, row.caseId, byId);
-          if (member) { await releaseVoiceMute(member, 'AION: lifted from panel'); await syncVoiceMute(member); }
+          if (member) {
+            await releaseVoiceMute(member, 'AION: lifted from panel');
+            await syncVoiceMute(member);
+            await resealSection(member, section as Section, 'AION: lifted from panel');
+          }
           emitLog(guild, 'punishment', [
             `### 🔓 ${type === 'ban' ? 'Unban' : 'Unmute'} — ${section} (from panel)`,
             `<@${userId}>`, `**Lifted by** <@${byId}>`,

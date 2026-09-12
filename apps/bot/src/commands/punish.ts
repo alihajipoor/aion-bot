@@ -15,7 +15,7 @@ import {
   createCase, activeSanctionsFor, liftSanction, historyFor, suggestedMinutes,
   type PunishAction, type CaseAction, type History,
 } from '../lib/cases.js';
-import { syncVoiceMute, releaseVoiceMute, ejectFromSection } from '../lib/enforce.js';
+import { syncVoiceMute, releaseVoiceMute, ejectFromSection, resealSection } from '../lib/enforce.js';
 import { bidi, humanDuration, isolate } from '../lib/text.js';
 import { logger } from '../lib/log.js';
 import { emitLog } from '../lib/logbus.js';
@@ -278,8 +278,12 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
     // A live voice session keeps its old permissions, so force a reconnect.
     // Mutes apply instantly via server-mute; bans eject from the section.
     const kicked = act === 'ban'
-      ? await ejectFromSection(target, cfg.categoryId, `AION ban: ${reason}`)
-      : (await syncVoiceMute(target, `AION mute: ${reason}`), false);
+      ? await (async () => {
+          await resealSection(target, sec, `AION ban: ${reason}`);
+          return ejectFromSection(target, cfg.categoryId, `AION ban: ${reason}`);
+        })()
+      : (await resealSection(target, sec, `AION mute: ${reason}`),
+         await syncVoiceMute(target, `AION mute: ${reason}`), false);
     const { caseNumber, expiresAt } = await createCase({
       guildId: guild.id, section: sec, action: act,
       targetId: target.id, targetTag: target.user.tag,
@@ -374,7 +378,11 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
       await member.roles.remove(roleId, `lifted by ${i.user.tag}`);
     }
     if (row) await liftSanction(row.sanctionId, row.caseId, i.user.id);
-    if (member) { await releaseVoiceMute(member, 'AION: mute lifted'); await syncVoiceMute(member); }
+    if (member) {
+      await releaseVoiceMute(member, 'AION: mute lifted');
+      await syncVoiceMute(member);
+      await resealSection(member, sec, 'AION: punishment lifted');
+    }
 
     // Rewrite the announcement so the channel reflects the current state.
     await i.message.edit({

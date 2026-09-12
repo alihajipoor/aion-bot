@@ -1,7 +1,7 @@
 import { MessageFlags, ContainerBuilder, TextDisplayBuilder, type TextChannel } from 'discord.js';
 import { dueSanctions, clearSanction } from '../lib/cases.js';
 import { resolveSections, type Section } from '../lib/sections.js';
-import { syncVoiceMute, releaseVoiceMute } from '../lib/enforce.js';
+import { syncVoiceMute, releaseVoiceMute, resealSection } from '../lib/enforce.js';
 import { emitLog } from '../lib/logbus.js';
 import { logger } from '../lib/log.js';
 import { lt } from 'drizzle-orm';
@@ -32,7 +32,12 @@ export function startExpiryWorker(client: AionClient): NodeJS.Timeout {
           await member.roles.remove(s.roleId, 'AION: punishment expired');
         }
         await clearSanction(s.id, s.caseId);
-        if (member) { await releaseVoiceMute(member, 'AION: punishment expired'); await syncVoiceMute(member); }
+        if (member) {
+          await releaseVoiceMute(member, 'AION: punishment expired');
+          await syncVoiceMute(member);
+          // Bans also leave per-member channel denies behind.
+          await resealSection(member, s.section as Section, 'AION: punishment expired');
+        }
         log.info(`expired ${s.type} for ${s.userId} in ${s.section}`);
         emitLog(guild, 'punishment', [
           `### ⏱ ${s.type === 'ban' ? 'Ban' : 'Mute'} expired — ${s.section}`,
