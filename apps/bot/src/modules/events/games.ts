@@ -212,3 +212,36 @@ export const CATALOGUE: Record<GameKey, GameDef> = {
     configurable: false,
   },
 };
+
+/* ── night actions ─────────────────────────────────────────────── */
+
+export interface NightAction {
+  /** What the DM asks them to do. */
+  label: string;
+  prompt: string;
+  /** Can they point at themselves? Doctors can, shooters cannot. */
+  allowSelf: boolean;
+  /**
+   * True only for the detective: the bot answers them directly, because that
+   * information is theirs by right and a narrator signalling it by gesture is
+   * the single most error-prone moment in the game. Everything else is
+   * reported to the narrator, who keeps deciding what actually happens.
+   */
+  answersActor: boolean;
+}
+
+export const NIGHT_ACTIONS: Record<string, NightAction> = {
+  detective: { label: 'Estelam', prompt: 'Emshab ki ro estelam mikoni?', allowSelf: false, answersActor: true },
+  doctor:    { label: 'Nejat',   prompt: 'Emshab ki ro nejat midi?',     allowSelf: true,  answersActor: false },
+  lecter:    { label: 'Nejat',   prompt: 'Emshab kodoom mafia ro nejat midi?', allowSelf: true, answersActor: false },
+  sniper:    { label: 'Shellik', prompt: 'Emshab be ki shellik mikoni?', allowSelf: false, answersActor: false },
+  matador:   { label: 'Block',   prompt: 'Emshab ki ro block mikoni?',   allowSelf: false, answersActor: false },
+  saul:      { label: 'Saul',    prompt: 'Naghshe ki ro mikhay bedooni?', allowSelf: false, answersActor: false },
+  bomber:    { label: 'Bomb',    prompt: 'Ki ro bomb gozari mikoni?',    allowSelf: false, answersActor: false },
+  gunsmith:  { label: 'Aslahe',  prompt: 'Be ki aslahe midi?',           allowSelf: false, answersActor: false },
+  godfather: { label: 'Shellik', prompt: 'Emshab mafia be ki shellik mikone?', allowSelf: false, answersActor: false },
+  mafia:     { label: 'Shellik', prompt: 'Emshab be ki shellik mikonin?', allowSelf: false, answersActor: false },
+};
+
+export const nightActionFor = (roleKey: string | null): NightAction | null =>
+  (roleKey && NIGHT_ACTIONS[roleKey]) || null;

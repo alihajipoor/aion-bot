@@ -12,7 +12,7 @@ import {
   killPlayer, revivePlayer, type EventRow, type PlayerRow,
 } from './store.js';
 import {
-  SCENARIOS, CITIZEN, scenarioOf, distribution, MAFIA_DEFAULTS,
+  SCENARIOS, CITIZEN, scenarioOf, distribution, MAFIA_DEFAULTS, nightActionFor,
   type RoleDef, type MafiaConfig,
 } from './games.js';
 import { hasRole } from '../../lib/roles.js';
@@ -34,7 +34,11 @@ const C = { night: 0x2b2d5c, day: 0xfee75c, mafia: 0xed4245, town: 0x57f287 } as
  * No stage closes on a timer. The narrator ends each one, because the room
  * decides when it has heard enough — not a clock.
  */
+/** What each role-holder pointed at tonight, keyed by their user id. */
+interface NightPick { role: string; target: string; at: number }
+
 interface DayState {
+  nightPicks?: Record<string, NightPick>;
   ejma?: { votes: Record<string, string[]>; messageId?: string; open?: boolean };
   nominees?: string[];
   defense?: { order: string[]; at: number; until?: number };
@@ -212,6 +216,26 @@ async function console_(ev: EventRow, note?: string) {
       ...(note ? ['', `> ${note}`] : []),
     ].join('\n')));
 
+  // What the roles pointed at tonight. The narrator still decides what any of
+  // it does — the bot only collects, so nobody has to remember six answers
+  // while eight people talk over each other.
+  const picks = Object.entries(state.nightPicks ?? {});
+  if (phase === 'night') {
+    const acting = roster.filter(p => p.alive && nightActionFor(p.role));
+    box.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+        `### 🌙 Karhaye shab  ·  ${picks.length}/${acting.length}`,
+        ...acting.map(p => {
+          const pick = state.nightPicks?.[p.userId];
+          const target = pick ? roster.find(t => t.userId === pick.target) : null;
+          return pick
+            ? `✅ **${roleOf(p.role).fa}** <@${p.userId}> → <@${pick.target}>`
+              + (target?.role === 'godfather' && p.role === 'detective' ? '  -# (shahrvand didesh)' : '')
+            : `⏳ **${roleOf(p.role).fa}** <@${p.userId}> — hanooz entekhab nakarde`;
+        }),
+      ].join('\n')));
+  }
+
   box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(enc('phase', ev.id, 'night')).setLabel('Shab').setEmoji('🌙')
       .setStyle(phase === 'night' ? ButtonStyle.Secondary : ButtonStyle.Primary).setDisabled(phase === 'night'),
@@ -256,6 +280,7 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
   // Players vote; everything else is the narrator's.
   if (step === 'ballot' && i.isStringSelectMenu()) { await castVote(i, ev); return; }
   if (step === 'ejmavote' && i.isStringSelectMenu()) { await castEjma(i, ev); return; }
+  if (step === 'night' && i.isStringSelectMenu()) { await recordNightPick(i, ev); return; }
 
   if (!canRun(i, ev)) {
     await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral });
@@ -276,7 +301,15 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
     const fresh = (await getEvent(ev.id))!;
     const touched = await applyVoice(i.guild!, fresh, phase);
     await announcePhase(i.guild!, fresh, phase);
-    await i.update(await console_(fresh, `${phase === 'night' ? 'Shab' : 'Rooz'} shod — ${touched} nafar mute/unmute shodan.`));
+
+    let note = `${phase === 'night' ? 'Shab' : 'Rooz'} shod — ${touched} nafar mute/unmute shodan.`;
+    if (phase === 'night') {
+      const sent = await promptNightActions(i.guild!, fresh);
+      note += sent.failed.length
+        ? `\n> ${sent.ok} naghsh DM shodan. **DM baste:** ${sent.failed.map(f => `<@${f}>`).join(' ')} — dasti azashoon bepors.`
+        : `\n> ${sent.ok} naghsh e shabane DM shodan.`;
+    }
+    await i.update(await console_((await getEvent(ev.id))!, note));
     return;
   }
 
@@ -363,6 +396,117 @@ async function announcePhase(guild: Guild, ev: EventRow, phase: 'night' | 'day')
         alive.map(p => `🟢 \`${p.seat ?? '?'}\` <@${p.userId}>`).join('\n') || '-# —'))],
     flags: MessageFlags.IsComponentsV2,
     allowedMentions: { parse: [] },
+  }).catch(() => {});
+}
+
+/* ── night actions ─────────────────────────────────────────────── */
+
+/**
+ * DMs every living role-holder their night choice.
+ *
+ * A DM is the only surface with no leak: no channel to mis-permission, no
+ * ephemeral reply tied to a message others can see, and they can answer from a
+ * phone without leaving voice. Iranian accounts very often have DMs closed
+ * though, so the narrator is told exactly who could not be reached and falls
+ * back to asking them out loud — the console's own buttons still work.
+ */
+async function promptNightActions(
+  guild: Guild, ev: EventRow,
+): Promise<{ ok: number; failed: string[] }> {
+  const roster = await players(ev.id);
+  const alive = roster.filter(p => p.alive);
+  const night = (ev.state as { night?: number }).night ?? 1;
+
+  await mergeState(ev.id, { nightPicks: {} });
+
+  let ok = 0;
+  const failed: string[] = [];
+
+  for (const p of alive) {
+    const action = nightActionFor(p.role);
+    if (!action) continue;
+
+    const targets = alive.filter(t => action.allowSelf || t.userId !== p.userId);
+    if (!targets.length) continue;
+
+    const member = guild.members.cache.get(p.userId);
+    const sent = await member?.send({
+      components: [new ContainerBuilder().setAccentColor(C.night)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          `## 🌙 Shab ${night} — ${action.label}\n${action.prompt}`))
+        .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          `-# Naghshe to: **${roleOf(p.role).fa}** · ta sobh mitooni avazesh koni.`))
+        .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          new StringSelectMenuBuilder().setCustomId(enc('night', ev.id, p.role ?? ''))
+            .setPlaceholder(action.prompt.slice(0, 100))
+            .addOptions(targets.slice(0, 25).map(t =>
+              new StringSelectMenuOptionBuilder()
+                .setLabel(`${t.seat ?? '?'} · ${(t.userTag ?? t.userId).slice(0, 60)}`)
+                .setValue(t.userId)))))],
+      flags: MessageFlags.IsComponentsV2,
+    }).then(() => true).catch(() => false);
+
+    if (sent) ok++;
+    else { failed.push(p.userId); log.warn(`night DM failed for ${p.userTag} (${p.role})`); }
+  }
+
+  return { ok, failed };
+}
+
+/** A role-holder answering their night prompt in DM. */
+async function recordNightPick(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
+  const roster = await players(ev.id);
+  const me = roster.find(p => p.userId === i.user.id);
+  if (!me?.alive) { await i.reply({ content: 'To dige too baazi nisti.', flags: MessageFlags.Ephemeral }); return; }
+
+  const phase = (ev.state as { phase?: string }).phase;
+  if (phase !== 'night') { await i.reply({ content: 'Shab tamoom shode.', flags: MessageFlags.Ephemeral }); return; }
+
+  const action = nightActionFor(me.role);
+  if (!action) return;
+
+  const target = i.values[0]!;
+  const picks = { ...((ev.state as DayState).nightPicks ?? {}) };
+  picks[i.user.id] = { role: me.role ?? '', target, at: Date.now() };
+  await mergeState(ev.id, { nightPicks: picks });
+
+  // The detective is answered on the spot. Everyone else's choice goes to the
+  // narrator, who still decides what the night actually does.
+  if (action.answersActor) {
+    const t = roster.find(p => p.userId === target);
+    // The Godfather reads as a citizen — the point of the scenario.
+    const shown = t?.role === 'godfather' ? 'town' : t?.side;
+    await i.update({
+      components: [new ContainerBuilder().setAccentColor(shown === 'mafia' ? C.mafia : C.town)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          `## 🔍 Natijeye estelam\n<@${target}> → **${shown === 'mafia' ? 'مافیا' : 'شهروند'}**`))
+        .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          '-# Faghat to in ro didi. Ta sobh mitooni yeki dige ro estelam koni.'))
+        // The menu is rebuilt rather than reused: they may change their mind
+        // until the narrator calls morning, and the answer updates with it.
+        .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          new StringSelectMenuBuilder().setCustomId(enc('night', ev.id, me.role ?? ''))
+            .setPlaceholder('Yeki dige ro estelam kon')
+            .addOptions(roster.filter(p => p.alive && p.userId !== i.user.id).slice(0, 25).map(t =>
+              new StringSelectMenuOptionBuilder()
+                .setLabel(`${t.seat ?? '?'} · ${(t.userTag ?? t.userId).slice(0, 60)}`)
+                .setValue(t.userId)
+                .setDefault(t.userId === target)))))],
+      flags: MessageFlags.IsComponentsV2,
+    }).catch(() => {});
+    return;
+  }
+
+  await i.update({
+    components: [new ContainerBuilder().setAccentColor(C.night)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## ✅ Sabt shod\n${action.label} → <@${target}>`))
+      .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        '-# Gardanande in ro mibine. Ta sobh mitooni avazesh koni.'))],
+    flags: MessageFlags.IsComponentsV2,
   }).catch(() => {});
 }
 
