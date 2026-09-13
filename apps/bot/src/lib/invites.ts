@@ -161,10 +161,10 @@ export async function scoreInvites(guildId: string, w: Window): Promise<Score[]>
 }
 
 export const REASON_TEXT: Record<Reason, string> = {
-  ok:         'hesab mishe',
-  young:      'account kheili jadid bood',
-  unverified: 'hanooz verify nakarde',
-  returning:  'ghablan azaye server bood',
-  duplicate:  'ghablan hesab shode',
-  self:       'khodet',
+  ok:         'حساب می‌شه',
+  young:      'اکانتش خیلی جدید بود',
+  unverified: 'هنوز وریفای نکرده',
+  returning:  'قبلاً عضو سرور بوده',
+  duplicate:  'قبلاً حساب شده',
+  self:       'خودت',
 };

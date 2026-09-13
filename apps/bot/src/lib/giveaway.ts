@@ -6,6 +6,7 @@ import {
 import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { getDb, giveaways, inviteCache, memberJoins } from '@aion/db';
 import { scoreInvites, REASON_TEXT, type Score } from './invites.js';
+import { isolate, num } from './text.js';
 
 export const GW = 'gw';
 export const ACCENT = 0x9b6cff;
@@ -110,17 +111,23 @@ export function boardContainer(
     return c;
   }
 
+  // Names are Latin and the text around them is Persian, so every name and
+  // every figure is isolated. Without it the bidi algorithm pulls the count
+  // away from the person it belongs to and the board reads as nonsense — the
+  // digits end up beside the wrong words. isolate() fixes the names; num()
+  // prefixes an Arabic Letter Mark, which is the only thing that stops a
+  // Persian letter retargeting the digits that follow it.
   const top = places(scores, g.floors);
   c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
     top.map(p =>
-      `${MEDALS[p.place - 1]} **${nameOf(p.score.inviterId)}** — **${p.score.qualified}** نفر` +
-      (p.won ? '' : ` · _حداقل ${p.floor} نفر لازمه_`)).join('\n')));
+      `${MEDALS[p.place - 1]} **${isolate(nameOf(p.score.inviterId))}** — **${num(p.score.qualified)}** نفر` +
+      (p.won ? '' : ` · _حداقل ${num(p.floor)} نفر لازمه_`)).join('\n')));
 
   const rest = scores.slice(g.floors.length, 10).filter(s => s.qualified > 0);
   if (rest.length) {
     c.addSeparatorComponents(new SeparatorBuilder());
     c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      rest.map((s, i) => `\`${i + g.floors.length + 1}.\` ${nameOf(s.inviterId)} — ${s.qualified}`).join('\n')));
+      rest.map((s, i) => `\`${i + g.floors.length + 1}.\` ${isolate(nameOf(s.inviterId))} — **${num(s.qualified)}** نفر`).join('\n')));
   }
 
   c.addSeparatorComponents(new SeparatorBuilder());
@@ -147,9 +154,9 @@ export function breakdown(guild: Guild, scores: Score[], userId: string): string
   const ok = s.invitees.filter(v => v.reason === 'ok');
   const no = s.invitees.filter(v => v.reason !== 'ok');
   return [
-    `## 🎟 ${name}`,
-    `**${s.qualified}** دعوت معتبر${rank ? ` · رتبه‌ی **${rank}**` : ''}`,
-    `-# ${ok.filter(v => here(v.userId)).length} نفرشون هنوز تو سرورن`,
+    `## 🎟 ${isolate(name)}`,
+    `**${num(s.qualified)}** دعوت معتبر${rank ? ` · رتبه‌ی **${num(rank)}**` : ''}`,
+    `-# ${num(ok.filter(v => here(v.userId)).length)} نفرشون هنوز تو سرورن`,
     '',
     ...ok.slice(0, 25).map(line),
     ...(no.length ? ['', '**حساب نشده:**', ...no.slice(0, 15).map(line)] : []),
