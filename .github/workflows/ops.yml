@@ -21,15 +21,15 @@ on:
       title:
         description: Giveaway title (start only)
         type: string
-        default: مسابقه‌ی دعوت آیون
+        default: "AION Invite Contest"
       days:
         description: Duration in days (start only)
         type: string
-        default: '21'
+        default: "21"
       floors:
         description: Minimum invites for 1st,2nd,3rd (start only)
         type: string
-        default: 100,100,100
+        default: "100,100,100"
 
 concurrency:
   group: deploy          # never runs while a deploy is mid-flight
@@ -57,7 +57,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=20 "root@$HOST" \
             "TASK='$TASK' TITLE='$TITLE' DAYS='$DAYS' FLOORS='$FLOORS' bash -s" <<'EOSSH'
           set -euo pipefail
-          APP=/opt/aion/current
+          APP=/opt/aion
           cd "$APP"
           set -a; . "$APP/.env"; set +a
           sudo -u aionbot \

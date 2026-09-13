@@ -76,8 +76,18 @@ async function start(): Promise<void> {
   const days = Number(flag('days') ?? 21);
   const floors = (flag('floors') ?? '100,100,100').split(',').map(Number);
   const minAge = Number(flag('minage') ?? 30);
-  if (!Number.isFinite(days) || days < 1 || floors.some(n => !Number.isFinite(n))) {
-    console.error('bad arguments'); process.exitCode = 1; return;
+  // Three numbers, each of them sane. "100,100,100" losing its commas on the
+  // way through a workflow input arrives as 100100100, which would otherwise
+  // start a giveaway nobody could ever win.
+  if (!Number.isFinite(days) || days < 1 || days > 120) {
+    console.error(`bad --days: ${flag('days')}`); process.exitCode = 1; return;
+  }
+  if (floors.length !== 3 || floors.some(n => !Number.isFinite(n) || n < 1 || n > 10_000)) {
+    console.error(`bad --floors: ${flag('floors')} — want three numbers like 100,100,100`);
+    process.exitCode = 1; return;
+  }
+  if (!Number.isFinite(minAge) || minAge < 0 || minAge > 3650) {
+    console.error(`bad --minage: ${flag('minage')}`); process.exitCode = 1; return;
   }
 
   const endsAt = new Date(Date.now() + days * 86_400_000);
