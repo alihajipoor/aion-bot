@@ -54,7 +54,7 @@ Usually only one of these appears; both only in a large game.
 | **Sniper** | Shoots at night. Total bullets set by God at setup; **one shot per night** max. |
 | **Rooyintan** (رویین‌تن) | Cannot be killed by a shot — **unless drunk that night**. Otherwise removed only by vote, by God, or by Terrorist. |
 | **Saghi** (ساقی) | Makes one player drunk at night; that player's ability does not work that night. |
-| **Shahrdar** (شهردار) | May cancel a completed final vote. Limited uses, set by God. |
+| **Shahrdar** (شهردار) | May **replace** the target of a completed final vote — somebody still leaves. Limited uses, set by God. |
 | **Kalantar** (کلانتر) | Gives a gun to another player at night. Never shoots themselves. |
 | **Doctor** (دکتر) | Saves one player per night, self included. Unlimited. |
 | **Detective** (کاراگاه) | Asks one player's **side** per night — "mafia" or "shahr", never the role. |
@@ -116,8 +116,10 @@ one-time miss.
 
 - **Sniper** shoots at night, one per night, from a fixed total.
 - **Don** shoots at night, one per night.
-- **Kalantar's gun** is fired **during the day** by whoever holds it, on any day
-  from the one after they receive it onward. The victim's **role is announced
+- **Kalantar's gun** is fired **during the open day** by whoever holds it,
+  starting the very next morning — the holder is told it is theirs first thing.
+  The window shuts the moment Ray-giri opens: a shot landing mid-ballot changes
+  who is even on it, and a room that has voted cannot unvote. The victim's **role is announced
   immediately and publicly** — the only death in the game that reveals a role on
   the spot. The holder may be mafia; that is the risk.
 - Rooyintan is immune to all three **[filled]** — a shot is a shot.
@@ -147,10 +149,15 @@ they were drunk.
 4. On reveal: anyone with **2 or more votes** goes to round two.
 5. Those players each get a turn to defend.
 6. **Round two vote**, again hidden until God ends it.
-7. Highest vote is eliminated. **A tie eliminates nobody** — night falls with
+7. God closes the box. **Only now** does the room see the totals *and who voted
+   for whom*. God watches it land live on the console; nobody else does.
+8. If a Shahrdar is alive with a veto left, they choose: let it stand, or veto
+   and name somebody else to go instead. **A veto swaps the body, it does not
+   spare one** — the day's cost is fixed, so a veto cannot be used to stall.
+9. Highest vote is eliminated. **A tie eliminates nobody** — night falls with
    everyone alive.
-8. Eliminated player's role is **[filled]** not revealed — except by Kalantar's
-   gun.
+10. Eliminated player's role is **[filled]** not revealed — except by Kalantar's
+    gun.
 
 God may jump to any phase — lobby, challenge, defence, vote — at any time.
 

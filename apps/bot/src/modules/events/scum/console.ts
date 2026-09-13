@@ -224,9 +224,14 @@ export function canFireGun(state: ScumState, shooter: string, day: number): bool
 export const gunEligible = (state: ScumState, day: number): string[] =>
   (state.gunHolders ?? []).map(g => g.userId).filter(id => canFireGun(state, id, day));
 
-/** Daylight. A gun cannot be fired at night or before the game starts. */
-export const isDaylight = (phase: ScumPhase | undefined): boolean =>
-  phase === 'day' || phase === 'vote1' || phase === 'defence' || phase === 'vote2';
+/**
+ * When a gun may be fired: the open day, and nothing else.
+ *
+ * Not during the vote or a defence. A shot landing mid-ballot changes who is
+ * even on it, and a room that has already voted cannot unvote — so the window
+ * closes the moment Ray-giri opens.
+ */
+export const isDaylight = (phase: ScumPhase | undefined): boolean => phase === 'day';
 
 /** Whose turn it is to defend, or null when the queue is finished. */
 export function nextDefender(
@@ -301,6 +306,27 @@ export function tallyLines(outcome: VoteOutcome, nameOf: (id: string) => string)
   return outcome.tally.map(t =>
     `**${num(t.votes)}** → ${isolate(nameOf(t.target))}`
     + (outcome.round === 1 && outcome.nominees.includes(t.target) ? '  ⚠️' : ''));
+}
+
+/**
+ * Who voted against whom, named.
+ *
+ * Only ever rendered after God closes the phase. A total tells the room how
+ * many; this tells them who, which is the half arguments are actually about —
+ * and it is the reason the box stays shut until then.
+ */
+export function voterLines(
+  votes: Record<string, string> | undefined, nameOf: (id: string) => string,
+): string[] {
+  const byTarget = new Map<string, string[]>();
+  for (const [voter, target] of Object.entries(votes ?? {})) {
+    byTarget.set(target, [...(byTarget.get(target) ?? []), voter]);
+  }
+  if (!byTarget.size) return [];
+  return [...byTarget.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([target, voters]) =>
+      `**${isolate(nameOf(target))}** ← ${voters.map(v => isolate(nameOf(v))).join('، ')}`);
 }
 
 /* ══ plumbing ══════════════════════════════════════════════════════ */
@@ -535,10 +561,17 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
   if (st.voteOpen) {
     const b = ballotFor(st.voteRound ?? 1, roster, nominees);
     const p = voteProgress(st.votes, b.voters);
+    // God watches the vote land in real time; the room sees nothing until the
+    // box is closed. The console is ephemeral to God and players are locked out
+    // of the channel it lives in, so this is the one place it can be shown
+    // without it being shown to everyone.
+    const live = voterLines(st.votes, nameOf);
     box.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        `### 🗳️ Ray-giri baz-e · ${num(p.cast)}/${num(p.total)} ray oomade`
-        + '\n-# Shomaresh makhfi-ye — ta vaghti nabandi hich kas, hatta khodet, adad ro nemibine.'));
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+        `### 🗳️ Ray-giri baz-e · ${num(p.cast)}/${num(p.total)} ray oomade`,
+        ...(live.length ? ['', ...live] : ['-# Hanooz kesi ray nadade.']),
+        '-# Faghat to in ro mibini. Ta "Bastane ray giri" ro nazani, otagh hich chi nemibine.',
+      ].join('\n')));
   }
 
   const block = pendingBlock(st);
@@ -886,7 +919,10 @@ async function endVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
   await mergeState(ev.id, { voteOpen: false });
   const ch = chatOf(ev, i.guild!);
   const msgId = st.voteMessageId;
-  const card = voteCard(ev, round, options, voteProgress(st.votes, b.voters), tallyLines(outcome, nameOf));
+  // Opened: totals first, then the names behind them. Both only now.
+  const detail = voterLines(st.votes, nameOf);
+  const card = voteCard(ev, round, options, voteProgress(st.votes, b.voters),
+    detail.length ? [...tallyLines(outcome, nameOf), '', ...detail] : tallyLines(outcome, nameOf));
   if (ch && msgId) await ch.messages.edit(msgId, card).catch(() => {});
 
   if (round === 1) {
@@ -928,9 +964,10 @@ async function endVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
       + '\n-# Ye lahze sabr konid — hanooz ghati nashode.', C.day);
     const sent = await dm(i.guild!, veto,
       `## 🏛 Shahrdar\nShahr ray dad be ${isolate(nameOf(outcome.eliminated))}.`
-      + '\nMitooni in ray ro cancel koni. Age cancel koni, kesi hazf nemishe va rooz hamoon-ja tamoom mishe.',
+      + '\nMitooni bezari bere, ya veto koni va **ye nafar dige** ro jash bezari biroon.'
+      + '\n-# Veto kardan yani hatman yeki mire — kesi az bazi kam nashodan dar kar nist.',
       C.day, { buttons: [
-        new ButtonBuilder().setCustomId(enc('veto', ev.id, 'yes')).setLabel('Cancel-esh kon')
+        new ButtonBuilder().setCustomId(enc('veto', ev.id, 'yes')).setLabel('Veto — ye nafar dige')
           .setEmoji('🛑').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId(enc('veto', ev.id, 'no')).setLabel('Bezar bere')
           .setEmoji('👌').setStyle(ButtonStyle.Secondary),
@@ -1187,6 +1224,7 @@ export async function scumComponent(i: ButtonInteraction | StringSelectMenuInter
   if (step === 'gunfire' && i.isStringSelectMenu()) { await fireTheGun(i, ev); return; }
   if (step === 'terror' && i.isStringSelectMenu()) { await takeOneWithYou(i, ev); return; }
   if (step === 'veto' && i.isButton()) { await answerVeto(i, ev, arg === 'yes'); return; }
+  if (step === 'vetopick' && i.isStringSelectMenu()) { await vetoPick(i, ev); return; }
 
   if (!canRun(i, ev)) {
     await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral });
@@ -1296,30 +1334,84 @@ async function answerVeto(i: ButtonInteraction, ev: EventRow, cancel: boolean): 
     return;
   }
   const target = st.pending.target;
-  await i.update({
-    components: [new ContainerBuilder().setAccentColor(C.day)
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        cancel ? '## 🛑 Cancel shod.' : '## 👌 Gozashti bere.'))],
-    ...v2,
-  }).catch(() => {});
 
   if (!cancel) {
+    await i.update({
+      components: [new ContainerBuilder().setAccentColor(C.day)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 👌 Gozashti bere.'))],
+      ...v2,
+    }).catch(() => {});
     await mergeState(ev.id, { pending: null });
     const fresh = (await getEvent(ev.id))!;
     await finishEliminationOutsideConsole(i.guild!, fresh, target);
     return;
   }
 
+  /*
+   * A veto swaps the body; it does not spare one.
+   *
+   * Somebody leaves the game either way, so the Shahrdar is choosing who — not
+   * whether. That keeps the day's cost fixed and stops a veto being a way to
+   * stall, which a plain cancel would have been.
+   */
   const roster = await players(ev.id);
+  const nameOf = namer(i.guild, roster);
+  const choices = roster.filter(p => p.alive && p.userId !== target);
+  if (!choices.length) {
+    await i.update({
+      components: [new ContainerBuilder().setAccentColor(C.day)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          '## ⚠️ Kesi nist ke jash bezari.\nRay hamoon mimoone.'))],
+      ...v2,
+    }).catch(() => {});
+    await mergeState(ev.id, { pending: null });
+    await finishEliminationOutsideConsole(i.guild!, (await getEvent(ev.id))!, target);
+    return;
+  }
+
+  await i.update({
+    components: [new ContainerBuilder().setAccentColor(C.day)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        '## 🛑 Veto\nKi ro jash mizani biroon?'))
+      .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder().setCustomId(enc('vetopick', ev.id))
+          .setPlaceholder('Entekhab kon')
+          .addOptions(choices.slice(0, 25).map(p => ({
+            label: nameOf(p.userId).slice(0, 100), value: p.userId,
+          })))))],
+    ...v2,
+  }).catch(() => {});
+}
+
+/** The Shahrdar has named their replacement. */
+async function vetoPick(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
+  const st = stateOf(ev);
+  if (st.pending?.kind !== 'veto' || st.pending.actor !== i.user.id) {
+    await i.reply({ content: 'Dige nemitooni.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+  const chosen = i.values[0]!;
+  const roster = await players(ev.id);
+  const nameOf = namer(i.guild, roster);
   const me = roster.find(p => p.userId === i.user.id);
   const left = me ? Math.max(0, (usesLeft(st, me) ?? 1) - 1) : 0;
+
+  await i.update({
+    components: [new ContainerBuilder().setAccentColor(C.day)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## 🛑 Veto\n${isolate(nameOf(chosen))} ro jash gozashti.`))],
+    ...v2,
+  }).catch(() => {});
+
   await mergeState(ev.id, {
-    pending: null, phase: 'day', nominees: [], defence: { order: [], at: -1 },
-    uses: { ...(st.uses ?? {}), [i.user.id]: left },
+    pending: null, uses: { ...(st.uses ?? {}), [i.user.id]: left },
   });
   const fresh = (await getEvent(ev.id))!;
   await say(chatOf(fresh, i.guild!),
-    '## 🏛 Shahrdar ray ro cancel kard\nHich kas hazf nashod. Rooz hamin-ja tamoom mishe.', C.day);
+    `## 🏛 Shahrdar veto kard\nRay-e shahr ejra nashod. **${isolate(nameOf(chosen))}** jash az bazi raft.`,
+    C.day);
+  await finishEliminationOutsideConsole(i.guild!, fresh, chosen);
+  return;
   await applyTextRules(i.guild!, fresh, 'day');
 }
 

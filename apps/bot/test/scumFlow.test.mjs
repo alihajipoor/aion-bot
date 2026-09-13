@@ -230,11 +230,13 @@ test('eligibility is blind to whether the gun is a blank', () => {
   assert.deepEqual(gunEligible(st, 2), ['d', 'c']);
 });
 
-test('a gun fires in daylight and at no other time', () => {
+test('a gun fires on the open day only — the window shuts when Ray-giri opens', () => {
   assert.equal(isDaylight('day'), true);
-  assert.equal(isDaylight('vote1'), true);
-  assert.equal(isDaylight('defence'), true);
-  assert.equal(isDaylight('vote2'), true);
+  // Not once voting has begun. A shot landing mid-ballot changes who is even on
+  // it, and a room that has already voted cannot unvote.
+  assert.equal(isDaylight('vote1'), false);
+  assert.equal(isDaylight('defence'), false);
+  assert.equal(isDaylight('vote2'), false);
   assert.equal(isDaylight('night'), false);
   assert.equal(isDaylight('setup'), false);
   assert.equal(isDaylight(undefined), false);
