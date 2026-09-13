@@ -21,7 +21,7 @@ const RECRUITER = 'ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•';
 const RECRUITER_AT = 30;
 const PODIUM = ['ʟᴇɢᴇɴᴅ│𝙳𝙰𝚅𝙰𝚃│•', 'ᴇʟɪᴛᴇ│𝙳𝙰𝚅𝙰𝚃│•', 'ᴘɪsʜᴛᴀᴢ│𝙳𝙰𝚅𝙰𝚃│•'];
 
-interface Marks { lastGiveaway?: string; giveawayIds?: string[] }
+interface Marks { lastGiveaway?: string; giveawayIds?: string[]; giveawayRun?: number }
 
 async function readMarks(guildId: string, name: string): Promise<Marks> {
   const [row] = await getDb().select().from(guilds).where(eq(guilds.guildId, guildId)).limit(1);
@@ -38,9 +38,35 @@ async function writeMarks(guildId: string, marks: Marks): Promise<void> {
     .where(eq(guilds.guildId, guildId));
 }
 
-/** The announcement is a standing notice, not a thread — yesterday's is removed. */
+/**
+ * Clears the previous announcement before the next one goes up.
+ *
+ * The tracked ids alone are not enough. They live in the guild config, so a
+ * restore, a failed write, or a crash between deleting and recording leaves an
+ * announcement behind with nothing pointing at it — and the channel slowly
+ * fills with identical posts that each ping @everyone.
+ *
+ * So the ids are a fast path, and a sweep of the bot's own recent messages is
+ * the backstop. Only this bot's messages are ever touched, and only in the
+ * giveaway channel, which carries nothing else: staff posts there are left
+ * alone, and so is anything without components.
+ */
 async function retire(channel: TextChannel, ids: string[] | undefined): Promise<void> {
   for (const id of ids ?? []) await channel.messages.delete(id).catch(() => {});
+
+  const me = channel.client.user?.id;
+  if (!me) return;
+  try {
+    const recent = await channel.messages.fetch({ limit: 50 });
+    for (const msg of recent.values()) {
+      if (msg.author.id !== me) continue;          // never anyone else's
+      if (ids?.includes(msg.id)) continue;         // handled above
+      if (!msg.components.length) continue;        // only rendered posts
+      await msg.delete().catch(() => {});
+    }
+  } catch (e) {
+    log.warn('could not sweep old announcements', (e as Error).message);
+  }
 }
 
 /**
@@ -95,6 +121,7 @@ export async function postAnnouncement(guild: Guild): Promise<void> {
   await writeMarks(guild.id, {
     lastGiveaway: new Date().toISOString().slice(0, 10),
     giveawayIds: [first.id, second.id],
+    giveawayRun: g.id,
   });
   log.info(`announcement posted to #${channel.name}`);
 }
@@ -169,7 +196,9 @@ export function installGiveawayPoster(client: AionClient): void {
 
       const marks = await readMarks(guild.id, guild.name);
       const today = new Date().toISOString().slice(0, 10);
-      if (marks.lastGiveaway === today) return;
+      // A new run always announces immediately, even if the one it replaced
+      // already posted today.
+      if (marks.lastGiveaway === today && marks.giveawayRun === g.id) return;
       await postAnnouncement(guild);
     } catch (e) {
       log.error('giveaway tick failed', e);
