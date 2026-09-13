@@ -5,7 +5,7 @@ import {
   type ButtonInteraction, type StringSelectMenuInteraction, type ModalSubmitInteraction,
   type MessageComponentInteraction, type Guild, type GuildMember, type TextChannel,
 } from 'discord.js';
-import { isolate } from '../../lib/text.js';
+import { isolate, num } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
 import {
   getEvent, patchEvent, mergeState, players, alivePlayers, assignRole,
@@ -273,6 +273,30 @@ async function console_(ev: EventRow, note?: string) {
     new ButtonBuilder().setCustomId(enc('refresh', ev.id)).setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
   ));
 
+  // The overrides. Every rule this bot enforces can be wrong about a situation
+  // nobody anticipated, and a game that cannot be rescued by hand is a game that
+  // ends in an argument. These are the escape hatches.
+  if (phase !== 'setup') {
+    box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(enc('win', ev.id, 'mafia')).setLabel('Mafia bord')
+        .setEmoji('🔴').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(enc('win', ev.id, 'shahr')).setLabel('Shahr bord')
+        .setEmoji('🟢').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(enc('mvp', ev.id)).setLabel('MVP')
+        .setEmoji('⭐').setStyle(ButtonStyle.Secondary),
+    ));
+  }
+
+  if (phase !== 'setup') {
+    const alive = roster.filter(p => p.alive);
+    const mafiaN = alive.filter(p => p.side === 'mafia').length;
+    const shahrN = alive.length - mafiaN;
+    box.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `-# Zende: 🔴 **${num(mafiaN)}** mafia · 🟢 **${num(shahrN)}** shahr` +
+        (mafiaN && mafiaN >= shahrN ? '  —  **mafia be tasavi reside**' : '')));
+  }
+
   box.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       nominees.length
@@ -288,6 +312,48 @@ const canRun = (i: MessageComponentInteraction, ev: EventRow): boolean => {
     || m.permissions.has(PermissionFlagsBits.Administrator)
     || hasRole(m, ['Consultant', 'PowerAdmin', 'Dev']);
 };
+
+/**
+ * How this module asks for the whole event to be torn down.
+ *
+ * events/index.ts already imports this file, so importing it back would make a
+ * cycle. It hands its finisher in at install time instead.
+ */
+type Finisher = (guild: Guild, ev: EventRow, reason: string) => Promise<void>;
+let finishEvent: Finisher | null = null;
+export const setEventFinisher = (fn: Finisher): void => { finishEvent = fn; };
+
+/**
+ * Ends the game on God's word.
+ *
+ * The bot deliberately never decides this itself: Natasha counts as mafia
+ * without being on the mafia team and the Traitor counts as shahr while
+ * possibly winning with them, so an automatic parity check has edge cases — and
+ * an edge case firing mid-game ruins that game for everyone in it.
+ */
+async function declareWin(
+  i: ButtonInteraction, ev: EventRow, winner: 'mafia' | 'shahr',
+): Promise<void> {
+  await i.deferUpdate();
+  const roster = await players(ev.id).catch(() => []);
+  const mvpId = (ev.state as { mvpId?: string }).mvpId ?? null;
+  await mergeState(ev.id, { winner, endedBy: i.user.id });
+
+  const announce = [
+    `# ${winner === 'mafia' ? '🔴 Mafia bord' : '🟢 Shahr bord'}`,
+    '',
+    ...roster.map(p => `${p.side === 'mafia' ? '🔴' : '🟢'} <@${p.userId}> — **${roleOf(p.role).fa}**`),
+    ...(mvpId ? ['', `⭐ **MVP:** <@${mvpId}>`] : []),
+  ].join('\n');
+
+  const channel = i.guild?.channels.cache.get(ev.textChannelId ?? '');
+  if (channel?.isTextBased()) {
+    await channel.send({ content: announce, allowedMentions: { parse: [] } }).catch(() => {});
+  }
+
+  const fresh = (await getEvent(ev.id))!;
+  if (finishEvent && i.guild) await finishEvent(i.guild, fresh, `AION mafia — ${winner} bord`);
+}
 
 export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInteraction): Promise<void> {
   const [step, idRaw, arg] = dec(i.customId);
@@ -310,6 +376,35 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
     const payload = await console_(ev);
     if (step === 'console') await i.reply(payload);
     else await i.update(payload);
+    return;
+  }
+
+  if (step === 'win' && i.isButton()) {
+    await declareWin(i, ev, arg === 'mafia' ? 'mafia' : 'shahr');
+    return;
+  }
+
+  if (step === 'mvp' && i.isButton()) {
+    const roster = await players(ev.id).catch(() => []);
+    if (!roster.length) { await i.reply({ content: 'Bazikoni nist.', flags: MessageFlags.Ephemeral }); return; }
+    await i.reply({
+      content: 'MVP ro entekhab kon:',
+      components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder().setCustomId(enc('mvppick', ev.id))
+          .setPlaceholder('MVP')
+          .addOptions(roster.slice(0, 25).map(p => ({
+            label: (i.guild?.members.cache.get(p.userId)?.displayName ?? p.userTag ?? p.userId).slice(0, 100),
+            value: p.userId,
+          }))))],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (step === 'mvppick' && i.isStringSelectMenu()) {
+    const pick = i.values[0]!;
+    await mergeState(ev.id, { mvpId: pick });
+    await i.update({ content: `⭐ MVP: <@${pick}>`, components: [] });
     return;
   }
 
