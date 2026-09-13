@@ -26,34 +26,51 @@ const C = {
   pink:   '#f47fff',
 };
 
-/* Shapes, all on a 64x64 field with a 6px margin so nothing touches the edge. */
+/*
+ * The set is built from the wordmark rather than from stock symbols.
+ *
+ * Λ is a chevron, which is already how rank is written on a uniform — so the
+ * staff ladder is that one mark stacked: one for a moderator, two for a
+ * global, three at the top. The house glyph and the hierarchy turn out to be
+ * the same drawing, and chevrons stay legible far smaller than a crown does.
+ *
+ * Sanctions take the same Λ and break it: struck through for a ban, barred for
+ * a mute. Losing your access is drawn as losing the mark.
+ */
+
+/** A chevron at a vertical offset, apex up — the Λ. */
+const chev = (dy = 0, w = 18) => `M${32 - w} ${44 + dy} L32 ${44 + dy - w * 1.33} L${32 + w} ${44 + dy}`;
+
+/** The lit rift that runs under the wordmark. */
+const RIFT = 'M9 56 H55';
+
 const SHAPE = {
-  // The wordmark's own mark.
-  lambda: 'M32 8 L52 56 L41 56 L32 30 L23 56 L12 56 Z',
-  crown:  'M8 46 L14 20 L24 34 L32 14 L40 34 L50 20 L56 46 Z M8 50 H56 V56 H8 Z',
-  shield: 'M32 7 L55 16 V33 C55 46 45 54 32 58 C19 54 9 46 9 33 V16 Z',
-  star:   'M32 6 L39 25 L59 25 L43 37 L49 57 L32 45 L15 57 L21 37 L5 25 L25 25 Z',
-  // Bow, shaft, two teeth. The hole needs evenodd or it fills solid.
-  key:    'M32 6 a13 13 0 1 1 -0.01 0 Z M32 13 a6 6 0 1 0 0.01 0 Z '
-        + 'M28 30 h8 v26 h-8 Z M36 38 h10 v6 h-10 Z M36 48 h8 v6 h-8 Z',
-  slash:  'M32 6 a26 26 0 1 0 0.01 0 Z M17 47 L47 17',
-  mute:   'M12 25 H22 L34 13 V51 L22 39 H12 Z M42 24 L58 40 M58 24 L42 40',
-  // Head, stem and flag as one closed outline — cleaner at 20px than a
-  // separate ellipse that loses its rotation when scaled down.
-  note:   'M34 14 L52 21 L52 31 L40 26 V46 a10 9 0 1 1 -6 -8 Z',
-  spark:  'M32 6 L37 27 L58 32 L37 37 L32 58 L27 37 L6 32 L27 27 Z',
-  dot:    'M32 14 L50 32 L32 50 L14 32 Z',
+  lambda1: chev(4),
+  lambda2: `${chev(-4)} ${chev(10)}`,
+  lambda3: `${chev(-10)} ${chev(2)} ${chev(14)}`,
+  crest:   `${chev(-12)} ${chev(0)} ${chev(12)} ${RIFT}`,   // rank, and the rift
+  mark:    `${chev(-2, 22)} ${RIFT}`,                        // the wordmark itself
+  // Members are not on the rank ladder, so they are not given a chevron at
+  // all — a small blue chevron sat at 20px indistinguishable from the Public
+  // moderator's, which is the one confusion worth avoiding.
+  pip:     'M32 18 L46 32 L32 46 L18 32 Z',
+  struck:  `${chev(2)} M14 16 L50 52`,                       // ban: the mark broken
+  // Struck through the middle rather than underlined, so it cannot be mistaken
+  // for the rift that sits under the top-rank crest.
+  barred:  `${chev(2)} M13 34 H51`,
+  key:     'M32 10 a11 11 0 1 1 -0.01 0 Z M32 16 a5 5 0 1 0 0.01 0 Z '
+         + 'M29 31 h6 v23 h-6 Z M35 38 h9 v5 h-9 Z M35 47 h7 v5 h-7 Z',
+  note:    'M34 16 L52 23 L52 32 L40 27 V46 a10 9 0 1 1 -6 -8 Z',
 };
 
-/** Filled shapes read better than strokes at 20px; slash and mute need both. */
 /**
  * Neon: a blurred halo, a saturated tube, and a near-white core, all tracing
  * the same outline. Everything is stroked — a filled shape has no tube to
  * light, and the glow would sit behind a solid block instead of around a line.
  *
- * The halo is the reason these still read at 20px: the blur survives the
- * downscale as a coloured aura even when the 2px core is nearly gone, so the
- * icon keeps its colour identity long after its shape stops being legible.
+ * The halo is why these still read at 20px: the blur survives the downscale as
+ * a coloured aura even when the core is nearly gone, so an icon keeps its
+ * colour identity long after its shape stops being legible.
  */
 export function glyph(shape, colour, id = 'g') {
   const d = SHAPE[shape];
@@ -62,9 +79,9 @@ export function glyph(shape, colour, id = 'g') {
     + ` stroke-linecap="round" stroke-linejoin="round"${filter}/>`;
   return `<defs><filter id="${id}" x="-50%" y="-50%" width="200%" height="200%">`
     + `<feGaussianBlur stdDeviation="3.2"/></filter></defs>`
-    + tube(9, colour, 0.95, ` filter="url(#${id})"`)   // halo
-    + tube(5.5, colour)                                 // tube
-    + tube(1.8, '#ffffff', 0.92);                       // core
+    + tube(9, colour, 0.95, ` filter="url(#${id})"`)
+    + tube(5.5, colour)
+    + tube(1.8, '#ffffff', 0.92);
 }
 
 function svg(shape, colour, id = 'i') {
@@ -93,27 +110,28 @@ function contactSheet() {
 }
 
 const ICONS = [
-  ['Dev',                  'lambda', C.ice,    false, 'Dev'],
-  ['Consultant',           'crown',  C.gold,   false, 'Consultant'],
-  ['PowerAdmin',           'crown',  C.ice,    false, 'PowerAdmin'],
-  ['𝙼𝙰𝙽𝚂𝙸𝙾𝙽 𝙺𝙴𝚈',  'key',    C.gold,   false, 'Mansion Key'],
-  ['V . Global',           'star',   C.ice,    false, 'V Global'],
-  ['P . Global',           'star',   C.blue,   false, 'P Global'],
-  ['G . Global',           'star',   C.green,  false, 'G Global'],
-  ['E . Global',           'star',   C.purple, false, 'E Global'],
-  ['P . MODERATOR',        'shield', C.blue,   false, 'P Moderator'],
-  ['G . MODERATOR',        'shield', C.green,  false, 'G Moderator'],
-  ['E . MODERATOR',        'shield', C.purple, false, 'E Moderator'],
-  ['Server Banned',        'slash',  C.red,    true, 'Server Banned'],
-  ['Public Banned',        'slash',  C.blue,   true, 'Public Banned'],
-  ['Game Banned',          'slash',  C.green,  true, 'Game Banned'],
-  ['Event Banned',         'slash',  C.purple, true, 'Event Banned'],
-  ['Public Muted',         'mute',   C.amber,  true, 'Public Muted'],
-  ['Game Muted',           'mute',   C.amber,  true, 'Game Muted'],
-  ['Entertainment Muted',  'mute',   C.amber,  true, 'Entertainment Muted'],
+  // Dev and Consultant both sit at the top; colour separates them, not rank.
+  ['Dev',                  'crest',   C.ice,    false, 'Dev'],
+  ['Consultant',           'crest',   C.gold,   false, 'Consultant'],
+  ['PowerAdmin',           'lambda3', C.ice,    false, 'PowerAdmin'],
+  ['𝙼𝙰𝙽𝚂𝙸𝙾𝙽 𝙺𝙴𝚈',  'key',     C.gold,   false, 'Mansion Key'],
+  ['V . Global',           'lambda2', C.ice,    false, 'V Global'],
+  ['P . Global',           'lambda2', C.blue,   false, 'P Global'],
+  ['G . Global',           'lambda2', C.green,  false, 'G Global'],
+  ['E . Global',           'lambda2', C.purple, false, 'E Global'],
+  ['P . MODERATOR',        'lambda1', C.blue,   false, 'P Moderator'],
+  ['G . MODERATOR',        'lambda1', C.green,  false, 'G Moderator'],
+  ['E . MODERATOR',        'lambda1', C.purple, false, 'E Moderator'],
+  ['Server Banned',        'struck',  C.red,    true, 'Server Banned'],
+  ['Public Banned',        'struck',  C.blue,   true, 'Public Banned'],
+  ['Game Banned',          'struck',  C.green,  true, 'Game Banned'],
+  ['Event Banned',         'struck',  C.purple, true, 'Event Banned'],
+  ['Public Muted',         'barred',  C.amber,  true, 'Public Muted'],
+  ['Game Muted',           'barred',  C.amber,  true, 'Game Muted'],
+  ['Entertainment Muted',  'barred',  C.amber,  true, 'Entertainment Muted'],
   ['ᴀ ɪ ᴏ ɴ │𝙼𝚄𝚂𝙸𝙲 𝚁𝙾𝙱𝙾𝚃│•', 'note', C.purple, false, 'Music Robot'],
-  ['ʙᴏʏ│𝙼𝙴𝙼𝙱𝙴𝚁│•',   'dot',    C.blue,   false, 'boy | MEMBER'],
-  ['ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•',  'dot',    C.pink,   false, 'girl | MEMBER'],
+  ['ʙᴏʏ│𝙼𝙴𝙼𝙱𝙴𝚁│•',   'pip',    C.blue,   false, 'boy MEMBER'],
+  ['ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•',  'pip',    C.pink,   false, 'girl MEMBER'],
 ];
 
 const png = (shape, colour, id) =>
