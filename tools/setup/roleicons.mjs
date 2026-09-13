@@ -111,42 +111,103 @@ function svg(shape, colour, id = 'i') {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">${glyph(shape, colour, id)}</svg>`;
 }
 
+/* Tint helpers so each badge builds its own light and shadow from one colour. */
+const hex = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const rgb = ([r, g, b]) => `#${[r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')}`;
+const lift = (h, amount) => rgb(hex(h).map(v => v + (255 - v) * amount));
+const sink = (h, amount) => rgb(hex(h).map(v => v * (1 - amount)));
+
 /**
- * A rank badge: a crest whose top edge *is* the crown, filled solid, with the
- * rank's initial knocked out of it.
+ * A rank crest: the crown is the badge's own top edge, the rank's initial is
+ * struck into the face, and the whole thing is lit from above.
  *
- * Two things drove this. A crown floating above a letter reads as two objects
- * that happen to be near each other, so here the crown is the silhouette — the
- * letter is set high enough that its cap rises between the points, cut into
- * the metal rather than standing under it.
+ * Depth is what separated this from a flat vector shape. There are six passes,
+ * and each one is doing a job a real badge would do:
  *
- * And solid mass survives the downscale in a way outlines never do. At 20px a
- * glowing line becomes a smudge, while a filled crest keeps its shape and its
- * colour, and the knocked-out letter stays a hole you can read.
+ *   a cast shadow, so it sits on the list rather than floating in it
+ *   a dark rim, which gives the silhouette an edge instead of a border
+ *   a body gradient, bright at the crown and falling into shadow at the point
+ *   a bevel — a light inner stroke along the top, a dark one along the bottom
+ *   a gloss clipped to the upper half, the sheen on a struck metal face
+ *   the letter cut in, with a light lip under it so it reads as engraved
+ *
+ * The letter is set large enough that its cap rises between the crown points.
  */
 const CREST = 'M10 26 L16 4 L25 19 L32 1 L39 19 L48 4 L54 26 '
             + 'L54 39 C54 50 45 58 32 62 C19 58 10 50 10 39 Z';
 
-function crownedLetter(letter, colour, id) {
+/** The same badge without the crown: everything that is not a rank. */
+const SHIELD = 'M10 16 L32 7 L54 16 L54 39 C54 50 45 58 32 62 C19 58 10 50 10 39 Z';
+
+/** Glyphs carved into a shield, drawn on the same 64 field as the letters. */
+const CARVED = {
+  ban:  [{ d: 'M32 32 m-13 0 a13 13 0 1 0 26 0 a13 13 0 1 0 -26 0', stroke: 5.2 },
+         { d: 'M22.8 41.2 L41.2 22.8', stroke: 5.2 }],
+  mute: [{ d: 'M20 30 H26 L34 23 V47 L26 40 H20 Z', fill: true },
+         { d: 'M40 30 L50 40', stroke: 4.5 },
+         { d: 'M50 30 L40 40', stroke: 4.5 }],
+  note: [{ d: 'M31 22 L46 28 L46 35 L37 31 V45 a7 6 0 1 1 -5 -5 Z', fill: true }],
+  key:  [{ d: 'M32 20 a8 8 0 1 1 -0.01 0 Z M32 24 a4 4 0 1 0 0.01 0 Z '
+            + 'M29.5 33 h5 v17 h-5 Z M34.5 38 h7 v4 h-7 Z M34.5 45 h5 v4 h-5 Z', fill: true }],
+  gem:  [{ d: 'M32 20 L45 33 L32 46 L19 33 Z', fill: true }],
+};
+
+const carve = (name, colour) => CARVED[name].map(part => part.fill
+  ? `<path d="${part.d}" fill="${colour}" fill-rule="evenodd"/>`
+  : `<path d="${part.d}" fill="none" stroke="${colour}" stroke-width="${part.stroke}"`
+    + ` stroke-linecap="round" stroke-linejoin="round"/>`).join('');
+
+function crownedLetter(letter, colour, id, opts = {}) {
+  const outline = opts.outline ?? CREST;
+  const carved = opts.carved ?? null;
+  const light = lift(colour, 0.55);
+  const pale = lift(colour, 0.85);
+  const deep = sink(colour, 0.45);
+  const edge = sink(colour, 0.7);
+
   return `<defs>
-    <linearGradient id="f${id}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.92"/>
-      <stop offset="0.35" stop-color="${colour}"/>
-      <stop offset="1" stop-color="${colour}" stop-opacity="0.72"/>
+    <linearGradient id="b${id}" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="${pale}"/>
+      <stop offset="0.30" stop-color="${light}"/>
+      <stop offset="0.62" stop-color="${colour}"/>
+      <stop offset="1" stop-color="${deep}"/>
     </linearGradient>
-    <filter id="g${id}" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="3.4"/>
+    <linearGradient id="s${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="c${id}"><path d="${outline}"/></clipPath>
+    <filter id="d${id}" x="-40%" y="-40%" width="180%" height="190%">
+      <feDropShadow dx="0" dy="2.5" stdDeviation="2.4" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+    <filter id="h${id}" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.6"/>
     </filter>
   </defs>
-  <path d="${CREST}" fill="${colour}" filter="url(#g${id})" opacity="0.85"/>
-  <path d="${CREST}" fill="url(#f${id})" stroke="${colour}" stroke-width="2" stroke-linejoin="round"/>
-  <text x="32" y="53" text-anchor="middle" font-family="Vazirmatn" font-size="48"
-        font-weight="700" fill="#0b0d17" fill-opacity="0.92">${letter}</text>`;
+
+  <path d="${outline}" fill="${colour}" filter="url(#h${id})" opacity="0.55"/>
+  <g filter="url(#d${id})">
+    <path d="${outline}" fill="${edge}" stroke="${edge}" stroke-width="3.4" stroke-linejoin="round"/>
+    <path d="${outline}" fill="url(#b${id})"/>
+    <g clip-path="url(#c${id})">
+      <path d="${outline}" fill="none" stroke="${pale}" stroke-width="3" stroke-opacity="0.75"
+            stroke-linejoin="round" transform="translate(0,2.2)"/>
+      <path d="${outline}" fill="none" stroke="${deep}" stroke-width="3" stroke-opacity="0.6"
+            stroke-linejoin="round" transform="translate(0,-2.6)"/>
+      <ellipse cx="32" cy="16" rx="26" ry="19" fill="url(#s${id})"/>
+    </g>
+    ${carved
+      ? `<g transform="translate(0,1)" opacity="0.5">${carve(carved, pale)}</g>${carve(carved, edge)}`
+      : `<text x="32" y="53.6" text-anchor="middle" font-family="Vazirmatn" font-size="48"
+             font-weight="700" fill="${pale}" fill-opacity="0.5">${letter}</text>
+         <text x="32" y="53" text-anchor="middle" font-family="Vazirmatn" font-size="48"
+             font-weight="700" fill="${edge}">${letter}</text>`}
+  </g>`;
 }
 
-function letterSvg(letter, colour, id) {
+function letterSvg(letter, colour, id, opts = {}) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">`
-    + `${crownedLetter(letter, colour, id)}</svg>`;
+    + `${crownedLetter(letter, colour, id, opts)}</svg>`;
 }
 
 /** A contact sheet at both the drawn size and the size Discord really uses. */
@@ -159,9 +220,8 @@ function contactSheet() {
     // The sheet's font has no small caps or mathematical monospace, so styled
     // role names need a plain spelling or they render as tofu.
     const clean = plain ?? label;
-    const draw = (id) => isLetter ? crownedLetter(shape, colour, id) : glyph(shape, colour, id);
-    body += `<g transform="translate(${x},${y}) scale(0.72)">${draw(`a${i}`)}</g>`
-      + `<g transform="translate(${x + 62},${y + 12}) scale(0.31)">${draw(`b${i}`)}</g>`
+    body += `<g transform="translate(${x},${y}) scale(0.72)">${draw(shape, colour, `a${i}`, isLetter)}</g>`
+      + `<g transform="translate(${x + 62},${y + 12}) scale(0.31)">${draw(shape, colour, `b${i}`, isLetter)}</g>`
       + `<text x="${x + 96}" y="${y + 32}" fill="#c8cede" font-family="Helvetica,Arial" font-size="17">${clean}</text>`;
   });
   const W = COLS * CW, H = rows * RH + 70;
@@ -172,36 +232,45 @@ function contactSheet() {
 }
 
 const ICONS = [
+  // Crowned crest: the letter is the rank, the colour is the section.
   // Dev and Consultant both sit at the top; colour separates them, not rank.
-  ['Dev',                  'D',       C.ice,    true,  'Dev'],
-  ['Consultant',           'C',       C.gold,   true,  'Consultant'],
-  ['PowerAdmin',           'P',       C.ice,    true,  'PowerAdmin'],
-  ['𝙼𝙰𝙽𝚂𝙸𝙾𝙽 𝙺𝙴𝚈',  'key',     C.gold,   false, 'Mansion Key'],
-  ['V . Global',           'G',       C.ice,    true,  'V Global'],
-  ['P . Global',           'G',       C.blue,   true,  'P Global'],
-  ['G . Global',           'G',       C.green,  true,  'G Global'],
-  ['E . Global',           'G',       C.purple, true,  'E Global'],
-  ['P . MODERATOR',        'M',       C.blue,   true,  'P Moderator'],
-  ['G . MODERATOR',        'M',       C.green,  true,  'G Moderator'],
-  ['E . MODERATOR',        'M',       C.purple, true,  'E Moderator'],
-  ['Server Banned',        'struck',  C.red,    false, 'Server Banned'],
-  ['Public Banned',        'struck',  C.blue,   false, 'Public Banned'],
-  ['Game Banned',          'struck',  C.green,  false, 'Game Banned'],
-  ['Event Banned',         'struck',  C.purple, false, 'Event Banned'],
-  ['Public Muted',         'barred',  C.amber,  false, 'Public Muted'],
-  ['Game Muted',           'barred',  C.amber,  false, 'Game Muted'],
-  ['Entertainment Muted',  'barred',  C.amber,  false, 'Entertainment Muted'],
-  ['ᴀ ɪ ᴏ ɴ │𝙼𝚄𝚂𝙸𝙲 𝚁𝙾𝙱𝙾𝚃│•', 'note', C.purple, false, 'Music Robot'],
-  ['ʙᴏʏ│𝙼𝙴𝙼𝙱𝙴𝚁│•',   'pip',    C.blue,   false, 'boy MEMBER'],
-  ['ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•',  'pip',    C.pink,   false, 'girl MEMBER'],
+  ['Dev',                  'D',    C.ice,    'rank',  'Dev'],
+  ['Consultant',           'C',    C.gold,   'rank',  'Consultant'],
+  ['PowerAdmin',           'P',    C.ice,    'rank',  'PowerAdmin'],
+  ['V . Global',           'G',    C.ice,    'rank',  'V Global'],
+  ['P . Global',           'G',    C.blue,   'rank',  'P Global'],
+  ['G . Global',           'G',    C.green,  'rank',  'G Global'],
+  ['E . Global',           'G',    C.purple, 'rank',  'E Global'],
+  ['P . MODERATOR',        'M',    C.blue,   'rank',  'P Moderator'],
+  ['G . MODERATOR',        'M',    C.green,  'rank',  'G Moderator'],
+  ['E . MODERATOR',        'M',    C.purple, 'rank',  'E Moderator'],
+
+  // Uncrowned shield, glyph carved in: everything that is not a rank.
+  ['𝙼𝙰𝙽𝚂𝙸𝙾𝙽 𝙺𝙴𝚈',  'key',  C.gold,   'carve', 'Mansion Key'],
+  ['Server Banned',        'ban',  C.red,    'carve', 'Server Banned'],
+  ['Public Banned',        'ban',  C.blue,   'carve', 'Public Banned'],
+  ['Game Banned',          'ban',  C.green,  'carve', 'Game Banned'],
+  ['Event Banned',         'ban',  C.purple, 'carve', 'Event Banned'],
+  ['Public Muted',         'mute', C.amber,  'carve', 'Public Muted'],
+  ['Game Muted',           'mute', C.amber,  'carve', 'Game Muted'],
+  ['Entertainment Muted',  'mute', C.amber,  'carve', 'Entertainment Muted'],
+  ['ᴀ ɪ ᴏ ɴ │𝙼𝚄𝚂𝙸𝙲 𝚁𝙾𝙱𝙾𝚃│•', 'note', C.purple, 'carve', 'Music Robot'],
+  ['ʙᴏʏ│𝙼𝙴𝙼𝙱𝙴𝚁│•',   'gem',  C.blue,   'carve', 'boy MEMBER'],
+  ['ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•',  'gem',  C.pink,   'carve', 'girl MEMBER'],
 ];
 
 const FONT = new URL('../../apps/bot/assets/fonts/Vazirmatn-Bold.ttf', import.meta.url).pathname;
 const opts = { fitTo: { mode: 'width', value: 128 },
   font: { fontFiles: [FONT], defaultFontFamily: 'Vazirmatn', loadSystemFonts: false } };
 
-const png = (shape, colour, id, letter) =>
-  Buffer.from(new Resvg(letter ? letterSvg(shape, colour, id) : svg(shape, colour, id), opts).render().asPng());
+const draw = (shape, colour, id, mode) => mode === 'carve'
+  ? crownedLetter('', colour, id, { outline: SHIELD, carved: shape })
+  : crownedLetter(shape, colour, id);
+
+const png = (shape, colour, id, mode) =>
+  Buffer.from(new Resvg(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">`
+    + `${draw(shape, colour, id, mode)}</svg>`, opts).render().asPng());
 
 /** File-safe name, so the pack on disk is readable without the styled glyphs. */
 const slug = n => (ICONS.find(i => i[0] === n)?.[4] ?? n)
