@@ -16,13 +16,17 @@ invented at 2am during a live game is how a game gets ruined.
 
 | Mode | Status | Day structure |
 |---|---|---|
-| Persian Mafia | live | Ejma (first vote) → Defa → Ray-giri (final vote) |
+| Persian Mafia | live | Ray-giri avval → Defa → **Ejma** (the final vote) |
 | **Mafia Scum** | to build | straight to vote, two rounds |
 
-**The Ejma is itself a vote**, not a stage before one. It decides who has to
-defend; nobody is eliminated by it. The elimination happens in the final vote
-after the defences. Calling it a separate step ahead of "the vote" reads as
-though the day holds one ballot when it holds two.
+**The Ejma is the final vote**, not the first. The day opens with a first
+ballot — everyone accuses as many people as they like, nobody is eliminated —
+which decides who has to defend. After the defences comes the Ejma, and the
+elimination happens there.
+
+In code the *first* ballot is keyed `ejma`, which is the opposite of what the
+room calls it. The key is kept to avoid migrating games already in flight; the
+labels are what players see and they are correct. Read the labels, not the key.
 
 **Mafia Scum's defining rule**: players may *claim their role out loud* while
 speaking. A mafia player can claim Doctor. That is the whole point — the game

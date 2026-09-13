@@ -67,7 +67,7 @@ export const SCENARIOS: Scenario[] = [
     key: 'classic', fa: 'ساده', min: 5, max: 12,
     blurb: 'Baraye tazekar ha — faghat naghsh haye asli.',
     roles: [
-      R('mafia', 'مافیا', 'mafia', 1, 'Har shab yek nafar ro mizane.'),
+      R('mafia', 'پدرخوانده', 'mafia', 1, 'Rais e mafia. Har shab yek nafar ro mizane.'),
       R('detective', 'کارآگاه', 'town', 2, 'Estelam.'),
       R('doctor', 'دکتر', 'town', 3, 'Nejat.'),
       R('mafia2', 'مافیای ساده', 'mafia', 4, 'Hamkare mafia.'),

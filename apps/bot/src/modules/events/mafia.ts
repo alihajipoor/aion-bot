@@ -35,7 +35,9 @@ const C = { night: 0x2b2d5c, day: 0xfee75c, mafia: 0xed4245, town: 0x57f287 } as
 /**
  * The day runs in three stages, the way a گرداننده actually runs it:
  *
- *   ejma     everyone accuses as many people as they like; nobody dies
+ *   ejma     the first ballot: everyone accuses as many people as they like
+ *            and nobody dies. Shown in the room as "Ray giri avval" — the
+ *            name "Ejma" belongs to the final vote below.
  *   defense  each accused gets the floor, one at a time
  *   final    a single vote, and only the accused are on the ballot
  *
@@ -50,6 +52,14 @@ interface DayState {
   /** Nights a limited ability has been spent, and self-targets used. */
   uses?: Record<string, number>;
   selfUses?: Record<string, number>;
+  /**
+   * The FIRST ballot — the accusation round that picks who defends.
+   *
+   * The key is a misnomer kept on purpose: renaming it would have to migrate
+   * the state of every game already in flight. In the room, "Ejma" is the
+   * *final* vote and this one is "Ray giri avval". Read the labels, not the
+   * key.
+   */
   ejma?: { votes: Record<string, string[]>; messageId?: string; open?: boolean };
   nominees?: string[];
   defense?: { order: string[]; at: number; until?: number };
@@ -347,10 +357,11 @@ async function console_(ev: EventRow, note?: string) {
       .setStyle(phase === 'night' ? ButtonStyle.Secondary : ButtonStyle.Primary).setDisabled(phase === 'night'),
     new ButtonBuilder().setCustomId(enc('phase', ev.id, 'day')).setLabel('Rooz').setEmoji('☀️')
       .setStyle(phase === 'day' ? ButtonStyle.Secondary : ButtonStyle.Primary).setDisabled(phase === 'day'),
-    new ButtonBuilder().setCustomId(enc('ejma', ev.id)).setLabel('Ejma').setEmoji('🖐️').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(enc('ejma', ev.id)).setLabel('Ray giri avval')
+      .setEmoji('🖐️').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(enc('defense', ev.id)).setLabel('Defa').setEmoji('🗣️')
       .setStyle(ButtonStyle.Primary).setDisabled(!nominees.length),
-    new ButtonBuilder().setCustomId(enc('vote', ev.id)).setLabel('Ray giri').setEmoji('🗳️')
+    new ButtonBuilder().setCustomId(enc('vote', ev.id)).setLabel('Ejma').setEmoji('🗳️')
       .setStyle(ButtonStyle.Danger).setDisabled(!nominees.length),
   ));
 
@@ -390,9 +401,9 @@ async function console_(ev: EventRow, note?: string) {
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       nominees.length
         ? `-# Roo miz: ${nominees.map(id => `<@${id}>`).join(' · ')}`
-          + '  —  Defa mikonan, bad Ray giri-ye akhar.'
-        : '-# Ejma **khodesh ray-e avval-e** — moshakhas mikone ki defa kone, kesi hazf nemishe.'
-          + '\n-# Hazf toye Ray giri-ye akhar ettefagh mioftad.'));
+          + '  —  Defa mikonan, bad **Ejma** (ray-e payani).'
+        : '-# **Ray giri-ye avval**: har kas har chand nafar ke bekhad ray mide, kesi hazf nemishe.'
+          + '\n-# Moshakhas mikone ki defa kone. Hazf toye **Ejma** — ray-e payani — ettefagh mioftad.'));
 
   return { components: [box], flags: (MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral) as number };
 }
@@ -878,7 +889,7 @@ function ejmaCard(ev: EventRow, alive: PlayerRow[], open: boolean) {
             .setValue(p.userId)
             .setDefault((votes[''] ?? []).includes(p.userId))))))
       .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId(enc('ejmaend', ev.id)).setLabel('Bastane ejma')
+        new ButtonBuilder().setCustomId(enc('ejmaend', ev.id)).setLabel('Bastane ray giri avval')
           .setEmoji('🔒').setStyle(ButtonStyle.Danger)));
   }
 
@@ -1049,7 +1060,7 @@ function finalCard(ev: EventRow, nominees: PlayerRow[], aliveCount: number, open
             .setLabel(`${p.seat ?? '?'} · ${(p.userTag ?? p.userId).slice(0, 60)}`)
             .setValue(p.userId)))))
       .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId(enc('closevote', ev.id)).setLabel('Bastane ray giri')
+        new ButtonBuilder().setCustomId(enc('closevote', ev.id)).setLabel('Bastane ejma')
           .setEmoji('🔒').setStyle(ButtonStyle.Danger)));
   }
 
