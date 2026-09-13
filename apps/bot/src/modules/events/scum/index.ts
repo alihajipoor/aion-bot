@@ -87,3 +87,15 @@ export {
 } from './rules.js';
 
 export { publicFacts, nightStory, godRecap, type PublicFacts } from './narrate.js';
+
+/*
+ * Dealing. Kept under its own custom-id namespace rather than SCUM_ID: an
+ * unknown step falls through the console's host check, and the Traitor's own
+ * side-pick DM would be answered with "faghat gardanande".
+ */
+export {
+  SCUM_DEAL_ID, scumDealComponent, dealScum, distribution, mafiaCount,
+  grayAllowance, dealtCounts, limitsFrom, traitorSides, traitorSideOf,
+  GRAY_ONE, GRAY_BOTH, asDealt,
+  type ScumDealConfig, type DealResult, type Shuffle,
+} from './deal.js';

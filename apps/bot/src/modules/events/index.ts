@@ -22,9 +22,12 @@ import {
   type EventRow, type PastEvent,
 } from './store.js';
 import { startMafia, endMafia, mafiaComponent, mafiaModal, setEventFinisher,
-  installMafiaReactionGuard, MAFIA_ID } from './mafia.js';
+  installMafiaReactionGuard, MAFIA_ID,
+  // Aliased: wizard.ts exports its own configOf, which reads a Draft.
+  configOf as mafiaConfigOf } from './mafia.js';
 import {
   SCUM_ID, isScum, startScum, endScum, scumComponent, setScumFinisher,
+  SCUM_DEAL_ID, scumDealComponent, dealScum,
 } from './scum/index.js';
 import { resealEventAccess } from './lockout.js';
 import { startEsmFamil, endEsmFamil, esmComponent, esmModal, esmSelect, ESM_ID } from './esmfamil.js';
@@ -492,8 +495,14 @@ async function doStart(guild: Guild, ev: EventRow): Promise<void> {
 
   let fresh = (await getEvent(ev.id))!;
   if (ev.game === 'mafia') {
-    if (isScum(fresh)) await startScum(guild, fresh);
-    else await startMafia(guild, fresh);
+    if (isScum(fresh)) {
+      // Deal first: startScum reads event_players.role and seeds its counters
+      // from the limits dealScum writes, so the order is not interchangeable.
+      await dealScum(guild, fresh, mafiaConfigOf(fresh));
+      await startScum(guild, (await getEvent(fresh.id))!);
+    } else {
+      await startMafia(guild, fresh);
+    }
   }
   else if (ev.game === 'esmfamil') await startEsmFamil(guild, fresh);
   else if (ev.game === 'bistsoali') await startSoali(guild, fresh);
@@ -696,6 +705,9 @@ export function installEvents(client: AionClient): void {
       if (i.isModalSubmit() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaModal(i); return; }
       if (i.isButton() && i.customId.startsWith(`${SCUM_ID}|`)) { await scumComponent(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${SCUM_ID}|`)) { await scumComponent(i); return; }
+      // Its own namespace: the Traitor answering their side-pick is a player,
+      // not the narrator, and must not meet the console's host check.
+      if (i.isButton() && i.customId.startsWith(`${SCUM_DEAL_ID}|`)) { await scumDealComponent(i); return; }
       if (i.isButton() && i.customId.startsWith(`${WZ}|`)) { await handleWizard(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${WZ}|`)) { await handleWizard(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${WZ}|`)) { await handleTimers(i); return; }
