@@ -56,6 +56,11 @@ const ORDER = [
   'ᴘɪsʜᴛᴀᴢ│𝙳𝙰𝚅𝙰𝚃│•',
   'ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•',
 
+  // A signup marker with no permissions, so it sits with the other cosmetic
+  // roles rather than anywhere near the ladder. Created by mafiaroles.mjs —
+  // run that first, or this refuses on a missing role.
+  'ᴍᴀꜰɪᴀ│𝙿𝙻𝙰𝚈𝙴𝚁│•',
+
   'Λ ɪ ᴏ ɴ │𝙼𝚄𝚂𝙸𝙲 𝚁𝙾𝙱𝙾𝚃│•',
 
   // Integration roles. They have to be listed, not skipped: leaving them out

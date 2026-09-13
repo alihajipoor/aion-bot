@@ -354,3 +354,66 @@ export const eventPlayers = pgTable('event_players', {
   uniqueIndex('event_players_unique_idx').on(t.eventId, t.userId),
   index('event_players_event_idx').on(t.eventId),
 ]);
+
+/* ── mafia records ─────────────────────────────────────────────── */
+
+/**
+ * The two teams a finished game can be won by.
+ *
+ * `shahr`, not `town`: the running game deals roles whose side is `town`, but
+ * the room, the guide channel and Ali's spec all call that side شهر. The stats
+ * are read by players, so they are stored in the players' word; the one place
+ * the two vocabularies meet is `normalizeSide` in lib/mafiaStats.ts.
+ */
+export const mafiaSideEnum = pgEnum('mafia_side', ['mafia', 'shahr']);
+
+/**
+ * One row per finished game — the durable record behind the history channel.
+ *
+ * Events are torn down when they end (their channels are deleted and the row
+ * keeps only a result blob), so a game that is not written down here leaves
+ * nothing a scoreboard could be rebuilt from.
+ *
+ * `eventId` is unique on purpose. A game-end path that fires twice — a retried
+ * button, a restart mid-teardown — would otherwise double every player's
+ * record, and there is no way to tell that apart from two real games later.
+ */
+export const mafiaGames = pgTable('mafia_games', {
+  id:          serial('id').primaryKey(),
+  guildId:     snowflake('guild_id').notNull(),
+  eventId:     integer('event_id').notNull(),
+  /** Scenario it was played under — 'persian', 'scum', or whatever is added. */
+  mode:        text('mode').notNull().default('persian'),
+  winner:      mafiaSideEnum('winner').notNull(),
+  /** God picks it by hand, and may not pick one at all. */
+  mvpUserId:   snowflake('mvp_user_id'),
+  playerCount: integer('player_count').notNull().default(0),
+  endedAt:     timestamp('ended_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  uniqueIndex('mafia_games_event_idx').on(t.eventId),
+  index('mafia_games_guild_idx').on(t.guildId, t.endedAt),
+]);
+
+/**
+ * Running totals per player, kept as a rollup rather than recomputed.
+ *
+ * The per-game roster lives on `event_players`, which is deleted with its
+ * event, so counting from it would quietly lose history. These counters are
+ * incremented once, inside the same write that records the game.
+ *
+ * Wins and losses are split by the side the player was on, because "won 9"
+ * says nothing about whether someone is good at mafia or good at shahr.
+ */
+export const mafiaStats = pgTable('mafia_stats', {
+  guildId:     snowflake('guild_id').notNull(),
+  userId:      snowflake('user_id').notNull(),
+  games:       integer('games').notNull().default(0),
+  winsMafia:   integer('wins_mafia').notNull().default(0),
+  winsShahr:   integer('wins_shahr').notNull().default(0),
+  lossesMafia: integer('losses_mafia').notNull().default(0),
+  lossesShahr: integer('losses_shahr').notNull().default(0),
+  mvpCount:    integer('mvp_count').notNull().default(0),
+}, t => [
+  primaryKey({ columns: [t.guildId, t.userId] }),
+  index('mafia_stats_guild_games_idx').on(t.guildId, t.games),
+]);
