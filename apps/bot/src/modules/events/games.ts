@@ -38,7 +38,7 @@ export const SCENARIOS: Scenario[] = [
     roles: [
       R('godfather', 'پدرخوانده', 'mafia', 1, 'Shellik e shab roosh asar nadare. Baraye karagah shahrvand neshoon dade mishe.'),
       R('detective', 'کارآگاه', 'town', 2, 'Har shab yek nafar ro estelam mikone.'),
-      R('doctor', 'دکتر شهر', 'town', 3, 'Har shab yek nafar ro nejat mide — khodesh ham mahdoodiyat nadare.'),
+      R('doctor', 'دکتر شهر', 'town', 3, 'Shabi ye nafar ro nejat mide. Mitoone khodesh ro ham entekhab kone, har shab ke bekhad.'),
       R('lecter', 'دکتر لکتر', 'mafia', 4, 'Har shab yek mafia ro nejat mide; khodesh ro faghat yek bar.'),
       R('sniper', 'اسنایپر', 'town', 5, 'Do shellik dare. Age be shahrvand bezane khodesh mimire.'),
       R('matador', 'ماتادور', 'mafia', 6, 'Har shab yek naghsh ro block mikone.'),
