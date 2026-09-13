@@ -23,6 +23,9 @@ import {
 } from './store.js';
 import { startMafia, endMafia, mafiaComponent, mafiaModal, setEventFinisher,
   installMafiaReactionGuard, MAFIA_ID } from './mafia.js';
+import {
+  SCUM_ID, isScum, startScum, endScum, scumComponent, setScumFinisher,
+} from './scum/index.js';
 import { resealEventAccess } from './lockout.js';
 import { startEsmFamil, endEsmFamil, esmComponent, esmModal, esmSelect, ESM_ID } from './esmfamil.js';
 import { startSoali, endSoali, soaliComponent, soaliModal, SOALI_ID } from './soali.js';
@@ -204,7 +207,10 @@ export async function controlCard(ev: EventRow) {
     row.addComponents(
       new ButtonBuilder().setCustomId(enc('end', ev.id)).setLabel('Payan').setEmoji('🏁').setStyle(ButtonStyle.Danger));
     if (ev.game === 'mafia') {
-      row.addComponents(new ButtonBuilder().setCustomId(`${MAFIA_ID}|console|${ev.id}`)
+      // Both modes are game 'mafia'; the mode lives in state, so the button has
+      // to ask rather than assume, or Scum opens the Persian console.
+      const id = isScum(ev) ? SCUM_ID : MAFIA_ID;
+      row.addComponents(new ButtonBuilder().setCustomId(`${id}|console|${ev.id}`)
         .setLabel('Console').setEmoji('🎛').setStyle(ButtonStyle.Primary));
     }
   }
@@ -485,7 +491,10 @@ async function doStart(guild: Guild, ev: EventRow): Promise<void> {
   }
 
   let fresh = (await getEvent(ev.id))!;
-  if (ev.game === 'mafia') await startMafia(guild, fresh);
+  if (ev.game === 'mafia') {
+    if (isScum(fresh)) await startScum(guild, fresh);
+    else await startMafia(guild, fresh);
+  }
   else if (ev.game === 'esmfamil') await startEsmFamil(guild, fresh);
   else if (ev.game === 'bistsoali') await startSoali(guild, fresh);
   fresh = (await getEvent(ev.id))!;
@@ -554,7 +563,10 @@ async function end(i: ButtonInteraction, ev: EventRow): Promise<void> {
 
 async function doEnd(guild: Guild, ev: EventRow): Promise<void> {
 
-  if (ev.game === 'mafia') await endMafia(guild, ev).catch(e => log.warn('mafia teardown', e));
+  if (ev.game === 'mafia') {
+    await (isScum(ev) ? endScum(guild, ev) : endMafia(guild, ev))
+      .catch(e => log.warn('mafia teardown', e));
+  }
   else if (ev.game === 'esmfamil') await endEsmFamil(guild, ev).catch(() => {});
   else if (ev.game === 'bistsoali') await endSoali(guild, ev).catch(() => {});
 
@@ -670,6 +682,7 @@ export function installEvents(client: AionClient): void {
   // Mafia's win buttons end the whole event, but that flow lives here. Handing
   // the function over avoids importing this file from one it already imports.
   setEventFinisher((guild, ev) => doEnd(guild, ev));
+  setScumFinisher((guild, ev) => doEnd(guild, ev));
   installMafiaReactionGuard(client);
   client.on(Events.InteractionCreate, async (i) => {
     try {
@@ -681,6 +694,8 @@ export function installEvents(client: AionClient): void {
       if (i.isButton() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaComponent(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaComponent(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaModal(i); return; }
+      if (i.isButton() && i.customId.startsWith(`${SCUM_ID}|`)) { await scumComponent(i); return; }
+      if (i.isStringSelectMenu() && i.customId.startsWith(`${SCUM_ID}|`)) { await scumComponent(i); return; }
       if (i.isButton() && i.customId.startsWith(`${WZ}|`)) { await handleWizard(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${WZ}|`)) { await handleWizard(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${WZ}|`)) { await handleTimers(i); return; }
