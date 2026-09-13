@@ -389,8 +389,10 @@ async function console_(ev: EventRow, note?: string) {
   box.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       nominees.length
-        ? `-# Roo miz: ${nominees.map(id => `<@${id}>`).join(' · ')}  —  Defa va bad Ray giri.`
-        : '-# Ejma aval: hame har chand nafar ke bekhan ray midan, kesi hazf nemishe.'));
+        ? `-# Roo miz: ${nominees.map(id => `<@${id}>`).join(' · ')}`
+          + '  —  Defa mikonan, bad Ray giri-ye akhar.'
+        : '-# Ejma **khodesh ray-e avval-e** — moshakhas mikone ki defa kone, kesi hazf nemishe.'
+          + '\n-# Hazf toye Ray giri-ye akhar ettefagh mioftad.'));
 
   return { components: [box], flags: (MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral) as number };
 }

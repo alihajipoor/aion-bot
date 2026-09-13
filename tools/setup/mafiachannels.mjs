@@ -47,7 +47,11 @@ const L = (s) => isolate(s);
  * around it and then lose to a rule it got wrong. Add a role in games.ts or
  * rules.ts and it appears here on the next --repost; nobody has to remember.
  */
-const SIDE_FA = { mafia: '🔴 مافیا', town: '🟢 شهر', shahr: '🟢 شهر', solo: '⚪ تک‌نفره', gray: '⚪ خاکستری' };
+// The side reads as a note about the role, not as part of its name: "مافیا
+// پدرخوانده" parses as one title and has to be untangled. Dot in front, side in
+// brackets behind.
+const SIDE_DOT  = { mafia: '🔴', town: '🟢', shahr: '🟢', solo: '⚪', gray: '⚪' };
+const SIDE_WORD = { mafia: 'مافیا', town: 'شهر', shahr: 'شهر', solo: 'تک‌نفره', gray: 'خاکستری' };
 
 /** One Persian-Mafia scenario, as its own complete ruleset. */
 const scenarioPage = (sc) => [
@@ -56,9 +60,14 @@ const scenarioPage = (sc) => [
   `تعداد بازیکن: **${fa(sc.min)} تا ${fa(sc.max)}** نفر`,
   ...(sc.blurb ? ['', `-# ${L(sc.blurb)}`] : []),
   '',
+  '### ساختار روز',
+  '> رای‌گیری اول (اجماع) ← دفاع ← رای‌گیری پایانی',
+  '> -# اجماع یه رای‌گیریه که فقط مشخص می‌کنه کیا دفاع کنن. حذف توی رای پایانیه.',
+  '',
   '### نقش‌ها',
   ...sc.roles.map(r =>
-    `> ${SIDE_FA[r.side] ?? r.side} **${r.fa}**${r.optional ? ' _(اختیاری)_' : ''}` +
+    `> ${SIDE_DOT[r.side] ?? ''} **${r.fa}**` +
+    ` (${SIDE_WORD[r.side] ?? r.side}${r.optional ? ' · اختیاری' : ''})` +
     (r.blurb ? `\n>    -# ${L(r.blurb)}` : '')),
 ];
 
@@ -68,8 +77,9 @@ const scumRolesPage = () => {
   const group = (side, title) => [
     '', `### ${title}`,
     ...all.filter(r => r.side === side).map(r => {
-      const counts = r.countsAs !== r.side ? `  -# در شمارش: ${SIDE_FA[r.countsAs]}` : '';
-      return `> **${r.fa}**${r.night ? ' 🌙' : ''}${counts}`;
+      const counts = r.countsAs !== r.side
+        ? `  -# در شمارش: ${SIDE_WORD[r.countsAs] ?? r.countsAs}` : '';
+      return `> ${SIDE_DOT[r.side] ?? ''} **${r.fa}**${r.night ? ' 🌙' : ''}${counts}`;
     }),
   ];
   return [
@@ -94,8 +104,12 @@ const PAGES = [
     '',
     '## 🎮 حالت‌های بازی',
     '',
-    `**مافیای ایرانی** — ساختار روز: اجماع ← دفاع ← رای‌گیری`,
-    `**مافیا اسکام** (${L('Mafia Scum')}) — مستقیم می‌ره سر رای‌گیری، دو دور`,
+    `**مافیای ایرانی** — رای‌گیری اول (اجماع) ← دفاع ← رای‌گیری پایانی`,
+    `**مافیا اسکام** (${L('Mafia Scum')}) — بدون لابی، مستقیم رای‌گیری، دو دور`,
+    '',
+    '**اجماع خودش یه رای‌گیریه** — یه مرحله‌ی جدا قبل از رای نیست.',
+    'اون رای مشخص می‌کنه کیا باید دفاع کنن؛ کسی با اجماع حذف نمی‌شه.',
+    'بعد از دفاع‌ها رای‌گیری پایانی انجام می‌شه و حذف همون‌جا اتفاق می‌افته.',
     '',
     `قانون اصلی ${L('Mafia Scum')} اینه که **می‌تونی وسط صحبت نقشت رو بگی**.`,
     'یه مافیا می‌تونه ادعا کنه دکتره. کل بازی همینه: اینکه به ادعای کی باور داری،',
