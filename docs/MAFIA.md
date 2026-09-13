@@ -52,7 +52,7 @@ Usually only one of these appears; both only in a large game.
 | Role | Ability |
 |---|---|
 | **Sniper** | Shoots at night. Total bullets set by God at setup; **one shot per night** max. |
-| **Rooyintan** (رویین‌تن) | Cannot be killed by any shot. Removed only by vote, by God, or by Terrorist. |
+| **Rooyintan** (رویین‌تن) | Cannot be killed by a shot — **unless drunk that night**. Otherwise removed only by vote, by God, or by Terrorist. |
 | **Saghi** (ساقی) | Makes one player drunk at night; that player's ability does not work that night. |
 | **Shahrdar** (شهردار) | May cancel a completed final vote. Limited uses, set by God. |
 | **Kalantar** (کلانتر) | Gives a gun to another player at night. Never shoots themselves. |
@@ -94,7 +94,8 @@ Saghi's target loses their ability that night, whatever it is:
 - **Rooyintan drunk → immunity is gone; a shot kills them that night.**
 - Detective drunk → the answer comes back **inverted**.
 - Natasha drunk → nobody is silenced; that target is **[filled]** still spent.
-- Kalantar drunk → the gun is not handed over.
+- Kalantar drunk → the gun is not handed over, and the gun is **[filled]** not
+  spent — matching a drunk shooter, who keeps their bullet.
 
 ### Detective results
 
