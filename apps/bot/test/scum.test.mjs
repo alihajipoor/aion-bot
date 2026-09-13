@@ -13,6 +13,7 @@ import {
   SCUM_ROLES, roleOf, resolveNight, resolveDayVote, terroristTriggers, counts,
   fireGun, canDisable,
 } from '../dist/modules/events/scum/rules.js';
+import { publicFacts, nightStory, godRecap } from '../dist/modules/events/scum/narrate.js';
 import * as rules from '../dist/modules/events/scum/rules.js';
 
 /* ── fixtures ──────────────────────────────────────────────────── */
@@ -704,4 +705,52 @@ test('the bot never decides the winner — God does', () => {
   for (const name of ['checkWin', 'winner', 'isGameOver', 'resolveWin']) {
     assert.equal(rules[name], undefined, `${name} must not exist`);
   }
+});
+
+/* ── the night story ───────────────────────────────────────────── */
+
+test('the story never reveals who acted', () => {
+  // A full night: saghi drunks the doctor, don shoots, detective asks,
+  // natasha silences, kalantar arms someone. The town may learn exactly two
+  // things from it — who died, and who cannot speak.
+  const res = resolveNight(
+    { players: [P('sa', 'saghi'), P('dr', 'doctor'), P('dn', 'don'),
+                P('de', 'detective', 1), P('na', 'natasha'), P('ka', 'kalantar', 1),
+                P('v', 'shahrvand'), P('w', 'shahrvand')] },
+    [act('sa', 'dr'), act('dr', 'v'), act('dn', 'v'),
+     act('de', 'dn'), act('na', 'w'), act('ka', 'w')],
+  );
+  const story = nightStory(publicFacts(res, id => id, 1));
+
+  // Whole words only. "shomast" ("it's your turn") contains "mast", and a
+  // substring check would call that a leak — the test would then be training us
+  // to avoid ordinary Persian rather than to avoid revealing anything.
+  for (const secret of ['saghi', 'doctor', 'don', 'detective', 'natasha',
+                        'kalantar', 'nejat', 'estelam', 'shellik', 'mast']) {
+    assert.ok(!new RegExp(`\\b${secret}\\b`, 'i').test(story),
+      `the story leaked "${secret}":\n${story}`);
+  }
+  assert.ok(/\bv\b/.test(story), 'the dead must be named');
+});
+
+test('a quiet night says nothing about why it was quiet', () => {
+  const res = resolveNight(
+    { players: [P('dr', 'doctor'), P('dn', 'don'), P('v', 'shahrvand')] },
+    [act('dr', 'v'), act('dn', 'v')],           // saved: the shot lands on nobody
+  );
+  assert.deepEqual(res.deaths, []);
+  const story = nightStory(publicFacts(res, id => id, 2));
+  for (const leak of ['nejat', 'doctor', 'save', 'shellik']) {
+    assert.ok(!new RegExp(`\\b${leak}\\b`, 'i').test(story), `leaked "${leak}":\n${story}`);
+  }
+});
+
+test("God's recap is the opposite — it holds what the story may not", () => {
+  const res = resolveNight(
+    { players: [P('sa', 'saghi'), P('ka', 'kalantar', 1), P('v', 'shahrvand')] },
+    [act('sa', 'ka'), act('ka', 'v')],
+  );
+  const recap = godRecap(res, id => id, 1);
+  assert.ok(recap.includes('alaki'), 'God must be told the gun is a blank');
+  assert.ok(recap.includes('v'), 'and who is carrying it');
 });
