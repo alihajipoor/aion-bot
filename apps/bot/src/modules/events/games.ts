@@ -139,6 +139,13 @@ export interface MafiaConfig {
   /** Which reactions survive when a phase is set to `emoji`. */
   allowedEmoji: string[];
 
+  /**
+   * Post the night's story in text as well. Off by default: God reads it out
+   * over voice, and a second version in writing either contradicts them or
+   * steals the moment.
+   */
+  nightStoryPublic: boolean;
+
   /** Close the vote on a timer, or wait for God to press the button. */
   voteAutoClose: boolean;
   /** Signups restricted to the Mafia Player role. */
@@ -169,6 +176,7 @@ export const MAFIA_DEFAULTS: MafiaConfig = {
   },
   allowedEmoji: ['👍', '👎'],
 
+  nightStoryPublic: false,
   voteAutoClose: false,
   signupGated: false,
 
