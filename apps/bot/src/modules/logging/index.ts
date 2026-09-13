@@ -82,6 +82,7 @@ export function installLogging(client: AionClient): void {
     let via = '';
     let inviteCode: string | null = null;
     let inviterId: string | null = null;
+    let guessed = false;
 
     try {
       const before = inviteUses.get(member.guild.id);
@@ -103,7 +104,7 @@ export function installLogging(client: AionClient): void {
           }
           if (!prev && uses > 0 && !guess) guess = { code: inv.code, inviterId: inv.inviterId ?? null };
         }
-        if (!inviteCode && guess) { inviteCode = guess.code; inviterId = guess.inviterId; }
+        if (!inviteCode && guess) { inviteCode = guess.code; inviterId = guess.inviterId; guessed = true; }
         if (inviteCode) {
           via = ` · invite \`${inviteCode}\`${inviterId ? ` from <@${inviterId}>` : ''}`;
         }
@@ -116,7 +117,7 @@ export function installLogging(client: AionClient): void {
     // Recorded so a later leave can still say who brought them in.
     try {
       await getDb().insert(memberJoins).values({
-        guildId: member.guild.id, userId: member.id, inviteCode, inviterId,
+        guildId: member.guild.id, userId: member.id, inviteCode, inviterId, guessed,
       });
     } catch { /* not fatal */ }
 
@@ -151,6 +152,22 @@ export function installLogging(client: AionClient): void {
   });
 
   client.on(Events.GuildMemberRemove, async (member: GuildMember | PartialGuildMember) => {
+    // Every departure closes the join row, whether it was a leave, a kick or a
+    // ban, so retention figures are not quietly missing the people we removed.
+    // Scoring never reads this: a credit, once earned, stands.
+    let inviterId: string | null = null;
+    try {
+      const [row] = await getDb().select({ id: memberJoins.id, inviterId: memberJoins.inviterId })
+        .from(memberJoins)
+        .where(and(eq(memberJoins.guildId, member.guild.id), eq(memberJoins.userId, member.id)))
+        .orderBy(desc(memberJoins.id)).limit(1);
+      if (row) {
+        inviterId = row.inviterId;
+        await getDb().update(memberJoins).set({ leftAt: new Date() })
+          .where(eq(memberJoins.id, row.id));
+      }
+    } catch { /* not fatal */ }
+
     if (isIgnored(`kick:${member.id}`)) return;
     // Leave and kick are the same gateway event; only the audit log tells them apart.
     const kick = await waitForAudit(AuditLogEvent.MemberKick, member.id);
@@ -159,14 +176,7 @@ export function installLogging(client: AionClient): void {
         `${now()} 🚫 ${u(member.user)} was **kicked**${byWhom(kick.executorId)}` +
         `${kick.reason ? ` — ${isolate(kick.reason)}` : ''}`, av(member.user));
     } else {
-      let invitedBy = '';
-      try {
-        const [row] = await getDb().select({ inviterId: memberJoins.inviterId }).from(memberJoins)
-          .where(and(eq(memberJoins.guildId, member.guild.id), eq(memberJoins.userId, member.id)))
-          .orderBy(desc(memberJoins.id)).limit(1);
-        if (row?.inviterId) invitedBy = `Was invited by <@${row.inviterId}>`;
-      } catch { /* not fatal */ }
-
+      const invitedBy = inviterId ? `Was invited by <@${inviterId}>` : '';
       emitLog(member.guild, 'memberLeave', [
         title('📤', 'Member left'), u(member.user),
         ...(invitedBy ? [invitedBy] : []), `-# ${now()}`,

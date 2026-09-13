@@ -211,8 +211,38 @@ export const memberJoins = pgTable('member_joins', {
   userId:     snowflake('user_id').notNull(),
   inviteCode: text('invite_code'),
   inviterId:  snowflake('inviter_id'),
+  /**
+   * True when the inviter was inferred rather than observed. The join diff is
+   * certain only for invites the cache already knew about; a join through an
+   * invite created while the bot was down is a best guess. Harmless in a log
+   * line, worth reviewing by hand when a prize depends on the count.
+   */
+  guessed:    boolean('guessed').notNull().default(false),
   joinedAt:   timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
-}, t => [index('member_joins_user_idx').on(t.guildId, t.userId)]);
+  /** Recorded for retention, never for scoring: a credit already earned stands. */
+  leftAt:     timestamp('left_at', { withTimezone: true }),
+}, t => [
+  index('member_joins_user_idx').on(t.guildId, t.userId),
+  index('member_joins_inviter_idx').on(t.guildId, t.inviterId),
+]);
+
+/* ── giveaways ─────────────────────────────────────────────────── */
+
+export const giveaways = pgTable('giveaways', {
+  id:        serial('id').primaryKey(),
+  guildId:   snowflake('guild_id').notNull(),
+  title:     text('title').notNull(),
+  /** How old an invited account must already be, in days, to count. */
+  minAccountAgeDays: integer('min_account_age_days').notNull().default(30),
+  /** Minimum qualified invites for 1st, 2nd and 3rd place. */
+  floors:    jsonb('floors').$type<number[]>().notNull().default([10, 7, 5]),
+  startsAt:  timestamp('starts_at', { withTimezone: true }).notNull().defaultNow(),
+  endsAt:    timestamp('ends_at', { withTimezone: true }).notNull(),
+  /** Set when the board is frozen; the result below is then the record. */
+  closedAt:  timestamp('closed_at', { withTimezone: true }),
+  results:   jsonb('results').$type<{ userId: string; count: number }[]>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [index('giveaways_guild_idx').on(t.guildId, t.closedAt)]);
 
 /* ── panel ─────────────────────────────────────────────────────── */
 
