@@ -68,7 +68,11 @@ const ORDER = [
   // which is how Jockie ended up sitting between second and third place.
   'Jockie Music (2)',
   'SoundCloud',
-  'Server Booster',
+  // Server Booster is deliberately absent. It is Discord's own premium
+  // subscriber role: the API refuses to reposition it however high the bot
+  // sits, so listing it makes every reorder fail with Missing Permissions the
+  // moment its slot would move. It stays where Discord keeps it and the rest
+  // of the list flows around it.
 
   '⠂Register ⎯⎯⎯⎯⎯⏋',
   'ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•',
@@ -95,9 +99,10 @@ c.once('clientReady', async () => {
     // The bot's own role cannot be moved by the bot, and @everyone is fixed at
     // the bottom. Everything else, integration roles included, is ours to order.
     const mine = g.members.me?.roles.botRole?.id;
-    const ordered = resolved.map(r => r.role).filter(r => r.id !== mine);
+    const immovable = r => r.id === mine || r.tags?.premiumSubscriberRole;
+    const ordered = resolved.map(r => r.role).filter(r => !immovable(r));
     const before = [...g.roles.cache.values()]
-      .filter(r => r.id !== g.id && r.id !== mine)
+      .filter(r => r.id !== g.id && !immovable(r))
       .sort((a, b) => b.position - a.position).map(r => r.name);
 
     // Bottom of the list upwards, so position 1 is the lowest named role.
