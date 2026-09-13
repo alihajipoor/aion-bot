@@ -19,6 +19,7 @@ on:
           - giveaway-refresh
           - giveaway-floors
           - giveaway-joins
+          - giveaway-window
           - giveaway-start
           - giveaway-close
       title:
@@ -29,6 +30,10 @@ on:
         description: Duration in days (start only)
         type: string
         default: "21"
+      back:
+        description: Hours to reach back (window only)
+        type: string
+        default: "6"
       floors:
         description: Minimum invites for 1st,2nd,3rd (start and floors)
         type: string
@@ -50,6 +55,7 @@ jobs:
           TITLE: ${{ inputs.title }}
           DAYS: ${{ inputs.days }}
           FLOORS: ${{ inputs.floors }}
+          BACK: ${{ inputs.back }}
         run: |
           set -euo pipefail
           if [ -z "$KEY" ]; then echo "VPS_SSH_KEY not set"; exit 1; fi
@@ -58,7 +64,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=20 "root@$HOST" \
-            "TASK='$TASK' TITLE='$TITLE' DAYS='$DAYS' FLOORS='$FLOORS' bash -s" <<'EOSSH'
+            "TASK='$TASK' TITLE='$TITLE' DAYS='$DAYS' FLOORS='$FLOORS' BACK='$BACK' bash -s" <<'EOSSH'
           set -euo pipefail
           APP=/opt/aion
           cd "$APP"
@@ -66,5 +72,5 @@ jobs:
           sudo -u aionbot \
             --preserve-env=DISCORD_TOKEN,DISCORD_CLIENT_ID,LIVE_GUILD_ID,DATABASE_URL,NODE_ENV,LOG_LEVEL \
             node "$APP/apps/bot/dist/ops.js" "$TASK" \
-              --title "$TITLE" --days "$DAYS" --floors "$FLOORS"
+              --title "$TITLE" --days "$DAYS" --floors "$FLOORS" --back "$BACK"
           EOSSH

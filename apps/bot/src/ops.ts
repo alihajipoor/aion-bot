@@ -193,11 +193,39 @@ async function joins(): Promise<void> {
   }
 }
 
+/**
+ * Moves the window's start, so invites made shortly before the run began count.
+ *
+ * Backdating is safe against the obvious exploit: "already a member" is decided
+ * against this same boundary, so pulling it earlier does not turn long-standing
+ * members into fresh invites — it only reaches joins that genuinely happened in
+ * that stretch.
+ */
+async function setWindow(): Promise<void> {
+  const g = await openGiveaway(config.guildId);
+  if (!g) { console.error('nothing open'); process.exitCode = 1; return; }
+  const back = Number(flag('back') ?? NaN);
+  if (!Number.isFinite(back) || back <= 0 || back > 720) {
+    console.error(`bad --back: ${flag('back')} — hours to reach back, 1 to 720`);
+    process.exitCode = 1; return;
+  }
+  const startsAt = new Date(g.startsAt.getTime() - back * 3_600_000);
+  await getDb().update(giveaways).set({ startsAt }).where(eq(giveaways.id, g.id));
+  console.log(`window for #${g.id}: ${g.startsAt.toISOString()} -> ${startsAt.toISOString()} (back ${back}h)`);
+
+  await withGuild(async guild => {
+    await refreshAnnouncement(guild);   // it quotes the cut-off
+    await refreshBoard(guild);          // and the standings change
+  });
+  console.log('announcement and board refreshed in place');
+}
+
 const tasks: Record<string, () => Promise<void>> = {
   'giveaway-review': review,
   'giveaway-refresh': refresh,
   'giveaway-floors': setFloors,
   'giveaway-joins': joins,
+  'giveaway-window': setWindow,
   'giveaway-start': start,
   'giveaway-close': close,
 };

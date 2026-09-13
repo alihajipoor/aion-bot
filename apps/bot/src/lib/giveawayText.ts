@@ -1,4 +1,5 @@
 import type { giveaways } from '@aion/db';
+import { isolate } from './text.js';
 
 type Row = typeof giveaways.$inferSelect;
 
@@ -14,6 +15,7 @@ const fa = (n: number | string) => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶
  */
 export function announcement(g: Row): string {
   const ends = `<t:${Math.floor(g.endsAt.getTime() / 1000)}:R>`;
+  const from = `<t:${Math.floor(g.startsAt.getTime() / 1000)}:f>`;
   const [first = 100, second = 50, third = 30] = g.floors;
 
   return [
@@ -21,6 +23,9 @@ export function announcement(g: Row): string {
     '',
     'هر چقدر آدم بیشتری به سرور بیاری، جایزه‌ی بزرگ‌تری می‌بری.',
     `مسابقه ${fa(3)} هفته‌ست و ${ends} تموم می‌شه.`,
+    // Rendered in each reader's own timezone by Discord, which is the only way
+    // to state a cut-off without starting an argument about clocks.
+    `دعوت‌هایی که از ${isolate(from)} به بعد ثبت شدن حساب می‌شن.`,
     '',
     '## ⚠️ شرط اصلی',
     '',
