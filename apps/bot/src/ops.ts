@@ -19,7 +19,7 @@ import { getDb, giveaways } from '@aion/db';
 import { config } from './config.js';
 import { openGiveaway, scoreInvites, unattributedJoins } from './lib/giveaway.js';
 import { REASON_TEXT, type Reason } from './lib/invites.js';
-import { postAnnouncement, awardPodium } from './modules/giveawayPoster.js';
+import { postAnnouncement, awardPodium, refreshAnnouncement } from './modules/giveawayPoster.js';
 
 const argv = process.argv.slice(2);
 const task = argv[0];
@@ -121,8 +121,16 @@ async function close(): Promise<void> {
   console.log(winners.length ? `awarded:\n  ${winners.join('\n  ')}` : 'nobody cleared the floor — no place awarded');
 }
 
+/** Corrects the text of a live announcement without posting a new one. */
+async function refresh(): Promise<void> {
+  const ok = await withGuild(async g => refreshAnnouncement(g));
+  console.log(ok ? 'announcement refreshed in place' : 'nothing to refresh');
+  if (!ok) process.exitCode = 1;
+}
+
 const tasks: Record<string, () => Promise<void>> = {
   'giveaway-review': review,
+  'giveaway-refresh': refresh,
   'giveaway-start': start,
   'giveaway-close': close,
 };

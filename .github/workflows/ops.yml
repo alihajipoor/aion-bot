@@ -16,6 +16,7 @@ on:
         type: choice
         options:
           - giveaway-review
+          - giveaway-refresh
           - giveaway-start
           - giveaway-close
       title:

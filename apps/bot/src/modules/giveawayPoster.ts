@@ -127,6 +127,38 @@ export async function postAnnouncement(guild: Guild): Promise<void> {
 }
 
 /**
+ * Rewrites the announcement that is already up, in place.
+ *
+ * A correction to live text should not cost the server a second @everyone, and
+ * delete-and-repost would. Editing keeps the message, its position and its
+ * reactions, and Discord does not re-ping an edit.
+ */
+export async function refreshAnnouncement(guild: Guild): Promise<boolean> {
+  const g = await openGiveaway(guild.id);
+  if (!g) { log.warn('nothing open to refresh'); return false; }
+  const channel = giveawayChannel(guild);
+  const marks = await readMarks(guild.id, guild.name);
+  const id = marks.giveawayIds?.[0];
+  if (!channel || !id) { log.warn('no announcement on record to edit'); return false; }
+
+  const msg = await channel.messages.fetch(id).catch(() => null);
+  if (!msg) { log.warn(`announcement ${id} is gone`); return false; }
+
+  const notice = new ContainerBuilder().setAccentColor(ACCENT);
+  notice.addTextDisplayComponents(new TextDisplayBuilder().setContent('@everyone'));
+  notice.addSeparatorComponents(new SeparatorBuilder());
+  notice.addTextDisplayComponents(new TextDisplayBuilder().setContent(announcement(g)));
+
+  await msg.edit({
+    components: [notice, buttons()],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },        // an edit must not ring a second time
+  });
+  log.info('announcement edited in place');
+  return true;
+}
+
+/**
  * Keeps the recruiter role matching the count, in both directions.
  *
  * Derived from the score rather than granted at the moment someone crosses the
