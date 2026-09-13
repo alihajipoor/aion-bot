@@ -44,6 +44,13 @@ c.once('clientReady', async () => {
       ...STAFF.map(n => g.roles.cache.find(r => foldRole(r.name) === foldRole(n)))
         .filter(Boolean)
         .map(r => ({ id: r.id, allow: [P.SendMessages, P.ManageMessages] })),
+      // Listed here because set() below is authoritative: leaving this to
+      // sanctionperms.mjs means re-running this tool strips the ban back off,
+      // and a banned member quietly regains a channel nobody re-checks.
+      ...(() => {
+        const sb = g.roles.cache.find(r => foldRole(r.name) === foldRole('Server Banned'));
+        return sb ? [{ id: sb.id, deny: [P.ViewChannel] }] : [];
+      })(),
     ];
 
     const existing = chans.find(x => x?.type === ChannelType.GuildText && x.name === NAME.toLowerCase()

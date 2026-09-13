@@ -17,6 +17,8 @@ import 'dotenv/config';
 import { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits as P } from 'discord.js';
 import { foldRole } from '../../apps/bot/dist/lib/roles.js';
 import { asciiFold, isolate, num } from '../../apps/bot/dist/lib/text.js';
+import { SCENARIOS } from '../../apps/bot/dist/modules/events/games.js';
+import { SCUM_ROLES } from '../../apps/bot/dist/modules/events/scum/rules.js';
 
 const APPLY  = process.argv.includes('--apply');
 const REPOST = process.argv.includes('--repost');
@@ -38,7 +40,52 @@ const fa = (n) => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)
 // and the line reads as nonsense.
 const L = (s) => isolate(s);
 
+/*
+ * Role lists are generated from the code that deals them, never typed out here.
+ *
+ * A guide that disagrees with the game is worse than no guide: players plan
+ * around it and then lose to a rule it got wrong. Add a role in games.ts or
+ * rules.ts and it appears here on the next --repost; nobody has to remember.
+ */
+const SIDE_FA = { mafia: '🔴 مافیا', town: '🟢 شهر', shahr: '🟢 شهر', solo: '⚪ تک‌نفره', gray: '⚪ خاکستری' };
+
+/** One Persian-Mafia scenario, as its own complete ruleset. */
+const scenarioPage = (sc) => [
+  `## 🎲 مافیای ایرانی — سناریوی ${sc.fa}`,
+  '',
+  `تعداد بازیکن: **${fa(sc.min)} تا ${fa(sc.max)}** نفر`,
+  ...(sc.blurb ? ['', `-# ${L(sc.blurb)}`] : []),
+  '',
+  '### نقش‌ها',
+  ...sc.roles.map(r =>
+    `> ${SIDE_FA[r.side] ?? r.side} **${r.fa}**${r.optional ? ' _(اختیاری)_' : ''}` +
+    (r.blurb ? `\n>    -# ${L(r.blurb)}` : '')),
+];
+
+/** The Scum cast, grouped by side, generated from the rules engine. */
+const scumRolesPage = () => {
+  const all = Object.values(SCUM_ROLES);
+  const group = (side, title) => [
+    '', `### ${title}`,
+    ...all.filter(r => r.side === side).map(r => {
+      const counts = r.countsAs !== r.side ? `  -# در شمارش: ${SIDE_FA[r.countsAs]}` : '';
+      return `> **${r.fa}**${r.night ? ' 🌙' : ''}${counts}`;
+    }),
+  ];
+  return [
+    '## 🃏 مافیا اسکام — فهرست نقش‌ها',
+    '',
+    '🌙 یعنی این نقش شب کاری انجام می‌ده.',
+    ...group('shahr', '🟢 شهر'),
+    ...group('mafia', '🔴 مافیا'),
+    ...group('gray', '⚪ خاکستری — تیم نیستن'),
+    '',
+    '-# جزئیات هر قدرت توی پست‌های بعدیه.',
+  ];
+};
+
 const PAGES = [
+
   [
     '# 🕵️ راهنمای مافیای آیون',
     '',
@@ -200,6 +247,12 @@ const PAGES = [
   ],
 ];
 
+// Persian Mafia gets a full ruleset per scenario, then the Scum cast — inserted
+// after the opening page so each mode's rules sit together rather than
+// interleaved.
+PAGES.splice(1, 0, ...SCENARIOS.map(scenarioPage), scumRolesPage());
+
+
 /* ── the tool ──────────────────────────────────────────────────── */
 
 const c = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -225,6 +278,19 @@ c.once('clientReady', async () => {
       if (!staffRoles.some(r => foldRole(r.name) === foldRole(n))) console.warn(`! role not found: ${n}`);
     }
 
+    // These channels live in QUIDDITCH, so they carry that section's sanctions.
+    //
+    // They have to be in THIS list rather than left to sanctionperms.mjs,
+    // because set() below is authoritative: running this tool after that one
+    // would silently strip the ban and the mute back off again, and a banned
+    // member would quietly regain a channel nobody thought to re-check. Listing
+    // them here makes the two tools agree whichever order they are run in.
+    const sanction = (name, perms) => {
+      const r = g.roles.cache.find(x => foldRole(x.name) === foldRole(name));
+      if (!r) { console.warn(`! sanction role not found: ${name}`); return []; }
+      return [{ id: r.id, deny: perms }];
+    };
+
     const overwrites = [
       { id: g.roles.everyone.id,
         allow: [P.ViewChannel, P.ReadMessageHistory, P.AddReactions],
@@ -233,6 +299,12 @@ c.once('clientReady', async () => {
         allow: [P.ViewChannel, P.ReadMessageHistory, P.SendMessages,
                 P.ManageMessages, P.EmbedLinks, P.AttachFiles] },
       ...staffRoles.map(r => ({ id: r.id, allow: [P.SendMessages, P.ManageMessages] })),
+      // A section ban removes the section from view entirely.
+      ...sanction('Event Banned',        [P.ViewChannel]),
+      ...sanction('Server Banned',       [P.ViewChannel]),
+      // A mute leaves them watching, unable to contribute — reactions included,
+      // or a muted member still argues in 👍 and 👎 under the rules post.
+      ...sanction('Entertainment Muted', [P.SendMessages, P.AddReactions, P.SendMessagesInThreads]),
     ];
 
     const SPECS = [

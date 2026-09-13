@@ -57,6 +57,40 @@ c.once('clientReady', async () => {
       }
     }
 
+    /*
+     * Server Banned, everywhere.
+     *
+     * The header above has always claimed this covers every category, but the
+     * loop only walked the three sections — so SERVER INFO and anything with no
+     * category at all were never touched, and a server-banned member could
+     * still read them. That is not a section ban leaking; it is the one sanction
+     * that is supposed to be total quietly not being.
+     *
+     * Walked as a flat list rather than category-by-category, because the gap
+     * was exactly the channels that belong to no category.
+     */
+    const serverBanned = R('Server Banned');
+    if (serverBanned) {
+      for (const ch of g.channels.cache.values()) {
+        if (ch.type === ChannelType.GuildCategory) {
+          if (!ch.permissionOverwrites.cache.get(serverBanned.id)?.deny.has('ViewChannel')) {
+            edits.push({ ch, role: serverBanned, patch: { ViewChannel: false },
+              why: 'Server Banned sees nothing' });
+          }
+          continue;
+        }
+        // A child only needs its own deny when it can still be seen — a channel
+        // inheriting the category's deny is already covered, and writing a
+        // redundant overwrite on all 56 would be noise.
+        if (ch.permissionsFor(serverBanned)?.has('ViewChannel')) {
+          edits.push({ ch, role: serverBanned, patch: { ViewChannel: false },
+            why: 'Server Banned sees nothing' });
+        }
+      }
+    } else {
+      console.warn('! Server Banned role not found — the global pass did nothing');
+    }
+
     if (!edits.length) { console.log('nothing to change'); return c.destroy(); }
     for (const e of edits) {
       console.log(`${APPLY ? 'FIX ' : 'plan'}  ${asciiFold(e.ch.name).slice(0, 26).padEnd(28)} ${asciiFold(e.role.name).slice(0,20).padEnd(22)} ${Object.keys(e.patch).join('+')}`);
