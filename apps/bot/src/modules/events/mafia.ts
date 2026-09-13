@@ -17,9 +17,16 @@ import {
   type RoleDef, type MafiaConfig, type NightAction, type Phase, type TextRule,
 } from './games.js';
 import { hasRole } from '../../lib/roles.js';
+import { SETUP_ID, setupButton, setupComponent, setTextRuleApplier } from './setupPanel.js';
 
 const log = logger('mafia');
-export const MAFIA_ID = 'mf';
+/**
+ * The prefix events/index.ts routes on. setupPanel mints its own custom ids
+ * under the same prefix and cannot import this constant without closing an
+ * import cycle, so the two are tied together by type: change one and the build
+ * fails, rather than every Tanzimat button going quietly dead in a live game.
+ */
+export const MAFIA_ID: typeof SETUP_ID = 'mf';
 const enc = (...p: (string | number)[]) => [MAFIA_ID, ...p].join('|');
 const dec = (s: string) => s.split('|').slice(1);
 
@@ -116,6 +123,10 @@ export async function applyTextRules(
   await mergeState(ev.id, { textPhase: phase });
   return rule;
 }
+
+// The settings panel re-applies the live phase's rule the moment God changes
+// it. It cannot import this function back without a cycle, so it is handed in.
+setTextRuleApplier(applyTextRules);
 
 /**
  * Strips reactions a phase does not allow.
@@ -343,6 +354,7 @@ async function console_(ev: EventRow, note?: string) {
     new ButtonBuilder().setCustomId(enc('act', ev.id, 'kill')).setLabel('Bokosh').setEmoji('💀').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId(enc('act', ev.id, 'revive')).setLabel('Zende kon').setEmoji('❤️').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(enc('refresh', ev.id)).setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
+    setupButton(ev.id),
   ));
 
   // The overrides. Every rule this bot enforces can be wrong about a situation
@@ -443,6 +455,11 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
     await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral });
     return;
   }
+
+  // Tanzimat, in its own file. It opens as a separate ephemeral message rather
+  // than taking over the console, so God can tune a rule without losing the
+  // phase buttons he is mid-game with.
+  if (await setupComponent(i, ev)) return;
 
   if (step === 'console' || step === 'refresh') {
     const payload = await console_(ev);
