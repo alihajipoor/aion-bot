@@ -74,7 +74,7 @@ async function start(): Promise<void> {
   }
   const title = flag('title') ?? 'مسابقه‌ی دعوت آیون';
   const days = Number(flag('days') ?? 21);
-  const floors = (flag('floors') ?? '100,100,100').split(',').map(Number);
+  const floors = (flag('floors') ?? '100,50,30').split(',').map(Number);
   const minAge = Number(flag('minage') ?? 30);
   // Three numbers, each of them sane. "100,100,100" losing its commas on the
   // way through a workflow input arrives as 100100100, which would otherwise
@@ -121,6 +121,27 @@ async function close(): Promise<void> {
   console.log(winners.length ? `awarded:\n  ${winners.join('\n  ')}` : 'nobody cleared the floor — no place awarded');
 }
 
+/**
+ * Changes the floors of a run that is already going, and rewrites the notice.
+ *
+ * The floors live on the row rather than in the code precisely so they can move
+ * mid-run — but the announcement quotes them, so the two have to change
+ * together or the pinned rules disagree with the board.
+ */
+async function setFloors(): Promise<void> {
+  const g = await openGiveaway(config.guildId);
+  if (!g) { console.error('nothing open'); process.exitCode = 1; return; }
+  const floors = (flag('floors') ?? '').split(',').map(Number);
+  if (floors.length !== 3 || floors.some(n => !Number.isFinite(n) || n < 1 || n > 10_000)) {
+    console.error(`bad --floors: ${flag('floors')} — want three numbers like 100,50,30`);
+    process.exitCode = 1; return;
+  }
+  await getDb().update(giveaways).set({ floors }).where(eq(giveaways.id, g.id));
+  console.log(`floors for #${g.id}: ${g.floors.join('/')} -> ${floors.join('/')}`);
+  await withGuild(async guild => { await refreshAnnouncement(guild); });
+  console.log('announcement refreshed in place');
+}
+
 /** Corrects the text of a live announcement without posting a new one. */
 async function refresh(): Promise<void> {
   const ok = await withGuild(async g => refreshAnnouncement(g));
@@ -131,6 +152,7 @@ async function refresh(): Promise<void> {
 const tasks: Record<string, () => Promise<void>> = {
   'giveaway-review': review,
   'giveaway-refresh': refresh,
+  'giveaway-floors': setFloors,
   'giveaway-start': start,
   'giveaway-close': close,
 };

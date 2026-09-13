@@ -95,8 +95,8 @@ const command: Command = {
       .addIntegerOption(o => o.setName('days').setDescription('Chand rooz? (pishfarz 21)')
         .setMinValue(1).setMaxValue(120))
       .addIntegerOption(o => o.setName('first').setDescription('Hadeaghal baraye nafar avval (pishfarz 100)'))
-      .addIntegerOption(o => o.setName('second').setDescription('Hadeaghal baraye nafar dovvom (pishfarz 100)'))
-      .addIntegerOption(o => o.setName('third').setDescription('Hadeaghal baraye nafar sevvom (pishfarz 100)'))
+      .addIntegerOption(o => o.setName('second').setDescription('Hadeaghal baraye nafar dovvom (pishfarz 50)'))
+      .addIntegerOption(o => o.setName('third').setDescription('Hadeaghal baraye nafar sevvom (pishfarz 30)'))
       .addIntegerOption(o => o.setName('minage').setDescription('Sen-e account be rooz (pishfarz 30)')))
     .addSubcommand(s => s.setName('close').setDescription('Bastan va sabt-e natije (admin)'))
     .addSubcommand(s => s.setName('cancel').setDescription('Laghv-e musabeghe (admin)')),
@@ -120,8 +120,8 @@ const command: Command = {
       const days = i.options.getInteger('days') ?? 21;      // three weeks
       const floors = [
         i.options.getInteger('first') ?? 100,
-        i.options.getInteger('second') ?? 100,
-        i.options.getInteger('third') ?? 100,
+        i.options.getInteger('second') ?? 50,
+        i.options.getInteger('third') ?? 30,
       ];
       const endsAt = new Date(Date.now() + days * 86_400_000);
       await getDb().insert(giveaways).values({

@@ -17,6 +17,7 @@ on:
         options:
           - giveaway-review
           - giveaway-refresh
+          - giveaway-floors
           - giveaway-start
           - giveaway-close
       title:
@@ -28,9 +29,9 @@ on:
         type: string
         default: "21"
       floors:
-        description: Minimum invites for 1st,2nd,3rd (start only)
+        description: Minimum invites for 1st,2nd,3rd (start and floors)
         type: string
-        default: "100,100,100"
+        default: "100,50,30"
 
 concurrency:
   group: deploy          # never runs while a deploy is mid-flight

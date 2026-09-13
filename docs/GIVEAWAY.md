@@ -66,23 +66,28 @@ spelling them out only reads as an invitation to bring people who leave.
 Alt accounts disqualify the inviter entirely, not just the fake invites. That
 sentence does more work than any detection could.
 
-### The floor: 100 for every place
+### The floors: 100 / 50 / 30
 
-Ali's call, made twice. All three places require **100 qualified invites**; below
-that the place goes unawarded, however high someone sits on the board.
+Each place has its own bar — 100 for first, 50 for second, 30 for third — and a
+place below its bar goes unawarded however high that person sits on the board.
 
 The risk, recorded because it was raised and overruled rather than missed: the
 server has ~148 members, so 100 invites from one person means adding two-thirds
-of the server single-handed, and the likely outcome is that no prize is awarded
-at all. The 30-invite recruiter role exists partly to give people a reachable
-target underneath it.
+of the server single-handed. First place may well go unawarded. Second and third
+are reachable.
+
+Note that third place and the recruiter role now sit at the same number, so
+anyone eligible for third is already wearing the role.
 
 `floors` is stored per giveaway rather than compiled in, so the numbers can be
 lowered mid-run if the board stalls:
 
-```sql
-UPDATE giveaways SET floors = '[40,25,15]' WHERE closed_at IS NULL;
+```bash
+gh workflow run ops.yml -f task=giveaway-floors -f floors=40,25,15
 ```
+
+That writes the row and rewrites the announcement together, so the pinned rules
+never disagree with the board.
 
 A floor is a bar, not a queue position — if the runner-up misses it, second
 place goes unawarded rather than sliding down to whoever is next.
@@ -92,7 +97,7 @@ place goes unawarded rather than sliding down to whoever is next.
 ## Runbook
 
 ```bash
-/giveaway start title:"Musabeghe-ye Davat"    # 21 days, floors 100/100/100
+/giveaway start title:"AION Invite Contest"    # 21 days, floors 100/50/30
 ```
 
 Admin subcommands are **Dev-only** (plus the guild owner, so the server cannot
