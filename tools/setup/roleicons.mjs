@@ -7,13 +7,30 @@
 //
 // Colour says which family a role belongs to; shape says which rank.
 import 'dotenv/config';
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readFile, readdir } from 'node:fs/promises';
+import { join, extname, basename } from 'node:path';
 import { Client, GatewayIntentBits } from 'discord.js';
 import { Resvg } from '@resvg/resvg-js';
 import { foldRole } from '../../apps/bot/dist/lib/roles.js';
 
 const APPLY = process.argv.includes('--apply');
 const OUT = process.env.ICON_OUT ?? null;
+
+/**
+ * Apply artwork from a folder instead of the generated set.
+ *
+ *   node tools/setup/roleicons.mjs --from ./my-pack --apply
+ *
+ * Drop a PNG, JPEG or GIF per role named after the slug this tool prints —
+ * p-moderator.png, server-banned.png and so on — and they are uploaded as they
+ * are. Nothing is redrawn, so a pack from emoji.gg or an illustrator arrives
+ * exactly as its author made it.
+ *
+ * Discord caps a role icon at 256 KB and renders it around 20px, so anything
+ * with fine detail is worth checking small before committing to it.
+ */
+const fromArg = process.argv.indexOf('--from');
+const FROM = fromArg > -1 ? process.argv[fromArg + 1] : null;
 
 const C = {
   ice:    '#eaf4ff',   // the wordmark white
@@ -199,7 +216,20 @@ c.once('clientReady', async () => {
       console.log('! this server cannot use role icons — boost level 2 required');
       return c.destroy();
     }
-    if (OUT) {
+    // A supplied pack wins over the generated one.
+    let supplied = null;
+    if (FROM) {
+      const files = await readdir(FROM).catch(() => null);
+      if (!files) { console.error(`cannot read ${FROM}`); return c.destroy(); }
+      supplied = new Map();
+      for (const f of files) {
+        if (!['.png', '.jpg', '.jpeg', '.gif'].includes(extname(f).toLowerCase())) continue;
+        supplied.set(basename(f, extname(f)).toLowerCase(), join(FROM, f));
+      }
+      console.log(`using ${supplied.size} file(s) from ${FROM}\n`);
+    }
+
+    if (OUT && !FROM) {
       await mkdir(OUT, { recursive: true });
       const sheet = new Resvg(contactSheet(),
         { fitTo: { mode: 'original' }, font: opts.font }).render().asPng();
@@ -209,10 +239,24 @@ c.once('clientReady', async () => {
 
     for (const [i, [name, shape, colour, isLetter, plain]] of ICONS.entries()) {
       const r = g.roles.cache.find(x => foldRole(x.name) === foldRole(name));
-      const data = png(shape, colour, `r${i}`, isLetter);
-      if (OUT) await writeFile(`${OUT}/${slug(name)}.png`, data);
+      const key = slug(name);
+      let data, source;
+      if (supplied) {
+        const file = supplied.get(key);
+        if (!file) { console.warn(`!     no file for ${key} — left alone`); continue; }
+        data = await readFile(file);
+        source = basename(file);
+        if (data.byteLength > 256 * 1024) {
+          console.error(`!     ${source} is ${Math.round(data.byteLength / 1024)}KB — Discord's limit is 256KB`);
+          continue;
+        }
+      } else {
+        data = png(shape, colour, `r${i}`, isLetter);
+        source = `${shape} ${colour}`;
+        if (OUT) await writeFile(`${OUT}/${key}.png`, data);
+      }
       if (!r) { console.warn(`!     role not found: ${name}`); continue; }
-      console.log(`${APPLY ? 'SET ' : 'plan'}  ${r.name.slice(0, 26).padEnd(28)} ${shape} ${colour}`);
+      console.log(`${APPLY ? 'SET ' : 'plan'}  ${r.name.slice(0, 26).padEnd(28)} ${source}`);
       if (APPLY) await r.setIcon(data, 'AION: role icon pack')
         .catch(e => console.error(`   failed: ${e.message}`));
     }
