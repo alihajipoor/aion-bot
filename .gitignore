@@ -16,3 +16,6 @@ docs/diff.md
 docs/sync-*.txt
 
 .DS_Store
+
+# Agent worktrees — separate checkouts, never part of this tree
+.claude/worktrees/
