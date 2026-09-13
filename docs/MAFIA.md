@@ -178,6 +178,11 @@ Force-win buttons for either side are always available.
 
 ## Console and setup
 
+**This is the Discord console**, the Components V2 panel in the event interface
+channel where God already presses Shab and Rooz — not the web panel. Every
+option below is a button or a select menu in that message. Nothing here is
+configured on the website.
+
 God configures before the game and adjusts during it.
 
 **Roles** — every role individually on or off, with counts. A game without a

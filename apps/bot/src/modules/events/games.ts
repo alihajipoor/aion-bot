@@ -103,6 +103,19 @@ export const sideCounts = (roles: RoleDef[]) => ({
 
 /* ── per-game options ──────────────────────────────────────────── */
 
+/** What the game's text channel allows during a given phase. */
+export type TextRule = 'free' | 'reactions' | 'emoji' | 'locked';
+
+export const PHASES = ['day', 'night', 'ejma', 'defense', 'vote'] as const;
+export type Phase = typeof PHASES[number];
+
+export const TEXT_RULE_FA: Record<TextRule, string> = {
+  free:      'Azad — text va emoji',
+  reactions: 'Faghat reaction',
+  emoji:     'Faghat 👍 va 👎',
+  locked:    'Baste — hich chi',
+};
+
 export interface MafiaConfig {
   scenario: string;
   optionalRoles: string[];
@@ -114,6 +127,29 @@ export interface MafiaConfig {
   daySeconds: number;
   defenseSeconds: number;
   voteSeconds: number;
+
+  /**
+   * What the text channel allows, per phase.
+   *
+   * The one that matters is `vote`: during Ray-giri the channel is shut so the
+   * ballot is the only way to vote. A parallel argument in chat while the vote
+   * is open is how a vote gets disputed afterwards.
+   */
+  textRules: Record<Phase, TextRule>;
+  /** Which reactions survive when a phase is set to `emoji`. */
+  allowedEmoji: string[];
+
+  /** Close the vote on a timer, or wait for God to press the button. */
+  voteAutoClose: boolean;
+  /** Signups restricted to the Mafia Player role. */
+  signupGated: boolean;
+
+  /** Per-role budgets, set before the game. */
+  sniperBullets: number;
+  shahrdarVetoes: number;
+  kalantarGuns: number;
+  /** Roles switched off for this game entirely. */
+  disabledRoles: string[];
 }
 
 export const MAFIA_DEFAULTS: MafiaConfig = {
@@ -127,6 +163,19 @@ export const MAFIA_DEFAULTS: MafiaConfig = {
   daySeconds: 300,
   defenseSeconds: 45,
   voteSeconds: 60,
+
+  textRules: {
+    day: 'free', night: 'locked', ejma: 'free', defense: 'reactions', vote: 'locked',
+  },
+  allowedEmoji: ['👍', '👎'],
+
+  voteAutoClose: false,
+  signupGated: false,
+
+  sniperBullets: 2,
+  shahrdarVetoes: 1,
+  kalantarGuns: 2,
+  disabledRoles: [],
 };
 
 export interface EsmFamilConfig {

@@ -4,16 +4,17 @@ import {
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder, PermissionFlagsBits,
   type ButtonInteraction, type StringSelectMenuInteraction, type ModalSubmitInteraction,
   type MessageComponentInteraction, type Guild, type GuildMember, type TextChannel,
+  type MessageReaction, type PartialMessageReaction,
 } from 'discord.js';
 import { isolate, num } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
 import {
   getEvent, patchEvent, mergeState, players, alivePlayers, assignRole,
-  killPlayer, revivePlayer, type EventRow, type PlayerRow,
+  killPlayer, revivePlayer, liveEvents, type EventRow, type PlayerRow,
 } from './store.js';
 import {
   SCENARIOS, CITIZEN, scenarioOf, distribution, MAFIA_DEFAULTS, nightActionFor, passiveFor,
-  type RoleDef, type MafiaConfig, type NightAction,
+  type RoleDef, type MafiaConfig, type NightAction, type Phase, type TextRule,
 } from './games.js';
 import { hasRole } from '../../lib/roles.js';
 
@@ -77,6 +78,77 @@ const shuffle = <T>(a: T[]): T[] => {
   }
   return x;
 };
+
+/* ── text control ──────────────────────────────────────────────── */
+
+/**
+ * What the game's text channel allows right now.
+ *
+ * Permissions do the work rather than a message listener, because a deny is
+ * enforced by Discord before the message exists — there is no window where
+ * something lands and is deleted a second later, and nothing to race.
+ *
+ * The phase that matters is the vote. With the channel shut, the ballot is the
+ * only way to vote; a parallel argument in chat while the vote is open is how a
+ * result gets disputed afterwards.
+ */
+export async function applyTextRules(
+  guild: Guild, ev: EventRow, phase: Phase,
+): Promise<TextRule | null> {
+  if (!ev.textChannelId) return null;
+  const channel = guild.channels.cache.get(ev.textChannelId);
+  // Threads are text-based but carry no overwrites of their own, so narrow to
+  // the real channel rather than trusting isTextBased().
+  if (channel?.type !== ChannelType.GuildText) return null;
+
+  const rule = configOf(ev).textRules[phase] ?? 'free';
+  const can = (send: boolean, react: boolean) =>
+    channel.permissionOverwrites.edit(guild.roles.everyone.id, {
+      SendMessages: send, AddReactions: react,
+      SendMessagesInThreads: send, CreatePublicThreads: send,
+    }, { reason: `AION mafia — ${phase}: ${rule}` })
+      .catch((e: Error) => log.warn(`text rule ${rule} failed: ${e.message}`));
+
+  if (rule === 'free') await can(true, true);
+  else if (rule === 'reactions' || rule === 'emoji') await can(false, true);
+  else await can(false, false);
+
+  await mergeState(ev.id, { textPhase: phase });
+  return rule;
+}
+
+/**
+ * Strips reactions a phase does not allow.
+ *
+ * Discord cannot restrict *which* emoji a permission allows, only whether
+ * reactions are possible at all — so the `emoji` rule is the one policy that
+ * has to be enforced after the fact rather than before it.
+ */
+export function installMafiaReactionGuard(client: { on: (e: string, f: (...a: unknown[]) => void) => unknown }): void {
+  client.on('messageReactionAdd', (...args: unknown[]) => {
+    void (async () => {
+      const reaction = args[0] as MessageReaction | PartialMessageReaction;
+      const user = args[1] as { bot?: boolean; id: string };
+      if (user.bot) return;
+      const channelId = reaction.message.channelId;
+      const guild = reaction.message.guild;
+      if (!guild) return;
+
+      const live = await liveEvents(guild.id).catch(() => []);
+      const ev = live.find(e => e.game === 'mafia' && e.textChannelId === channelId);
+      if (!ev) return;
+
+      const cfg = configOf(ev);
+      const phase = (ev.state as { textPhase?: Phase }).textPhase;
+      if (!phase || cfg.textRules[phase] !== 'emoji') return;
+
+      const name = reaction.emoji.name ?? '';
+      if (cfg.allowedEmoji.includes(name)) return;
+      await reaction.users.remove(user.id).catch(() => {});
+    })();
+  });
+  log.info('mafia reaction guard installed');
+}
 
 /* ── voice control ─────────────────────────────────────────────── */
 
@@ -414,6 +486,7 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
     await mergeState(ev.id, { phase, night });
     const fresh = (await getEvent(ev.id))!;
     const touched = await applyVoice(i.guild!, fresh, phase);
+    await applyTextRules(i.guild!, fresh, phase);
     await announcePhase(i.guild!, fresh, phase);
 
     let note = `${phase === 'night' ? 'Shab' : 'Rooz'} shod — ${touched} nafar mute/unmute shodan.`;
@@ -479,12 +552,27 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
     return;
   }
 
-  if (step === 'ejma' && i.isButton()) { await openEjma(i, ev); return; }
+  if (step === 'ejma' && i.isButton()) {
+    await applyTextRules(i.guild!, ev, 'ejma');
+    await openEjma(i, ev); return;
+  }
   if (step === 'ejmaend' && i.isButton()) { await endEjma(i, ev); return; }
   if (step === 'nominate' && i.isStringSelectMenu()) { await setNominees(i, ev); return; }
-  if (step === 'defense' && i.isButton()) { await advanceDefense(i, ev); return; }
-  if (step === 'vote' && i.isButton()) { await openVote(i, ev); return; }
-  if (step === 'closevote' && i.isButton()) { await closeVote(i, ev); return; }
+  if (step === 'defense' && i.isButton()) {
+    await applyTextRules(i.guild!, ev, 'defense');
+    await advanceDefense(i, ev); return;
+  }
+  if (step === 'vote' && i.isButton()) {
+    // Shut the channel before the ballot opens, not after — a message that
+    // lands in the gap is exactly the one that gets argued about later.
+    await applyTextRules(i.guild!, ev, 'vote');
+    await openVote(i, ev); return;
+  }
+  if (step === 'closevote' && i.isButton()) {
+    await closeVote(i, ev);
+    await applyTextRules(i.guild!, ev, 'day');
+    return;
+  }
 }
 
 export async function mafiaModal(_i: ModalSubmitInteraction): Promise<void> {

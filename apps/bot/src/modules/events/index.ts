@@ -21,7 +21,8 @@ import {
   mergeState, recentEvents, removeEvent, LIVE as LIVE_STATUSES,
   type EventRow, type PastEvent,
 } from './store.js';
-import { startMafia, endMafia, mafiaComponent, mafiaModal, setEventFinisher, MAFIA_ID } from './mafia.js';
+import { startMafia, endMafia, mafiaComponent, mafiaModal, setEventFinisher,
+  installMafiaReactionGuard, MAFIA_ID } from './mafia.js';
 import { resealEventAccess } from './lockout.js';
 import { startEsmFamil, endEsmFamil, esmComponent, esmModal, esmSelect, ESM_ID } from './esmfamil.js';
 import { startSoali, endSoali, soaliComponent, soaliModal, SOALI_ID } from './soali.js';
@@ -669,6 +670,7 @@ export function installEvents(client: AionClient): void {
   // Mafia's win buttons end the whole event, but that flow lives here. Handing
   // the function over avoids importing this file from one it already imports.
   setEventFinisher((guild, ev) => doEnd(guild, ev));
+  installMafiaReactionGuard(client);
   client.on(Events.InteractionCreate, async (i) => {
     try {
       if (i.isButton() && i.customId.startsWith(`${ESM_ID}|`)) { await esmComponent(i); return; }
