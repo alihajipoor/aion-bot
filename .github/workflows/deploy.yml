@@ -28,6 +28,12 @@ jobs:
       - name: Typecheck & build bot
         run: npm run typecheck
 
+      # The giveaway scoring rules decide who gets a prize, and a prize cannot
+      # be taken back. They are pure functions with no database, so there is no
+      # excuse for shipping them unproven.
+      - name: Test
+        run: node --test apps/bot/test/
+
       - name: Build web panel
         run: npm -w @aion/web run build
 

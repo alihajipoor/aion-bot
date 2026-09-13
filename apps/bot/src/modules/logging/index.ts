@@ -9,7 +9,7 @@ import { now, u, byWhom, ch, chName, snippet, diffLines, av, quote, title } from
 import { isolate } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
 import { and, eq, desc, sql } from 'drizzle-orm';
-import { getDb, memberJoins } from '@aion/db';
+import { getDb, memberJoins, inviteCache } from '@aion/db';
 import type { AionClient } from '../../client.js';
 import { isCounterChannel } from '../counters.js';
 
@@ -105,6 +105,20 @@ export function installLogging(client: AionClient): void {
           if (!prev && uses > 0 && !guess) guess = { code: inv.code, inviterId: inv.inviterId ?? null };
         }
         if (!inviteCode && guess) { inviteCode = guess.code; inviterId = guess.inviterId; guessed = true; }
+
+        // Discord credits an invite created through the API to the application,
+        // not to the person who asked for it. Links minted by the giveaway's
+        // button record their real owner, and that owner wins over the API's
+        // answer — it is the one attribution that is certain rather than
+        // observed, so it also clears the guessed flag.
+        if (inviteCode) {
+          const [owned] = await getDb().select({ inviterId: inviteCache.inviterId })
+            .from(inviteCache)
+            .where(and(eq(inviteCache.guildId, member.guild.id), eq(inviteCache.code, inviteCode)))
+            .limit(1)
+            .catch(() => [] as { inviterId: string | null }[]);
+          if (owned?.inviterId) { inviterId = owned.inviterId; guessed = false; }
+        }
         if (inviteCode) {
           via = ` · invite \`${inviteCode}\`${inviterId ? ` from <@${inviterId}>` : ''}`;
         }
@@ -119,7 +133,14 @@ export function installLogging(client: AionClient): void {
       await getDb().insert(memberJoins).values({
         guildId: member.guild.id, userId: member.id, inviteCode, inviterId, guessed,
       });
-    } catch { /* not fatal */ }
+    } catch (e) {
+      // This row is the giveaway's ledger. A swallowed failure here is somebody
+      // losing a credit they earned, with nothing anywhere to say it happened.
+      log.error(`FAILED to record join for ${member.user.tag} (invited by ${inviterId ?? 'unknown'})`, e);
+      emitLog(member.guild, 'inviteCreate',
+        `${now()} ⚠️ **Join not recorded** for ${u(member.user)} — invite \`${inviteCode ?? '?'}\`` +
+        `${inviterId ? ` from <@${inviterId}>` : ''}. Add it by hand before the giveaway closes.`);
+    }
 
     emitLog(member.guild, 'memberJoin', [
       title('📥', 'Member joined'), u(member.user),

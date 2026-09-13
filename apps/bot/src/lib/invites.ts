@@ -52,6 +52,62 @@ export interface Window {
 
 const DAY = 86_400_000;
 
+export interface JoinRow {
+  userId: string;
+  inviterId: string | null;
+  guessed: boolean;
+  joinedAt: Date;
+  leftAt: Date | null;
+}
+
+export interface Context {
+  /** Users with a join recorded before the window: already ours, not growth. */
+  returning: Set<string>;
+  verified: Set<string>;
+  minAccountAgeDays: number;
+}
+
+/**
+ * The rules themselves, with the database left outside.
+ *
+ * Pure on purpose: this is the function a wrong answer would be embarrassing
+ * in, so it is the one that can be tested exhaustively without a Postgres and
+ * without a Discord. `rows` must be ordered by joinedAt ascending — the first
+ * qualifying join is the one that earns the credit.
+ */
+export function classify(rows: JoinRow[], ctx: Context): Score[] {
+  const claimed = new Set<string>();
+  const byInviter = new Map<string, Score>();
+
+  for (const r of rows) {
+    if (!r.inviterId) continue;
+    const inviterId = r.inviterId;
+    const ageDays = Math.floor((r.joinedAt.getTime() - accountCreatedAt(r.userId).getTime()) / DAY);
+
+    const reason: Reason =
+      r.userId === inviterId ? 'self'
+      : ctx.returning.has(r.userId) ? 'returning'
+      : claimed.has(r.userId) ? 'duplicate'
+      : ageDays < ctx.minAccountAgeDays ? 'young'
+      : !ctx.verified.has(r.userId) ? 'unverified'
+      : 'ok';
+
+    // A rejoin only shadows later attempts once it has actually been credited;
+    // a join rejected for age must not block a genuine later one.
+    if (reason === 'ok') claimed.add(r.userId);
+
+    let s = byInviter.get(inviterId);
+    if (!s) { s = { inviterId, qualified: 0, invitees: [] }; byInviter.set(inviterId, s); }
+    if (reason === 'ok') s.qualified += 1;
+    s.invitees.push({
+      userId: r.userId, joinedAt: r.joinedAt, leftAt: r.leftAt,
+      guessed: r.guessed, accountAgeDays: ageDays, reason,
+    });
+  }
+
+  return [...byInviter.values()].sort((a, b) => b.qualified - a.qualified);
+}
+
 /**
  * Score every inviter over a window.
  *
@@ -101,37 +157,7 @@ export async function scoreInvites(guildId: string, w: Window): Promise<Score[]>
     ));
   const verified = new Set(approvals.map(r => r.userId));
 
-  // Ordered by join time, so the first row a user appears in is the one that
-  // can earn the credit and every later one is a rejoin.
-  const claimed = new Set<string>();
-  const byInviter = new Map<string, Score>();
-
-  for (const r of rows) {
-    const inviterId = r.inviterId!;
-    const ageDays = Math.floor((r.joinedAt.getTime() - accountCreatedAt(r.userId).getTime()) / DAY);
-
-    const reason: Reason =
-      r.userId === inviterId ? 'self'
-      : returning.has(r.userId) ? 'returning'
-      : claimed.has(r.userId) ? 'duplicate'
-      : ageDays < w.minAccountAgeDays ? 'young'
-      : !verified.has(r.userId) ? 'unverified'
-      : 'ok';
-
-    // A rejoin only shadows later attempts once it has actually been credited;
-    // a join rejected for age must not block a genuine later one.
-    if (reason === 'ok') claimed.add(r.userId);
-
-    let s = byInviter.get(inviterId);
-    if (!s) { s = { inviterId, qualified: 0, invitees: [] }; byInviter.set(inviterId, s); }
-    if (reason === 'ok') s.qualified += 1;
-    s.invitees.push({
-      userId: r.userId, joinedAt: r.joinedAt, leftAt: r.leftAt,
-      guessed: r.guessed, accountAgeDays: ageDays, reason,
-    });
-  }
-
-  return [...byInviter.values()].sort((a, b) => b.qualified - a.qualified);
+  return classify(rows, { returning, verified, minAccountAgeDays: w.minAccountAgeDays });
 }
 
 export const REASON_TEXT: Record<Reason, string> = {

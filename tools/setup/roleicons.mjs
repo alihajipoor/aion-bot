@@ -41,6 +41,8 @@ const C = {
   red:    '#ed4245',   // bans
   amber:  '#faa61a',   // mutes
   pink:   '#f47fff',
+  silver: '#c9d4e4',   // second place
+  bronze: '#d9905a',   // third place
 };
 
 /*
@@ -150,6 +152,11 @@ const CARVED = {
   key:  [{ d: 'M32 20 a8 8 0 1 1 -0.01 0 Z M32 24 a4 4 0 1 0 0.01 0 Z '
             + 'M29.5 33 h5 v17 h-5 Z M34.5 38 h7 v4 h-7 Z M34.5 45 h5 v4 h-5 Z', fill: true }],
   gem:  [{ d: 'M32 20 L45 33 L32 46 L19 33 Z', fill: true }],
+  // A person, and the plus that says bring another
+  crew: [{ d: 'M27 20 a7 7 0 1 1 -0.01 0 Z', fill: true },
+         { d: 'M14 47 a13 13 0 0 1 26 0 Z', fill: true },
+         { d: 'M46 28 v14', stroke: 4.6 },
+         { d: 'M39 35 h14', stroke: 4.6 }],
 };
 
 const carve = (name, colour) => CARVED[name].map(part => part.fill
@@ -257,6 +264,13 @@ const ICONS = [
   ['ᴀ ɪ ᴏ ɴ │𝙼𝚄𝚂𝙸𝙲 𝚁𝙾𝙱𝙾𝚃│•', 'note', C.purple, 'carve', 'Music Robot'],
   ['ʙᴏʏ│𝙼𝙴𝙼𝙱𝙴𝚁│•',   'gem',  C.blue,   'carve', 'boy MEMBER'],
   ['ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•',  'gem',  C.pink,   'carve', 'girl MEMBER'],
+
+  // Giveaway podium. The place is the letter and the metal is the colour, so
+  // the three read as one set at a glance instead of three unrelated badges.
+  ['ʟᴇɢᴇɴᴅ│𝙳𝙰𝚅𝙰𝚃│•',  '1',    C.gold,   'rank',  'Legend davat'],
+  ['ᴇʟɪᴛᴇ│𝙳𝙰𝚅𝙰𝚃│•',   '2',    C.silver, 'rank',  'Elite davat'],
+  ['ᴘɪsʜᴛᴀᴢ│𝙳𝙰𝚅𝙰𝚃│•', '3',    C.bronze, 'rank',  'Pishtaz davat'],
+  ['ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•', 'crew', C.purple, 'carve', 'Recruiter'],
 ];
 
 const FONT = new URL('../../apps/bot/assets/fonts/Vazirmatn-Bold.ttf', import.meta.url).pathname;

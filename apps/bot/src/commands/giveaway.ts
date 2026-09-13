@@ -1,77 +1,84 @@
 import {
   SlashCommandBuilder, MessageFlags, AttachmentBuilder, PermissionFlagsBits,
-  ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, MediaGalleryBuilder,
-  MediaGalleryItemBuilder, type GuildMember,
+  type GuildMember, type ButtonInteraction,
 } from 'discord.js';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb, giveaways } from '@aion/db';
-import { scoreInvites, REASON_TEXT, type Score } from '../lib/invites.js';
+import {
+  GW, openGiveaway, boardContainer, breakdown, buttons, personalInvite, scoreInvites, stamp,
+  unattributedJoins,
+} from '../lib/giveaway.js';
+import { REASON_TEXT, type Reason } from '../lib/invites.js';
 import { renderLeaderboardBanner } from '../lib/banner.js';
 import { hasRole } from '../lib/roles.js';
 import type { Command } from '../types.js';
 
-const MEDALS = ['🥇', '🥈', '🥉'];
-const ACCENT = 0x9b6cff;
-
-const isAdmin = (m: GuildMember) =>
-  m.permissions.has(PermissionFlagsBits.ManageGuild) ||
-  hasRole(m, ['Consultant', 'PowerAdmin', 'Dev']);
-
-/** The one running giveaway, or nothing. Only one is open at a time. */
-async function current(guildId: string) {
-  const [row] = await getDb().select().from(giveaways)
-    .where(and(eq(giveaways.guildId, guildId), isNull(giveaways.closedAt)))
-    .orderBy(desc(giveaways.id)).limit(1);
-  return row ?? null;
-}
-
-const stamp = (d: Date) => `<t:${Math.floor(d.getTime() / 1000)}:R>`;
-
 /**
- * Places are ranked, with a floor per place so a prize cannot be won on a
- * handful of invites. A floor is a bar to clear, not a queue position: if the
- * runner-up misses second place's floor, second place goes unawarded rather
- * than sliding down to whoever is next.
+ * Dev and above only — the giveaway hands out real money, so starting, closing
+ * and inspecting it is not a moderation power. The guild owner is included so
+ * the server cannot lock itself out of its own competition.
+ *
+ * board and man stay open to everyone; they are the whole point.
  */
-function places(scores: Score[], floors: number[]) {
-  return scores.slice(0, floors.length).map((s, i) => ({
-    score: s, place: i + 1, floor: floors[i] ?? 0, won: s.qualified >= (floors[i] ?? 0),
-  }));
+const ADMIN_ONLY = ['start', 'close', 'cancel', 'review', 'check'];
+const isAdmin = (m: GuildMember) => hasRole(m, ['Dev']) || m.id === m.guild.ownerId;
+
+/** Shared by the command and the board button. */
+export async function boardReply(guild: import('discord.js').Guild) {
+  const g = await openGiveaway(guild.id);
+  if (!g) return null;
+  const scores = await scoreInvites(guild.id, {
+    from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
+  });
+  const nameOf = (id: string) => guild.members.cache.get(id)?.displayName ?? `<@${id}>`;
+  const png = await renderLeaderboardBanner({
+    title: 'Musabeghe-ye Davat', subtitle: `${guild.name} · ${g.title}`,
+    accent: '#9b6cff', kicker: 'DAVAT',
+    rows: scores.slice(0, 8).filter(s => s.qualified > 0).map(s => ({
+      name: nameOf(s.inviterId), value: `${s.qualified} nafar`, amount: s.qualified,
+    })),
+  }).catch(() => null);
+  return {
+    components: [boardContainer(g, scores, nameOf, png ? 'giveaway.png' : undefined)],
+    ...(png ? { files: [new AttachmentBuilder(png, { name: 'giveaway.png' })] } : {}),
+    flags: MessageFlags.IsComponentsV2 as const,
+  };
 }
 
-function board(g: { title: string; floors: number[]; endsAt: Date; closedAt: Date | null },
-               scores: Score[], nameOf: (id: string) => string, file?: string) {
-  const c = new ContainerBuilder().setAccentColor(ACCENT);
-  c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    `# 🎁 ${g.title}\n${g.closedAt ? '**Tamoom shod**' : `Ta ${stamp(g.endsAt)}`}`));
-  if (file) c.addMediaGalleryComponents(new MediaGalleryBuilder()
-    .addItems(new MediaGalleryItemBuilder().setURL(`attachment://${file}`)));
-  c.addSeparatorComponents(new SeparatorBuilder());
+/* ── the three buttons under the announcement ──────────────────── */
 
-  if (scores.length === 0) {
-    c.addTextDisplayComponents(new TextDisplayBuilder()
-      .setContent('_Hanooz kasi davat nakarde._'));
-    return c;
+export async function handleButton(i: ButtonInteraction): Promise<void> {
+  const action = i.customId.split('|')[1];
+  const guild = i.guild!;
+
+  if (action === 'link') {
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    const url = await personalInvite(guild, i.user.id);
+    await i.editReply(url
+      ? ['## 🔗 لینک دعوت تو', url, '',
+         'این لینک مال خودته و همیشه ثابت می‌مونه — هر کی باهاش بیاد، به اسم تو ثبت می‌شه.',
+         'همینو برای دوستات بفرست.'].join('\n')
+      : 'نشد لینک بسازم. به ادمین بگو.');
+    return;
   }
 
-  const top = places(scores, g.floors);
-  c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    top.map(p =>
-      `${MEDALS[p.place - 1]} **${nameOf(p.score.inviterId)}** — **${p.score.qualified}** nafar` +
-      (p.won ? '' : ` · _hadeaghal ${p.floor} lazem_`)).join('\n')));
-
-  const rest = scores.slice(g.floors.length, 10);
-  if (rest.length) {
-    c.addSeparatorComponents(new SeparatorBuilder());
-    c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      rest.map((s, i) => `\`${i + g.floors.length + 1}.\` ${nameOf(s.inviterId)} — ${s.qualified}`).join('\n')));
+  if (action === 'me') {
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    const g = await openGiveaway(guild.id);
+    if (!g) { await i.editReply('الان مسابقه‌ای در جریان نیست.'); return; }
+    const scores = await scoreInvites(guild.id, {
+      from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
+    });
+    await i.editReply(breakdown(guild, scores, i.user.id));
+    return;
   }
 
-  c.addSeparatorComponents(new SeparatorBuilder());
-  c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    '-# Hesab mishe: har nafar faghat yek bar · account bayad balaye 30 rooz bashe · bayad verify kone\n' +
-    '-# `/giveaway man` — bebin ki barat hesab shode va ki na'));
-  return c;
+  if (action === 'board') {
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    const reply = await boardReply(guild);
+    if (!reply) { await i.editReply('الان مسابقه‌ای در جریان نیست.'); return; }
+    await i.editReply(reply);
+  }
 }
 
 const command: Command = {
@@ -85,7 +92,7 @@ const command: Command = {
     .addSubcommand(s => s.setName('review').setDescription('Davat-haye mashkook (admin)'))
     .addSubcommand(s => s.setName('start').setDescription('Shoru-e musabeghe (admin)')
       .addStringOption(o => o.setName('title').setDescription('Esm-e musabeghe').setRequired(true))
-      .addIntegerOption(o => o.setName('days').setDescription('Chand rooz?').setRequired(true)
+      .addIntegerOption(o => o.setName('days').setDescription('Chand rooz? (pishfarz 21)')
         .setMinValue(1).setMaxValue(120))
       .addIntegerOption(o => o.setName('first').setDescription('Hadeaghal baraye nafar avval (pishfarz 10)'))
       .addIntegerOption(o => o.setName('second').setDescription('Hadeaghal baraye nafar dovvom (pishfarz 7)'))
@@ -98,21 +105,19 @@ const command: Command = {
     const sub = i.options.getSubcommand();
     const member = i.member as GuildMember;
     const guildId = i.guildId!;
-    const nameOf = (id: string) => i.guild?.members.cache.get(id)?.displayName ?? `<@${id}>`;
 
-    if (['start', 'close', 'cancel', 'review', 'check'].includes(sub) && !isAdmin(member)) {
-      await i.reply({ content: 'Faghat admin-ha.', flags: MessageFlags.Ephemeral });
+    if (ADMIN_ONLY.includes(sub) && !isAdmin(member)) {
+      await i.reply({ content: 'In dastoor faghat baraye Dev-e.', flags: MessageFlags.Ephemeral });
       return;
     }
 
-    /* ── start ─────────────────────────────────────────────────── */
     if (sub === 'start') {
-      if (await current(guildId)) {
+      if (await openGiveaway(guildId)) {
         await i.reply({ content: 'Yek musabeghe alan bazast. Aval `/giveaway close` ya `cancel`.',
           flags: MessageFlags.Ephemeral });
         return;
       }
-      const days = i.options.getInteger('days')!;
+      const days = i.options.getInteger('days') ?? 21;      // three weeks
       const floors = [
         i.options.getInteger('first') ?? 10,
         i.options.getInteger('second') ?? 7,
@@ -125,13 +130,13 @@ const command: Command = {
       });
       await i.reply({ content:
         `Shoru shod ✅ ta ${stamp(endsAt)} · hadeaghal ${floors.join(' / ')} nafar baraye 1/2/3.\n` +
-        'Faghat davat-haye az alan be bad hesab mishe.', flags: MessageFlags.Ephemeral });
+        'Elan ta chand daghighe khodkar post mishe va har 24 saat tekrar mishe.',
+        flags: MessageFlags.Ephemeral });
       return;
     }
 
-    const g = await current(guildId);
+    const g = await openGiveaway(guildId);
 
-    /* ── cancel ────────────────────────────────────────────────── */
     if (sub === 'cancel') {
       if (!g) { await i.reply({ content: 'Musabeghe-i baz nist.', flags: MessageFlags.Ephemeral }); return; }
       await getDb().delete(giveaways).where(eq(giveaways.id, g.id));
@@ -151,50 +156,40 @@ const command: Command = {
       from: g.startsAt, to: g.closedAt ?? new Date(), minAccountAgeDays: g.minAccountAgeDays,
     });
 
-    /* ── personal breakdown ────────────────────────────────────── */
     if (sub === 'man' || sub === 'check') {
       const who = sub === 'check' ? i.options.getUser('user')!.id : i.user.id;
-      const s = scores.find(x => x.inviterId === who);
-      const rank = scores.findIndex(x => x.inviterId === who) + 1;
-      if (!s) { await i.editReply('Hanooz hich davati sabt nashode.'); return; }
-
-      // Presence is read from the guild, not from the stored leave stamp, so it
-      // is right for rows that predate that column too.
-      const here = (id: string) => i.guild?.members.cache.has(id) ?? false;
-      const line = (v: typeof s.invitees[number]) =>
-        `${v.reason === 'ok' ? '✅' : '❌'} <@${v.userId}>` +
-        (v.reason === 'ok' ? '' : ` — ${REASON_TEXT[v.reason]}`) +
-        (here(v.userId) ? '' : ' · _raft_');
-
-      const ok = s.invitees.filter(v => v.reason === 'ok');
-      const no = s.invitees.filter(v => v.reason !== 'ok');
-      const body = [
-        `## 🎟 ${nameOf(who)}`,
-        `**${s.qualified}** davat-e ghabel-e ghabool${rank ? ` · rotbe **${rank}**` : ''}`,
-        `-# ${ok.filter(v => here(v.userId)).length} nafar hanooz to server-an · raftan az emtiaz kam nemikone`,
-        '',
-        ...ok.slice(0, 25).map(line),
-        ...(no.length ? ['', '**Hesab nashode:**', ...no.slice(0, 15).map(line)] : []),
-      ].join('\n');
-
-      await i.editReply(body.slice(0, 3900));
+      await i.editReply(breakdown(i.guild!, scores, who));
       return;
     }
 
-    /* ── review: attributions the bot inferred ─────────────────── */
     if (sub === 'review') {
-      const flagged = scores.flatMap(s => s.invitees
-        .filter(v => v.guessed && v.reason === 'ok')
-        .map(v => `• <@${v.userId}> → <@${s.inviterId}>`));
-      await i.editReply(flagged.length
-        ? ['**Davat-haye hadsi** — bot motmaen nabood ki davateshun karde.',
-           'Ina meghdar-e kami-an va meemoolan dorostan, vali ghabl az jayeze yek negah behesh bendaz.',
-           '', ...flagged.slice(0, 40)].join('\n')
-        : 'Hame-ye davat-ha ghat\'i sabt shodan — hich mored-e hadsi nist ✅');
+      const all = scores.flatMap(s => s.invitees.map(v => ({ ...v, inviterId: s.inviterId })));
+      const guessed = all.filter(v => v.guessed);
+      const unknown = await unattributedJoins(guildId, g.startsAt);
+      const tally = all.reduce<Record<string, number>>((a, v) => {
+        a[v.reason] = (a[v.reason] ?? 0) + 1; return a;
+      }, {});
+
+      // The health of the ledger, not just the suspicious rows — this is the
+      // number to look at before trusting the board with a prize on it.
+      const health = [
+        '## 🔍 Salamat-e shomaresh',
+        `Davat-haye sabt shode: **${all.length}**`,
+        ...Object.entries(tally).map(([k, n]) => `> ${k === 'ok' ? '✅' : '❌'} ${REASON_TEXT[k as Reason]}: ${n}`),
+        `Join-haye bedoon-e davat-konande: **${unknown}**` +
+          (unknown ? ' — az link-e vanity ya vaghti bot khamoosh bood' : ''),
+        `Hadsi (bot motmaen nabood): **${guessed.length}**`,
+      ];
+
+      await i.editReply([...health, '',
+        ...(guessed.length
+          ? ['**Mored-haye hadsi** — ghabl az jayeze yek negah behesh bendaz:', '',
+             ...guessed.slice(0, 30).map(v => `• <@${v.userId}> → <@${v.inviterId}>` +
+               (v.reason === 'ok' ? '' : ` _(${REASON_TEXT[v.reason]})_`))]
+          : ['Hich mored-e hadsi nist — hame ghat\'i sabt shodan ✅'])].join('\n').slice(0, 3900));
       return;
     }
 
-    /* ── board / close ─────────────────────────────────────────── */
     if (sub === 'close') {
       await getDb().update(giveaways).set({
         closedAt: new Date(),
@@ -203,20 +198,22 @@ const command: Command = {
       g.closedAt = new Date();
     }
 
+    const nameOf = (id: string) => i.guild?.members.cache.get(id)?.displayName ?? `<@${id}>`;
     const png = await renderLeaderboardBanner({
       title: g.closedAt ? 'Natije' : 'Musabeghe-ye Davat',
-      subtitle: `${i.guild!.name} · ${g.title}`,
-      accent: '#9b6cff', kicker: 'DAVAT',
+      subtitle: `${i.guild!.name} · ${g.title}`, accent: '#9b6cff', kicker: 'DAVAT',
       rows: scores.slice(0, 8).filter(s => s.qualified > 0).map(s => ({
         name: nameOf(s.inviterId), value: `${s.qualified} nafar`, amount: s.qualified,
       })),
     }).catch(() => null);
 
     await i.editReply({
-      components: [board(g, scores, nameOf, png ? 'giveaway.png' : undefined)],
+      components: [boardContainer(g, scores, nameOf, png ? 'giveaway.png' : undefined),
+        ...(g.closedAt ? [] : [buttons()])],
       ...(png ? { files: [new AttachmentBuilder(png, { name: 'giveaway.png' })] } : {}),
       flags: MessageFlags.IsComponentsV2,
     });
   },
 };
 export default command;
+export { GW };
