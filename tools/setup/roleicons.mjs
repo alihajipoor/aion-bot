@@ -95,32 +95,36 @@ function svg(shape, colour, id = 'i') {
 }
 
 /**
- * A rank as its initial under a crown: M for moderator, G for global, P, C, D.
- * The letter says the rank, the colour says the section, the crown says staff.
+ * A rank badge: a crest whose top edge *is* the crown, filled solid, with the
+ * rank's initial knocked out of it.
  *
- * The letter is set in the server's own face rather than drawn as a path, so
- * it matches the wordmark and the channel names instead of approximating them.
+ * Two things drove this. A crown floating above a letter reads as two objects
+ * that happen to be near each other, so here the crown is the silhouette — the
+ * letter is set high enough that its cap rises between the points, cut into
+ * the metal rather than standing under it.
+ *
+ * And solid mass survives the downscale in a way outlines never do. At 20px a
+ * glowing line becomes a smudge, while a filled crest keeps its shape and its
+ * colour, and the knocked-out letter stays a hole you can read.
  */
-function crownedLetter(letter, colour, id) {
-  const halo = `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%">`
-    + `<feGaussianBlur stdDeviation="3"/></filter>`;
-  const crown = (w, c, o, f = '') =>
-    `<path d="${CROWN}" fill="none" stroke="${c}" stroke-width="${w}" stroke-opacity="${o}"`
-    + ` stroke-linejoin="round" stroke-linecap="round"${f}/>`;
-  const text = (attrs) =>
-    `<text x="32" y="58" text-anchor="middle" font-family="Vazirmatn" font-size="42"`
-    + ` font-weight="700" ${attrs}>${letter}</text>`;
+const CREST = 'M10 26 L16 4 L25 19 L32 1 L39 19 L48 4 L54 26 '
+            + 'L54 39 C54 50 45 58 32 62 C19 58 10 50 10 39 Z';
 
-  return `<defs>${halo}</defs>`
-    // the glow, under everything
-    + crown(8, colour, 0.95, ` filter="url(#${id})"`)
-    + text(`fill="none" stroke="${colour}" stroke-width="9" stroke-opacity="0.95" stroke-linejoin="round" filter="url(#${id})"`)
-    // the tube
-    + crown(5, colour, 1)
-    + text(`fill="${colour}" stroke="${colour}" stroke-width="4" stroke-linejoin="round"`)
-    // the lit core
-    + crown(1.6, '#ffffff', 0.92)
-    + text(`fill="#ffffff" fill-opacity="0.95" stroke="none"`);
+function crownedLetter(letter, colour, id) {
+  return `<defs>
+    <linearGradient id="f${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="0.35" stop-color="${colour}"/>
+      <stop offset="1" stop-color="${colour}" stop-opacity="0.72"/>
+    </linearGradient>
+    <filter id="g${id}" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.4"/>
+    </filter>
+  </defs>
+  <path d="${CREST}" fill="${colour}" filter="url(#g${id})" opacity="0.85"/>
+  <path d="${CREST}" fill="url(#f${id})" stroke="${colour}" stroke-width="2" stroke-linejoin="round"/>
+  <text x="32" y="53" text-anchor="middle" font-family="Vazirmatn" font-size="48"
+        font-weight="700" fill="#0b0d17" fill-opacity="0.92">${letter}</text>`;
 }
 
 function letterSvg(letter, colour, id) {
