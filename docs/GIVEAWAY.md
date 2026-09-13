@@ -17,7 +17,8 @@ running one. The code is `apps/bot/src/lib/invites.ts` (scoring) and
 | 1 year Discord Nitro | Carries 2 boosts/month they can point at Λ I O N |
 | $60 USDT | No region problem at all |
 
-**2nd place** — 3 months Discord Nitro · $30 Steam gift card · $30 USDT
+**2nd place** — the winner picks one: 3 months Discord Nitro · Heroix bundle ·
+$30 Steam gift card · $30 USDT
 
 **3rd place** — 1 month Nitro **plus** either a $15 Steam gift card or $15 USDT
 
