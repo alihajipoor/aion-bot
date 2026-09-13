@@ -56,7 +56,9 @@ Routing is configurable per event in the web panel — channels are not hard-cod
 
 **Activity + Leaderboards** (replaces Statbot) — voice sessions excluding AFK, discounting self-deafened and alone-in-channel time; message counts with anti-spam. Weekly admin leaderboard by role, daily top-voice/top-chatter banners rendered with Satori so they share the panel's design system.
 
-**InviteTracking** (replaces Invite Tracker) — invite cache diffed on each join, with vanity-URL and OAuth fallbacks.
+**InviteTracking** (replaces Invite Tracker) — invite cache diffed on each join, with vanity-URL and OAuth fallbacks. Links minted by the giveaway's button carry recorded ownership, which beats the diff: those joins are attributed exactly rather than inferred.
+
+**Giveaway** — invite competition with a scorer strict enough to hang a prize on: one credit per person ever, a minimum account age, verification required. `/giveaway man` shows anyone their own invitees with a reason beside each that did not count, and `/giveaway review` reports the health of the ledger before anyone is paid. The rules are pure functions under test (`apps/bot/test/`), and CI runs them on every deploy. Full detail in [GIVEAWAY.md](GIVEAWAY.md).
 
 **AntiNuke / AntiRaid** (replaces Wick) — thresholds on mass channel/role delete, mass ban/kick, webhook creation and rapid joins; automatic response (strip roles / lockdown) plus alerting.
 
