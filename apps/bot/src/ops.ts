@@ -19,7 +19,7 @@ import { getDb, giveaways } from '@aion/db';
 import { config } from './config.js';
 import { openGiveaway, scoreInvites, unattributedJoins } from './lib/giveaway.js';
 import { REASON_TEXT, type Reason } from './lib/invites.js';
-import { postAnnouncement, awardPodium, refreshAnnouncement } from './modules/giveawayPoster.js';
+import { postAnnouncement, awardPodium, refreshAnnouncement, refreshBoard } from './modules/giveawayPoster.js';
 
 const argv = process.argv.slice(2);
 const task = argv[0];
@@ -138,15 +138,22 @@ async function setFloors(): Promise<void> {
   }
   await getDb().update(giveaways).set({ floors }).where(eq(giveaways.id, g.id));
   console.log(`floors for #${g.id}: ${g.floors.join('/')} -> ${floors.join('/')}`);
-  await withGuild(async guild => { await refreshAnnouncement(guild); });
-  console.log('announcement refreshed in place');
+  await withGuild(async guild => {
+    await refreshAnnouncement(guild);
+    await refreshBoard(guild);        // the board quotes the floors too
+  });
+  console.log('announcement and board refreshed in place');
 }
 
-/** Corrects the text of a live announcement without posting a new one. */
+/** Corrects the live announcement and standings without posting anything new. */
 async function refresh(): Promise<void> {
-  const ok = await withGuild(async g => refreshAnnouncement(g));
-  console.log(ok ? 'announcement refreshed in place' : 'nothing to refresh');
-  if (!ok) process.exitCode = 1;
+  const { notice, board } = await withGuild(async g => ({
+    notice: await refreshAnnouncement(g),
+    board: await refreshBoard(g),
+  }));
+  console.log(`announcement: ${notice ? 'refreshed' : 'not refreshed'}`);
+  console.log(`board:        ${board ? 'refreshed' : 'not refreshed'}`);
+  if (!notice && !board) process.exitCode = 1;
 }
 
 const tasks: Record<string, () => Promise<void>> = {

@@ -17,11 +17,12 @@ import type { AionClient } from '../client.js';
 const log = logger('giveaway');
 
 const CHECK_MS = 10 * 60_000;
+const BOARD_EVERY_MS = 60 * 60_000;   // the standings go stale within minutes
 const RECRUITER = 'ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•';
 const RECRUITER_AT = 30;
 const PODIUM = ['ʟᴇɢᴇɴᴅ│𝙳𝙰𝚅𝙰𝚃│•', 'ᴇʟɪᴛᴇ│𝙳𝙰𝚅𝙰𝚃│•', 'ᴘɪsʜᴛᴀᴢ│𝙳𝙰𝚅𝙰𝚃│•'];
 
-interface Marks { lastGiveaway?: string; giveawayIds?: string[]; giveawayRun?: number }
+interface Marks { lastGiveaway?: string; giveawayIds?: string[]; giveawayRun?: number; boardAt?: string }
 
 async function readMarks(guildId: string, name: string): Promise<Marks> {
   const [row] = await getDb().select().from(guilds).where(eq(guilds.guildId, guildId)).limit(1);
@@ -82,19 +83,7 @@ export async function postAnnouncement(guild: Guild): Promise<void> {
   const channel = giveawayChannel(guild);
   if (!channel) { log.warn('no giveaway channel found'); return; }
 
-  const scores = await scoreInvites(guild.id, {
-    from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
-  });
-  const nameOf = (id: string) => guild.members.cache.get(id)?.displayName ?? `<@${id}>`;
-
-  const png = await renderLeaderboardBanner({
-    title: 'Musabeghe-ye Davat', subtitle: `${guild.name} · ${g.title}`,
-    accent: '#9b6cff', kicker: 'DAVAT',
-    rows: scores.slice(0, 8).filter(s => s.qualified > 0).map(s => ({
-      name: nameOf(s.inviterId), value: `${s.qualified} nafar`, amount: s.qualified,
-    })),
-  }).catch(() => null);
-
+  const { components, files } = await renderBoard(guild, g);
   const before = await readMarks(guild.id, guild.name);
   await retire(channel, before.giveawayIds);
 
@@ -112,18 +101,65 @@ export async function postAnnouncement(guild: Guild): Promise<void> {
   });
 
   const second = await channel.send({
-    components: [boardContainer(g, scores, nameOf, png ? 'giveaway.png' : undefined)],
-    ...(png ? { files: [new AttachmentBuilder(png, { name: 'giveaway.png' })] } : {}),
-    flags: MessageFlags.IsComponentsV2,
-    allowedMentions: { parse: [] },
+    components, ...files, flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
   });
 
   await writeMarks(guild.id, {
     lastGiveaway: new Date().toISOString().slice(0, 10),
     giveawayIds: [first.id, second.id],
     giveawayRun: g.id,
+    boardAt: new Date().toISOString(),
   });
   log.info(`announcement posted to #${channel.name}`);
+}
+
+/** One renderer for the board, so the hourly edit and the daily post agree. */
+async function renderBoard(guild: Guild, g: Awaited<ReturnType<typeof openGiveaway>>) {
+  if (!g) throw new Error('no giveaway');
+  const scores = await scoreInvites(guild.id, {
+    from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
+  });
+  const nameOf = (id: string) => guild.members.cache.get(id)?.displayName ?? `<@${id}>`;
+  const png = await renderLeaderboardBanner({
+    title: 'Musabeghe-ye Davat', subtitle: `${guild.name} · ${g.title}`,
+    accent: '#9b6cff', kicker: 'DAVAT',
+    rows: scores.slice(0, 8).filter(s => s.qualified > 0).map(s => ({
+      name: nameOf(s.inviterId), value: `${s.qualified} nafar`, amount: s.qualified,
+    })),
+  }).catch(() => null);
+  return {
+    components: [boardContainer(g, scores, nameOf, png ? 'giveaway.png' : undefined)],
+    files: png ? { files: [new AttachmentBuilder(png, { name: 'giveaway.png' })] } : {},
+  };
+}
+
+/**
+ * Rewrites the standings in place, hourly.
+ *
+ * The board is a live scoreboard sitting under a notice that only moves once a
+ * day. Left alone it tells people nobody has invited anyone hours after someone
+ * has. Editing keeps it in position under the announcement and costs no ping.
+ */
+export async function refreshBoard(guild: Guild): Promise<boolean> {
+  const g = await openGiveaway(guild.id);
+  if (!g) return false;
+  const channel = giveawayChannel(guild);
+  const marks = await readMarks(guild.id, guild.name);
+  const id = marks.giveawayIds?.[1];
+  if (!channel || !id) return false;
+
+  const msg = await channel.messages.fetch(id).catch(() => null);
+  if (!msg) { log.warn(`board ${id} is gone — the next repost will replace it`); return false; }
+
+  const { components, files } = await renderBoard(guild, g);
+  // attachments: [] drops the banner rendered an hour ago; without it the old
+  // image stays attached and the gallery keeps pointing at the stale one.
+  await msg.edit({
+    components, ...files, attachments: [],
+    flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] },
+  });
+  await writeMarks(guild.id, { boardAt: new Date().toISOString() });
+  return true;
 }
 
 /**
@@ -230,8 +266,13 @@ export function installGiveawayPoster(client: AionClient): void {
       const today = new Date().toISOString().slice(0, 10);
       // A new run always announces immediately, even if the one it replaced
       // already posted today.
-      if (marks.lastGiveaway === today && marks.giveawayRun === g.id) return;
-      await postAnnouncement(guild);
+      if (marks.lastGiveaway !== today || marks.giveawayRun !== g.id) {
+        await postAnnouncement(guild);
+        return;
+      }
+      // Otherwise keep the standings current between announcements.
+      const since = marks.boardAt ? Date.now() - Date.parse(marks.boardAt) : Infinity;
+      if (since >= BOARD_EVERY_MS) await refreshBoard(guild);
     } catch (e) {
       log.error('giveaway tick failed', e);
     }
