@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SCUM_ROLES, roleOf, resolveNight, resolveDayVote, terroristTriggers, counts,
+  fireGun, canDisable,
 } from '../dist/modules/events/scum/rules.js';
 import * as rules from '../dist/modules/events/scum/rules.js';
 
@@ -357,7 +358,7 @@ test('Kalantar hands the gun over and spends one', () => {
     { players: [P('ka', 'kalantar', 1), P('v', 'shahrvand')] },
     [act('ka', 'v')],
   );
-  assert.deepEqual(res.gunHolders, ['v']);
+  assert.deepEqual(res.gunHolders, [{ userId: 'v', fake: false }]);
   assert.equal(res.uses.ka, 0);
 });
 
@@ -380,27 +381,51 @@ test('Kalantar with no guns left hands over nothing', () => {
   assert.equal(outcome(res, 'ka'), 'spent');
 });
 
-test('a drunk Kalantar hands over nothing and keeps the gun', () => {
+test('a drunk Kalantar hands over a blank, and spends the gun doing it', () => {
   const res = resolveNight(
     { players: [P('sa', 'saghi'), P('ka', 'kalantar', 1), P('v', 'shahrvand')] },
     [act('sa', 'ka'), act('ka', 'v')],
   );
-  assert.deepEqual(res.gunHolders, []);
+  // The holder is armed as far as they know. Nothing in this result tells them
+  // otherwise, and nothing may: they find out by firing it in public.
+  assert.deepEqual(res.gunHolders, [{ userId: 'v', fake: true }]);
   assert.equal(outcome(res, 'ka'), 'drunk');
-  assert.equal(res.uses.ka, 1);
+  assert.equal(res.uses.ka, 0, 'the gun is spent even though it will not fire');
+});
+
+test('a blank fires and kills nobody; a real gun kills', () => {
+  const blank = fireGun([{ userId: 'v', fake: true }], 'v', 'x');
+  assert.equal(blank.fired, true);
+  assert.equal(blank.hit, false);
+  assert.deepEqual(blank.guns, [], 'spent either way');
+
+  const live = fireGun([{ userId: 'v', fake: false }], 'v', 'x');
+  assert.equal(live.hit, true);
+});
+
+test('someone with no gun cannot fire one', () => {
+  assert.deepEqual(fireGun([], 'v', 'x'), { fired: false, hit: false, guns: [] });
+});
+
+test('the Don can never be switched off — the mafia would have no night kill', () => {
+  assert.equal(canDisable('don'), false);
+  assert.equal(canDisable('sniper'), true);
+  assert.equal(canDisable('saghi'), true);
 });
 
 test('a gun handed out on an earlier night is still held tonight', () => {
   const res = resolveNight(
-    { players: [P('ka', 'kalantar', 0), P('v', 'shahrvand')], gunHolders: ['v'] },
+    { players: [P('ka', 'kalantar', 0), P('v', 'shahrvand')],
+      gunHolders: [{ userId: 'v', fake: false }] },
     [],
   );
-  assert.deepEqual(res.gunHolders, ['v']);
+  assert.deepEqual(res.gunHolders, [{ userId: 'v', fake: false }]);
 });
 
 test('a gun holder shot in the night takes the gun out of play', () => {
   const res = resolveNight(
-    { players: [P('dn', 'don'), P('v', 'shahrvand')], gunHolders: ['v'] },
+    { players: [P('dn', 'don'), P('v', 'shahrvand')],
+      gunHolders: [{ userId: 'v', fake: false }] },
     [act('dn', 'v')],
   );
   assert.deepEqual(res.deaths, ['v']);
@@ -412,7 +437,7 @@ test('Kalantar may arm a mafia player — that is the risk', () => {
     { players: [P('ka', 'kalantar', 1), P('m', 'mafia_sade')] },
     [act('ka', 'm')],
   );
-  assert.deepEqual(res.gunHolders, ['m']);
+  assert.deepEqual(res.gunHolders, [{ userId: 'm', fake: false }]);
 });
 
 /* ── night: Natasha ────────────────────────────────────────────── */

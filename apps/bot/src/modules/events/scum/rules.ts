@@ -109,7 +109,20 @@ export interface NightState {
    * Who is already carrying one of Kalantar's guns. It is fired in daylight,
    * from the day after it is handed over, so it has to survive the night.
    */
-  gunHolders?: string[];
+  gunHolders?: Gun[];
+}
+
+/**
+ * A gun in someone's hands, and whether it will actually fire.
+ *
+ * A gun handed over by a drunk Kalantar is a blank, and the holder is never
+ * told. They find out by pulling the trigger in front of everyone and watching
+ * nothing happen — which is the point of the rule, so `fake` must never reach
+ * the holder's own DM.
+ */
+export interface Gun {
+  userId: string;
+  fake: boolean;
 }
 
 /** One role-holder's pick for the night, keyed by who made it. */
@@ -158,7 +171,7 @@ export interface NightResult {
   /** Cannot speak tomorrow. */
   silenced: string | null;
   detective: DetectiveAnswer | null;
-  gunHolders: string[];
+  gunHolders: Gun[];
   /**
    * Remaining uses after the night, for every counter the night can spend.
    * Merge it into the stored map rather than replacing — the Shahrdar's
@@ -242,24 +255,21 @@ export function resolveNight(state: NightState, actions: NightAction[]): NightRe
 
   // 2. Kalantar hands the gun over. Nothing happens tonight; the holder fires
   //    it in daylight, from tomorrow onward.
-  const guns = new Set(state.gunHolders ?? []);
+  const guns = new Map((state.gunHolders ?? []).map(g => [g.userId, g.fake]));
   for (const a of of('kalantar')) {
     if (a.target === a.id) {
       // "Gives a gun to another player. Never shoots themselves."
       log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'bad-target' });
       continue;
     }
-    if (drunk.has(a.id)) {
-      // Nothing was handed over, so nothing is spent — the same reading the
-      // doc gives a drunk shooter's bullet [filled].
-      log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'drunk' });
-      continue;
-    }
     const left = uses[a.id] ?? 0;
     if (left <= 0) { log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'spent' }); continue; }
     uses[a.id] = left - 1;
-    guns.add(a.target);
-    log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'ok' });
+    // Drunk, the Kalantar still hands something over and still spends the gun —
+    // it simply will not fire. The holder is told nothing, and learns it by
+    // pulling the trigger in public, which is the whole point of the rule.
+    guns.set(a.target, drunk.has(a.id));
+    log.push({ actor: a.id, role: a.role, target: a.target, outcome: drunk.has(a.id) ? 'drunk' : 'ok' });
   }
 
   // 3. Doctor marks a save. Unlimited, self included.
@@ -339,7 +349,8 @@ export function resolveNight(state: NightState, actions: NightAction[]): NightRe
     detective,
     // A gun in a dead man's hand is never fired, and whoever left the game
     // during the day is not carrying one into tomorrow either.
-    gunHolders: [...guns].filter(id => living.has(id) && !deaths.includes(id)),
+    gunHolders: [...guns].filter(([id]) => living.has(id) && !deaths.includes(id))
+      .map(([userId, fake]) => ({ userId, fake })),
     uses,
     drunk: [...drunk],
     silencedEver: [...silencedEver],
@@ -410,6 +421,32 @@ export function resolveDayVote(votes: Record<string, string>, round: 1 | 2): Vot
 }
 
 /** How a player left the game. The Terrorist cares; nothing else does. */
+/**
+ * Fires a gun in daylight.
+ *
+ * A real gun kills and the victim's role is announced on the spot — the only
+ * death in the game that reveals one. A blank kills nobody, and the shooter
+ * discovers it here, publicly, having already spent their credibility on the
+ * accusation.
+ */
+export function fireGun(
+  guns: Gun[], shooter: string, target: string,
+): { fired: boolean; hit: boolean; guns: Gun[] } {
+  const held = guns.find(g => g.userId === shooter);
+  if (!held || shooter === target) return { fired: false, hit: false, guns };
+  return {
+    fired: true,
+    hit: !held.fake,
+    guns: guns.filter(g => g.userId !== shooter),   // spent either way
+  };
+}
+
+/** Roles the game cannot run without — the Don is the mafia's only night shot. */
+export const MANDATORY_ROLES: readonly RoleKey[] = ['don'];
+
+export const canDisable = (key: string): boolean =>
+  !MANDATORY_ROLES.includes(key as RoleKey);
+
 export type Removal = 'vote' | 'shot' | 'god' | 'kalantar-gun';
 
 /**
