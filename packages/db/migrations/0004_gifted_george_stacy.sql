@@ -1,0 +1,1 @@
+ALTER TABLE "giveaways" ALTER COLUMN "floors" SET DEFAULT '[100,100,100]'::jsonb;

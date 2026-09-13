@@ -235,7 +235,7 @@ export const giveaways = pgTable('giveaways', {
   /** How old an invited account must already be, in days, to count. */
   minAccountAgeDays: integer('min_account_age_days').notNull().default(30),
   /** Minimum qualified invites for 1st, 2nd and 3rd place. */
-  floors:    jsonb('floors').$type<number[]>().notNull().default([10, 7, 5]),
+  floors:    jsonb('floors').$type<number[]>().notNull().default([100, 100, 100]),
   startsAt:  timestamp('starts_at', { withTimezone: true }).notNull().defaultNow(),
   endsAt:    timestamp('ends_at', { withTimezone: true }).notNull(),
   /** Set when the board is frozen; the result below is then the record. */

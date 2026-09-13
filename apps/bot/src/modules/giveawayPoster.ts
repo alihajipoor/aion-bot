@@ -18,7 +18,7 @@ const log = logger('giveaway');
 
 const CHECK_MS = 10 * 60_000;
 const RECRUITER = 'ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•';
-const RECRUITER_AT = 3;
+const RECRUITER_AT = 30;
 const PODIUM = ['ʟᴇɢᴇɴᴅ│𝙳𝙰𝚅𝙰𝚃│•', 'ᴇʟɪᴛᴇ│𝙳𝙰𝚅𝙰𝚃│•', 'ᴘɪsʜᴛᴀᴢ│𝙳𝙰𝚅𝙰𝚃│•'];
 
 interface Marks { lastGiveaway?: string; giveawayIds?: string[] }
@@ -107,14 +107,16 @@ export async function postAnnouncement(guild: Guild): Promise<void> {
  * offline when it happened, and would never come off if a count fell.
  */
 async function sweepRecruiters(guild: Guild): Promise<void> {
-  const g = await openGiveaway(guild.id);
-  if (!g) return;
   const role = findRole(guild, RECRUITER);
   if (!role) return;
+  const g = await openGiveaway(guild.id);
 
-  const scores = await scoreInvites(guild.id, {
+  // The role lasts for the giveaway and no longer. With nothing running, nobody
+  // has earned it — which is the same statement as "take it off everyone", and
+  // deriving both from one set is why it cannot be left behind on someone.
+  const scores = g ? await scoreInvites(guild.id, {
     from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
-  });
+  }) : [];
   const earned = new Set(scores.filter(s => s.qualified >= RECRUITER_AT).map(s => s.inviterId));
 
   for (const id of earned) {
@@ -126,7 +128,8 @@ async function sweepRecruiters(guild: Guild): Promise<void> {
   }
   for (const m of role.members.values()) {
     if (!earned.has(m.id)) {
-      await m.roles.remove(role, 'AION: davat count fell below the line').catch(() => {});
+      await m.roles.remove(role, g ? 'AION: davat count fell below the line'
+        : 'AION: giveaway is over').catch(() => {});
       log.info(`recruiter role removed from ${m.user.tag}`);
     }
   }
@@ -157,9 +160,12 @@ export function installGiveawayPoster(client: AionClient): void {
     const guild = client.guilds.cache.get(config.guildId);
     if (!guild) return;
     try {
+      // Runs first and unconditionally: this is what strips the role once the
+      // giveaway is closed or cancelled.
+      await sweepRecruiters(guild);
+
       const g = await openGiveaway(guild.id);
       if (!g) return;
-      await sweepRecruiters(guild);
 
       const marks = await readMarks(guild.id, guild.name);
       const today = new Date().toISOString().slice(0, 10);

@@ -24,7 +24,8 @@ First and second place are the Epic and Heroic tiers of the same WoW bundle,
 which is worth saying out loud in the announcement: it makes the gap between
 the places legible to anyone who plays.
 
-**3rd place** — 1 month Nitro **plus** either a $15 Steam gift card or $15 USDT
+**3rd place** — the winner picks one: 1 month Discord Nitro · $15 Steam gift card ·
+$15 USDT
 
 > **Check redemption before announcing a winner.** Steam has long restricted
 > Iranian accounts and Battle.net has the same problem, so a gift card bought
@@ -39,8 +40,10 @@ the places legible to anyone who plays.
 - **`Λ | Legend`** nickname prefix; `modules/nickguard.ts` already enforces it.
 - A pinned **Hall of Λ** post carrying the final board.
 - Their own permanent voice room in the Mansion.
-- **Participation tier at 3 qualified invites**: a permanent recruiter role and
-  icon, so the people who cannot reach the podium keep inviting anyway.
+- **Recruiter tier at 30 qualified invites**: the `ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•` role and
+  icon, granted and removed by the bot automatically. It lasts for the giveaway
+  only — the sweep strips it from everyone once nothing is running, so it cannot
+  be left behind on someone after the fact.
 
 ---
 
@@ -55,34 +58,45 @@ A qualified invite is a person who:
 Each person counts **once, ever** — rejoining does not stack, and someone who
 was already a member before the giveaway is not a new join.
 
-**Leaving does not take the credit away.** The inviter did their part; what the
-invited person does afterwards is not theirs to control.
-
-There is deliberately **no activity requirement**. Joining and verifying is the
-whole bar.
+**Leaving does not take the credit away**, and there is **no activity
+requirement** — joining and verifying is the whole bar. Neither is advertised in
+the announcement: they are how the scorer behaves, not selling points, and
+spelling them out only reads as an invitation to bring people who leave.
 
 Alt accounts disqualify the inviter entirely, not just the fake invites. That
 sentence does more work than any detection could.
 
-### Why these thresholds, not 100/50/20
+### The floor: 100 for every place
 
-The server has ~148 members. One person reaching 100 invites means adding
-two-thirds of the server alone. A target nobody can reach produces *less*
-growth than no giveaway, because people do the arithmetic in week one and stop.
+Ali's call, made twice. All three places require **100 qualified invites**; below
+that the place goes unawarded, however high someone sits on the board.
 
-Places are therefore **ranked with a floor**, defaulting to 10 / 7 / 5. The
-floor stops a prize being won on two invites; the ranking keeps everyone racing
-the person above them to the last day. A floor is a bar, not a queue position —
-if the runner-up misses second place's floor, second place goes unawarded
-rather than sliding down.
+The risk, recorded because it was raised and overruled rather than missed: the
+server has ~148 members, so 100 invites from one person means adding two-thirds
+of the server single-handed, and the likely outcome is that no prize is awarded
+at all. The 30-invite recruiter role exists partly to give people a reachable
+target underneath it.
+
+`floors` is stored per giveaway rather than compiled in, so the numbers can be
+lowered mid-run if the board stalls:
+
+```sql
+UPDATE giveaways SET floors = '[40,25,15]' WHERE closed_at IS NULL;
+```
+
+A floor is a bar, not a queue position — if the runner-up misses it, second
+place goes unawarded rather than sliding down to whoever is next.
 
 ---
 
 ## Runbook
 
 ```bash
-/giveaway start title:"Musabeghe-ye Davat" days:21    # floors default to 10/7/5
+/giveaway start title:"Musabeghe-ye Davat"    # 21 days, floors 100/100/100
 ```
+
+Admin subcommands are **Dev-only** (plus the guild owner, so the server cannot
+lock itself out). `board` and `man` are open to everyone.
 
 Only joins from that moment count, so start it when you announce it.
 
@@ -94,6 +108,22 @@ Only joins from that moment count, so start it when you announce it.
 | `/giveaway review` | admin | Attributions the bot **inferred** rather than observed |
 | `/giveaway close` | admin | Freezes the result into the record and posts the final board |
 | `/giveaway cancel` | admin | Drops it with no result |
+
+The announcement is posted to `•︱🎁│𝙶𝙸𝚅𝙴𝙰𝚆𝙰𝚈` every 24 hours with an
+`@everyone` ping, replacing the previous one rather than stacking. Three buttons
+ride under every repost:
+
+| Button | What it does |
+|---|---|
+| 🔗 لینک دعوت من | Mints a permanent personal invite, ephemeral |
+| 📊 دعوت‌های من | Their own invitees, with a reason beside each that did not count |
+| 🏆 جدول | The live board |
+
+The link button is worth more than convenience. Discord credits an invite made
+through the API to the *application*, not to the person who asked for it, so
+ownership is recorded in `invite_cache` and the join handler reads it back —
+every join through a minted link is attributed exactly rather than inferred from
+a uses diff.
 
 **Run `/giveaway review` before paying anyone.** When a join arrives through an
 invite created while the bot was down, the inviter is a best guess. It is a

@@ -125,7 +125,7 @@ export function boardContainer(
 
   c.addSeparatorComponents(new SeparatorBuilder());
   c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    '-# هر نفر یک بار · اکانت بالای ۳۰ روز · باید وریفای کنه · رفتنش امتیازت رو کم نمی‌کنه'));
+    '-# هر نفر یک بار · اکانت بالای ۳۰ روز · باید وریفای کنه'));
   return c;
 }
 
@@ -149,7 +149,7 @@ export function breakdown(guild: Guild, scores: Score[], userId: string): string
   return [
     `## 🎟 ${name}`,
     `**${s.qualified}** دعوت معتبر${rank ? ` · رتبه‌ی **${rank}**` : ''}`,
-    `-# ${ok.filter(v => here(v.userId)).length} نفرشون هنوز تو سرورن · رفتنشون امتیازت رو کم نمی‌کنه`,
+    `-# ${ok.filter(v => here(v.userId)).length} نفرشون هنوز تو سرورن`,
     '',
     ...ok.slice(0, 25).map(line),
     ...(no.length ? ['', '**حساب نشده:**', ...no.slice(0, 15).map(line)] : []),
