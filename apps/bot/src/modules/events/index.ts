@@ -43,7 +43,10 @@ const byName = (g: Guild, re: RegExp, type = ChannelType.GuildText) =>
 export const interfaceChannel = (g: Guild) => byName(g, /event-interface/i) as TextChannel | undefined;
 const newsChannel  = (g: Guild) => byName(g, /event-news/i) as TextChannel | undefined;
 const chatChannel  = (g: Guild) => byName(g, /event-chat/i) as TextChannel | undefined;
-const hallChannel  = (g: Guild) => byName(g, /event hall/i, ChannelType.GuildVoice) as VoiceChannel | undefined;
+// asciiFold turns the spaces in "EVENT HALL" into hyphens, so a pattern with a
+// space in it never matched and every teardown fell through to "any other voice
+// channel in this category" — which is Stream Voice. Accept either separator.
+const hallChannel  = (g: Guild) => byName(g, /event[-\s]?hall/i, ChannelType.GuildVoice) as VoiceChannel | undefined;
 const quidditchCat = (g: Guild) =>
   [...g.channels.cache.values()].find(c => c.type === ChannelType.GuildCategory && /quidditch/i.test(asciiFold(c.name)));
 
