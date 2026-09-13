@@ -22,6 +22,7 @@ import {
   type EventRow, type PastEvent,
 } from './store.js';
 import { startMafia, endMafia, mafiaComponent, mafiaModal, MAFIA_ID } from './mafia.js';
+import { resealEventAccess } from './lockout.js';
 import { startEsmFamil, endEsmFamil, esmComponent, esmModal, esmSelect, ESM_ID } from './esmfamil.js';
 import { startSoali, endSoali, soaliComponent, soaliModal, SOALI_ID } from './soali.js';
 import type { AionClient } from '../../client.js';
@@ -380,6 +381,8 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
       await removePlayer(ev.id, i.user.id);
     }
     const fresh = (await getEvent(id))!;
+    // The roster just changed, so who may see the console changed with it.
+    await resealEventAccess(guild, fresh, `AION event #${fresh.id} roster`);
     await refreshSignup(guild, fresh);
     await refreshCard(guild, fresh);
     return;
@@ -466,6 +469,9 @@ async function doStart(guild: Guild, ev: EventRow): Promise<void> {
     status: 'running', startedAt: new Date(),
     voiceChannelId: voiceId, textChannelId: textId, ownedChannelIds: owned,
   });
+
+  // Roles are dealt just after this, so the console must be shut to players now.
+  await resealEventAccess(guild, (await getEvent(ev.id))!, `AION event #${ev.id} started`);
 
   // Pull in anyone who signed up and is already sitting in another room.
   if (voiceId) {
@@ -556,6 +562,9 @@ async function doEnd(guild: Guild, ev: EventRow): Promise<void> {
 
   await patchEvent(ev.id, { status: 'ended', endedAt: new Date() });
   const fresh = (await getEvent(ev.id))!;
+  // Same function, opposite direction: the event is no longer live, so it wants
+  // nobody locked and every overwrite it wrote comes off.
+  await resealEventAccess(guild, fresh, `AION event #${ev.id} ended`);
 
   // Recap goes where the announcement went, so the thread of the evening reads
   // in one place.
@@ -614,7 +623,12 @@ async function doCancel(guild: Guild, ev: EventRow): Promise<void> {
   }
   await sweep(guild, ev, 'AION event cancelled');
 
-  await refreshCard(guild, (await getEvent(ev.id))!);
+  const after = (await getEvent(ev.id))!;
+  // A cancelled event is not live either, so this lifts every lock it wrote.
+  // Cancelling is the path most likely to be taken in a hurry, and it is the one
+  // where leaving people shut out of a staff channel would go unnoticed longest.
+  await resealEventAccess(guild, after, 'AION event cancelled');
+  await refreshCard(guild, after);
   await ensureEventPanel(guild);
 }
 
