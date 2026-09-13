@@ -15,7 +15,7 @@
  */
 import { Client, GatewayIntentBits } from 'discord.js';
 import { eq } from 'drizzle-orm';
-import { getDb, giveaways } from '@aion/db';
+import { getDb, giveaways, memberJoins } from '@aion/db';
 import { config } from './config.js';
 import { openGiveaway, scoreInvites, unattributedJoins } from './lib/giveaway.js';
 import { REASON_TEXT, type Reason } from './lib/invites.js';
@@ -156,10 +156,48 @@ async function refresh(): Promise<void> {
   if (!notice && !board) process.exitCode = 1;
 }
 
+/**
+ * Every join row we hold, with the verdict beside it.
+ *
+ * The board counts a window; the join log in Discord counts forever. When the
+ * two disagree the answer is almost always which window — but "almost always"
+ * is not good enough when a prize depends on it, so this prints the rows.
+ */
+async function joins(): Promise<void> {
+  const g = await openGiveaway(config.guildId);
+  const rows = await getDb().select().from(memberJoins)
+    .where(eq(memberJoins.guildId, config.guildId))
+    .orderBy(memberJoins.joinedAt);
+
+  console.log(`member_joins rows, all time: ${rows.length}`);
+  if (g) console.log(`giveaway #${g.id} window starts ${g.startsAt.toISOString()}\n`);
+
+  const perInviter = new Map<string, { all: number; inWindow: number }>();
+  for (const r of rows) {
+    if (!r.inviterId) continue;
+    const e = perInviter.get(r.inviterId) ?? { all: 0, inWindow: 0 };
+    e.all += 1;
+    if (g && r.joinedAt >= g.startsAt) e.inWindow += 1;
+    perInviter.set(r.inviterId, e);
+  }
+
+  console.log('inviter                    all-time   in-window');
+  for (const [id, e] of [...perInviter.entries()].sort((a, b) => b[1].all - a[1].all)) {
+    console.log(`  ${id.padEnd(22)} ${String(e.all).padStart(6)} ${String(e.inWindow).padStart(11)}`);
+  }
+
+  console.log(`\nlast 25 rows:`);
+  for (const r of rows.slice(-25)) {
+    console.log(`  ${r.joinedAt.toISOString()}  user ${r.userId}  by ${r.inviterId ?? '(unknown)'}` +
+      `${r.guessed ? '  [guessed]' : ''}${r.leftAt ? '  [left]' : ''}`);
+  }
+}
+
 const tasks: Record<string, () => Promise<void>> = {
   'giveaway-review': review,
   'giveaway-refresh': refresh,
   'giveaway-floors': setFloors,
+  'giveaway-joins': joins,
   'giveaway-start': start,
   'giveaway-close': close,
 };

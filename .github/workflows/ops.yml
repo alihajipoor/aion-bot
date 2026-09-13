@@ -18,6 +18,7 @@ on:
           - giveaway-review
           - giveaway-refresh
           - giveaway-floors
+          - giveaway-joins
           - giveaway-start
           - giveaway-close
       title:
