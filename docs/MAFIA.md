@@ -221,3 +221,110 @@ gated behind the test. For now, whether it is required is a setup toggle.
 MVP God picked. Pings the Mafia Player role only, never @everyone.
 
 **Scoreboard** — per player: games, wins and losses by team, MVP count.
+
+---
+
+## What is built (supporting features)
+
+The game itself lives in `apps/bot/src/modules/events/`. Everything below is the
+scaffolding around it: the record, the scoreboard, and the two channels.
+
+### Tables
+
+`mafia_games` — one row per finished game: guild, event, mode, winner, MVP,
+player count, ended-at. **`event_id` is unique.** A game-end path that fires
+twice — a retried button, a restart mid-teardown — must not double anyone's
+record, and once counters have moved a double-count cannot be told apart from
+two real games later.
+
+`mafia_stats` — running totals per player: games, wins and losses split by side,
+MVP count. A rollup rather than a recount, because `event_players` is deleted
+with its event and counting from it would quietly lose history.
+
+Migration: `packages/db/migrations/0005_wandering_talisman.sql`.
+
+### `lib/mafiaStats.ts`
+
+Nothing here talks to Discord.
+
+- `recordGame(game)` — writes the game down and moves every player's totals.
+  Idempotent on `eventId`; returns `null` when the event was already recorded.
+- `playerRecord(guildId, userId)` — one player's row, zeros rather than null.
+- `leaderboard(guildId, { sort, limit, minGames })` — ranked on total wins by
+  default, not win rate: one lucky game at 100% would otherwise outrank someone
+  who has shown up forty times.
+- `normalizeSide(side)` — the single place the two vocabularies meet. The
+  running game deals sides as `town`; the room, the spec and this document say
+  شهر. `solo` and anything unrecognised return `null` on purpose — the gray
+  roles are explicitly *not a team*, so they are counted as having played and
+  their win is announced on the card rather than scored to a side.
+
+### `modules/mafiaHistory.ts`
+
+`postMafiaHistory(guild, game)` is the call site's **only** entry point. It
+records the game and posts the card, in that order, and is safe to call twice.
+
+```ts
+await postMafiaHistory(guild, {
+  guildId: guild.id,
+  eventId: ev.id,
+  mode: 'persian',                 // optional, defaults to 'persian'
+  winner: 'mafia',                 // 'mafia' | 'shahr'
+  mvpUserId: someUserId ?? null,   // optional — God picks it by hand
+  endedAt: new Date(),             // optional, defaults to now
+  players: roster.map(p => ({
+    userId: p.userId,
+    role: p.role,                  // role key, e.g. 'detective'
+    roleFa: roleOf(p.role).fa,     // optional Persian label for the card
+    side: p.side,                  // 'mafia' | 'town' | 'shahr' | 'solo'
+  })),
+});
+// -> { recorded: boolean, messageId: string | null }
+```
+
+It never throws at the call site's expense — a missing channel or a failed send
+is logged and swallowed, because a game must not be left half-ended because
+somebody deleted a channel.
+
+The card shows the winning side, the full roster with each player's role and
+side (winners first, then the losers, then the gray roles), and the MVP. Roles
+are never revealed during play except by Kalantar's gun, so this reveal is the
+reason anyone opens the channel.
+
+**It pings the Mafia Player role and nothing else.** The ping is a role mention
+by id with `allowedMentions: { parse: [], roles: [roleId] }` — `parse` stays
+empty so that an `@everyone` written into a nickname or a role label can never
+become a real one.
+
+### Setup tools
+
+```
+node tools/setup/mafiaroles.mjs              # dry run
+node tools/setup/mafiaroles.mjs --apply      # creates ᴍᴀꜰɪᴀ│𝙿𝙻𝙰𝚈𝙴𝚁│•
+node tools/setup/roleorder.mjs --apply       # places it — roleorder owns position
+
+node tools/setup/mafiachannels.mjs           # dry run
+node tools/setup/mafiachannels.mjs --apply   # creates both channels + writes the guide
+node tools/setup/mafiachannels.mjs --apply --repost   # rewrite the guide text
+```
+
+`mafiaroles.mjs` creates the signup marker with **zero permissions** and does
+not position it — `roleorder.mjs` owns the hierarchy, and the role is listed
+there just below the Davat block. Run the roles tool first; `roleorder.mjs`
+refuses while a listed role is missing.
+
+`mafiachannels.mjs` creates the guide and history channels in QUIDDITCH:
+everyone reads and reacts, only Consultant and above post, and the bot is
+granted send explicitly because `permissionOverwrites.set()` is authoritative
+and the `@everyone` deny would otherwise apply to it too. The guide text is the
+rules above, in Persian, as eight posts; it is written once and only rewritten
+on `--repost`, so a re-run for the permissions does not shove the rules to the
+bottom of the channel.
+
+### Persian rendering
+
+Every Latin name goes through `isolate()` and every ASCII digit through `num()`
+from `lib/text.ts`. Persian letters are bidi class AL, which retargets the
+digits after them — which is how the giveaway board twice shipped with counts
+standing beside the wrong player. `RLM` does not fix it; only the Arabic Letter
+Mark that `num()` prefixes does.

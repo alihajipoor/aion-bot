@@ -36,6 +36,13 @@
       "when": 1789284158476,
       "tag": "0004_gifted_george_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789339037150,
+      "tag": "0005_wandering_talisman",
+      "breakpoints": true
     }
   ]
 }
