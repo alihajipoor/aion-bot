@@ -39,7 +39,7 @@ export const SCENARIOS: Scenario[] = [
       R('godfather', 'پدرخوانده', 'mafia', 1, 'Shellik e shab roosh asar nadare. Baraye karagah shahrvand neshoon dade mishe.'),
       R('detective', 'کارآگاه', 'town', 2, 'Har shab yek nafar ro estelam mikone.'),
       R('doctor', 'دکتر شهر', 'town', 3, 'Shabi ye nafar ro nejat mide. Mitoone khodesh ro ham entekhab kone, har shab ke bekhad.'),
-      R('lecter', 'دکتر لکتر', 'mafia', 4, 'Har shab yek mafia ro nejat mide; khodesh ro faghat yek bar.'),
+      R('lecter', 'دکتر لکتر', 'mafia', 4, 'Shabi ye mafia ro nejat mide. Mitoone khodesh ro ham entekhab kone, har shab ke bekhad.'),
       R('sniper', 'اسنایپر', 'town', 5, 'Do shellik dare. Age be shahrvand bezane khodesh mimire.'),
       R('matador', 'ماتادور', 'mafia', 6, 'Har shab yek naghsh ro block mikone.'),
       R('tough', 'جان سخت', 'town', 7, 'Do jan dare.'),
@@ -311,8 +311,10 @@ export const NIGHT_ACTIONS: Record<string, NightAction> = {
     allowSelf: true, answersActor: false,
   },
   lecter: {
+    // The mafia's mirror of the doctor, and now mirrored in the rule too: no
+    // cap on saving himself, one save a night, his pick each night.
     label: 'Nejat', prompt: 'Emshab kodoom mafia ro nejat midi?',
-    allowSelf: true, selfUses: 1, answersActor: false, targets: 'mafia',
+    allowSelf: true, answersActor: false, targets: 'mafia',
   },
   sniper: {
     label: 'Shellik', prompt: 'Emshab be ki shellik mikoni?',
