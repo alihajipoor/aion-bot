@@ -55,12 +55,11 @@ const C = { panel: 0x9b6cff, off: 0x4f545c } as const;
  * the flag rides in the same jsonb blob as the rest of the config, where the
  * narration work can read it without this panel having to own games.ts.
  */
-export interface PanelConfig extends MafiaConfig {
-  /** Post the night's public facts in the text channel as well as over voice. */
-  nightStoryPublic: boolean;
-}
+// nightStoryPublic lives on MafiaConfig itself, so there is nothing to add here
+// and nothing that can drift out of step with the narration code that reads it.
+export type PanelConfig = MafiaConfig;
 
-export const PANEL_DEFAULTS: PanelConfig = { ...MAFIA_DEFAULTS, nightStoryPublic: false };
+export const PANEL_DEFAULTS: PanelConfig = MAFIA_DEFAULTS;
 
 /** The stored blob, untouched — including keys this panel knows nothing about. */
 const rawConfig = (ev: EventRow): Record<string, unknown> =>
