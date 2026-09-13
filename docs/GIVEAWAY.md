@@ -12,13 +12,17 @@ running one. The code is `apps/bot/src/lib/invites.ts` (scoring) and
 
 | Option | Note |
 |---|---|
-| WoW *Classic Forever* / Epic expansion bundle | Battle.net region matters |
+| WoW *Classic Forever* **Epic** bundle | Battle.net region matters |
 | $60 Steam gift card | Steam wallet codes are region-locked |
 | 1 year Discord Nitro | Carries 2 boosts/month they can point at Λ I O N |
 | $60 USDT | No region problem at all |
 
-**2nd place** — the winner picks one: 3 months Discord Nitro · Heroix bundle ·
-$30 Steam gift card · $30 USDT
+**2nd place** — the winner picks one: WoW *Classic Forever* **Heroic** bundle ·
+3 months Discord Nitro · $30 Steam gift card · $30 USDT
+
+First and second place are the Epic and Heroic tiers of the same WoW bundle,
+which is worth saying out loud in the announcement: it makes the gap between
+the places legible to anyone who plays.
 
 **3rd place** — 1 month Nitro **plus** either a $15 Steam gift card or $15 USDT
 
