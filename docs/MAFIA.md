@@ -56,7 +56,6 @@ Usually only one of these appears; both only in a large game.
 | **Saghi** (ساقی) | Makes one player drunk at night; that player's ability does not work that night. |
 | **Shahrdar** (شهردار) | May cancel a completed final vote. Limited uses, set by God. |
 | **Kalantar** (کلانتر) | Gives a gun to another player at night. Never shoots themselves. |
-| **RavanPezeshk** (روانپزشک) | **[ASK]** — no ability was specified. |
 | **Doctor** (دکتر) | Saves one player per night, self included. Unlimited. |
 | **Detective** (کاراگاه) | Asks one player's **side** per night — "mafia" or "shahr", never the role. |
 | **Shahrvand Sade** | Nothing. |
@@ -121,6 +120,8 @@ one-time miss.
   immediately and publicly** — the only death in the game that reveals a role on
   the spot. The holder may be mafia; that is the risk.
 - Rooyintan is immune to all three **[filled]** — a shot is a shot.
+- A shot on a Shahr member **kills that member**. The Sniper is not punished; the
+  bullet is simply spent and a teammate is dead.
 - A Doctor save blocks **[filled]** every shot on that player that night, not
   just the first.
 
@@ -145,7 +146,8 @@ they were drunk.
 4. On reveal: anyone with **2 or more votes** goes to round two.
 5. Those players each get a turn to defend.
 6. **Round two vote**, again hidden until God ends it.
-7. Highest vote is eliminated. **[ASK]** ties.
+7. Highest vote is eliminated. **A tie eliminates nobody** — night falls with
+   everyone alive.
 8. Eliminated player's role is **[filled]** not revealed — except by Kalantar's
    gun.
 
@@ -153,11 +155,24 @@ God may jump to any phase — lobby, challenge, defence, vote — at any time.
 
 ---
 
-## Win conditions **[ASK]**
+## Win conditions — God calls it
 
-Standard is mafia win at parity, town win when all mafia are gone. The counting
-is what needs deciding, because Natasha and the Traitor sit on the wrong sides of
-their own teams.
+**The bot never ends a game on its own.** It keeps the counts and shows them on
+the console; God presses the win button.
+
+This was a deliberate choice. Natasha counts as mafia without being on the mafia
+team, and the Traitor counts as Shahr while possibly winning with mafia, so an
+automatic parity check has edge cases — and an edge case that fires mid-game
+ruins that game for everyone in it. A human deciding is slower and cannot be
+wrong in a way nobody saw coming.
+
+The console shows, live:
+
+```
+mafia 3  ·  shahr 4        (Natasha counted as mafia, Traitor as shahr)
+```
+
+Force-win buttons for either side are always available.
 
 ---
 
