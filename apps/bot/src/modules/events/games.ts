@@ -38,7 +38,7 @@ export const SCENARIOS: Scenario[] = [
     roles: [
       R('godfather', 'پدرخوانده', 'mafia', 1, 'Shellik e shab roosh asar nadare. Baraye karagah shahrvand neshoon dade mishe.'),
       R('detective', 'کارآگاه', 'town', 2, 'Har shab yek nafar ro estelam mikone.'),
-      R('doctor', 'دکتر شهر', 'town', 3, 'Har shab yek nafar ro nejat mide; khodesh ro faghat yek bar.'),
+      R('doctor', 'دکتر شهر', 'town', 3, 'Har shab yek nafar ro nejat mide — khodesh ham mahdoodiyat nadare.'),
       R('lecter', 'دکتر لکتر', 'mafia', 4, 'Har shab yek mafia ro nejat mide; khodesh ro faghat yek bar.'),
       R('sniper', 'اسنایپر', 'town', 5, 'Do shellik dare. Age be shahrvand bezane khodesh mimire.'),
       R('matador', 'ماتادور', 'mafia', 6, 'Har shab yek naghsh ro block mikone.'),
@@ -304,8 +304,11 @@ export const NIGHT_ACTIONS: Record<string, NightAction> = {
     allowSelf: false, answersActor: true, reveals: 'side',
   },
   doctor: {
+    // No selfUses cap: the doctor may spend every single night on themselves if
+    // they want to. One save a night, and whose it is each night is entirely
+    // their choice.
     label: 'Nejat', prompt: 'Emshab ki ro nejat midi?',
-    allowSelf: true, selfUses: 1, answersActor: false,
+    allowSelf: true, answersActor: false,
   },
   lecter: {
     label: 'Nejat', prompt: 'Emshab kodoom mafia ro nejat midi?',
