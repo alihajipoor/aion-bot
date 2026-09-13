@@ -38,6 +38,12 @@ const C = {
  * a mute. Losing your access is drawn as losing the mark.
  */
 
+/**
+ * A crown that sits on a letter's head. Five points, drawn small and wide so
+ * it reads as a crown rather than a smear once it is 20px tall.
+ */
+const CROWN = 'M13 22 L18 8 L25 16 L32 4 L39 16 L46 8 L51 22 Z';
+
 /** A chevron at a vertical offset, apex up — the Λ. */
 const chev = (dy = 0, w = 18) => `M${32 - w} ${44 + dy} L32 ${44 + dy - w * 1.33} L${32 + w} ${44 + dy}`;
 
@@ -88,18 +94,53 @@ function svg(shape, colour, id = 'i') {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">${glyph(shape, colour, id)}</svg>`;
 }
 
+/**
+ * A rank as its initial under a crown: M for moderator, G for global, P, C, D.
+ * The letter says the rank, the colour says the section, the crown says staff.
+ *
+ * The letter is set in the server's own face rather than drawn as a path, so
+ * it matches the wordmark and the channel names instead of approximating them.
+ */
+function crownedLetter(letter, colour, id) {
+  const halo = `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%">`
+    + `<feGaussianBlur stdDeviation="3"/></filter>`;
+  const crown = (w, c, o, f = '') =>
+    `<path d="${CROWN}" fill="none" stroke="${c}" stroke-width="${w}" stroke-opacity="${o}"`
+    + ` stroke-linejoin="round" stroke-linecap="round"${f}/>`;
+  const text = (attrs) =>
+    `<text x="32" y="58" text-anchor="middle" font-family="Vazirmatn" font-size="42"`
+    + ` font-weight="700" ${attrs}>${letter}</text>`;
+
+  return `<defs>${halo}</defs>`
+    // the glow, under everything
+    + crown(8, colour, 0.95, ` filter="url(#${id})"`)
+    + text(`fill="none" stroke="${colour}" stroke-width="9" stroke-opacity="0.95" stroke-linejoin="round" filter="url(#${id})"`)
+    // the tube
+    + crown(5, colour, 1)
+    + text(`fill="${colour}" stroke="${colour}" stroke-width="4" stroke-linejoin="round"`)
+    // the lit core
+    + crown(1.6, '#ffffff', 0.92)
+    + text(`fill="#ffffff" fill-opacity="0.95" stroke="none"`);
+}
+
+function letterSvg(letter, colour, id) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">`
+    + `${crownedLetter(letter, colour, id)}</svg>`;
+}
+
 /** A contact sheet at both the drawn size and the size Discord really uses. */
 function contactSheet() {
   const COLS = 3, CW = 340, RH = 84;
   const rows = Math.ceil(ICONS.length / COLS);
   let body = '';
-  ICONS.forEach(([label, shape, colour, , plain], i) => {
+  ICONS.forEach(([label, shape, colour, isLetter, plain], i) => {
     const x = (i % COLS) * CW + 24, y = Math.floor(i / COLS) * RH + 30;
     // The sheet's font has no small caps or mathematical monospace, so styled
     // role names need a plain spelling or they render as tofu.
     const clean = plain ?? label;
-    body += `<g transform="translate(${x},${y}) scale(0.72)">${glyph(shape, colour, `a${i}`)}</g>`
-      + `<g transform="translate(${x + 62},${y + 12}) scale(0.31)">${glyph(shape, colour, `b${i}`)}</g>`
+    const draw = (id) => isLetter ? crownedLetter(shape, colour, id) : glyph(shape, colour, id);
+    body += `<g transform="translate(${x},${y}) scale(0.72)">${draw(`a${i}`)}</g>`
+      + `<g transform="translate(${x + 62},${y + 12}) scale(0.31)">${draw(`b${i}`)}</g>`
       + `<text x="${x + 96}" y="${y + 32}" fill="#c8cede" font-family="Helvetica,Arial" font-size="17">${clean}</text>`;
   });
   const W = COLS * CW, H = rows * RH + 70;
@@ -111,31 +152,35 @@ function contactSheet() {
 
 const ICONS = [
   // Dev and Consultant both sit at the top; colour separates them, not rank.
-  ['Dev',                  'crest',   C.ice,    false, 'Dev'],
-  ['Consultant',           'crest',   C.gold,   false, 'Consultant'],
-  ['PowerAdmin',           'lambda3', C.ice,    false, 'PowerAdmin'],
+  ['Dev',                  'D',       C.ice,    true,  'Dev'],
+  ['Consultant',           'C',       C.gold,   true,  'Consultant'],
+  ['PowerAdmin',           'P',       C.ice,    true,  'PowerAdmin'],
   ['𝙼𝙰𝙽𝚂𝙸𝙾𝙽 𝙺𝙴𝚈',  'key',     C.gold,   false, 'Mansion Key'],
-  ['V . Global',           'lambda2', C.ice,    false, 'V Global'],
-  ['P . Global',           'lambda2', C.blue,   false, 'P Global'],
-  ['G . Global',           'lambda2', C.green,  false, 'G Global'],
-  ['E . Global',           'lambda2', C.purple, false, 'E Global'],
-  ['P . MODERATOR',        'lambda1', C.blue,   false, 'P Moderator'],
-  ['G . MODERATOR',        'lambda1', C.green,  false, 'G Moderator'],
-  ['E . MODERATOR',        'lambda1', C.purple, false, 'E Moderator'],
-  ['Server Banned',        'struck',  C.red,    true, 'Server Banned'],
-  ['Public Banned',        'struck',  C.blue,   true, 'Public Banned'],
-  ['Game Banned',          'struck',  C.green,  true, 'Game Banned'],
-  ['Event Banned',         'struck',  C.purple, true, 'Event Banned'],
-  ['Public Muted',         'barred',  C.amber,  true, 'Public Muted'],
-  ['Game Muted',           'barred',  C.amber,  true, 'Game Muted'],
-  ['Entertainment Muted',  'barred',  C.amber,  true, 'Entertainment Muted'],
+  ['V . Global',           'G',       C.ice,    true,  'V Global'],
+  ['P . Global',           'G',       C.blue,   true,  'P Global'],
+  ['G . Global',           'G',       C.green,  true,  'G Global'],
+  ['E . Global',           'G',       C.purple, true,  'E Global'],
+  ['P . MODERATOR',        'M',       C.blue,   true,  'P Moderator'],
+  ['G . MODERATOR',        'M',       C.green,  true,  'G Moderator'],
+  ['E . MODERATOR',        'M',       C.purple, true,  'E Moderator'],
+  ['Server Banned',        'struck',  C.red,    false, 'Server Banned'],
+  ['Public Banned',        'struck',  C.blue,   false, 'Public Banned'],
+  ['Game Banned',          'struck',  C.green,  false, 'Game Banned'],
+  ['Event Banned',         'struck',  C.purple, false, 'Event Banned'],
+  ['Public Muted',         'barred',  C.amber,  false, 'Public Muted'],
+  ['Game Muted',           'barred',  C.amber,  false, 'Game Muted'],
+  ['Entertainment Muted',  'barred',  C.amber,  false, 'Entertainment Muted'],
   ['ᴀ ɪ ᴏ ɴ │𝙼𝚄𝚂𝙸𝙲 𝚁𝙾𝙱𝙾𝚃│•', 'note', C.purple, false, 'Music Robot'],
   ['ʙᴏʏ│𝙼𝙴𝙼𝙱𝙴𝚁│•',   'pip',    C.blue,   false, 'boy MEMBER'],
   ['ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•',  'pip',    C.pink,   false, 'girl MEMBER'],
 ];
 
-const png = (shape, colour, id) =>
-  Buffer.from(new Resvg(svg(shape, colour, id), { fitTo: { mode: 'width', value: 128 } }).render().asPng());
+const FONT = new URL('../../apps/bot/assets/fonts/Vazirmatn-Bold.ttf', import.meta.url).pathname;
+const opts = { fitTo: { mode: 'width', value: 128 },
+  font: { fontFiles: [FONT], defaultFontFamily: 'Vazirmatn', loadSystemFonts: false } };
+
+const png = (shape, colour, id, letter) =>
+  Buffer.from(new Resvg(letter ? letterSvg(shape, colour, id) : svg(shape, colour, id), opts).render().asPng());
 
 /** File-safe name, so the pack on disk is readable without the styled glyphs. */
 const slug = n => (ICONS.find(i => i[0] === n)?.[4] ?? n)
@@ -152,14 +197,15 @@ c.once('clientReady', async () => {
     }
     if (OUT) {
       await mkdir(OUT, { recursive: true });
-      const sheet = new Resvg(contactSheet(), { fitTo: { mode: 'original' } }).render().asPng();
+      const sheet = new Resvg(contactSheet(),
+        { fitTo: { mode: 'original' }, font: opts.font }).render().asPng();
       await writeFile(`${OUT}/contact-sheet.png`, Buffer.from(sheet));
       console.log(`sheet -> ${OUT}/contact-sheet.png\n`);
     }
 
-    for (const [i, [name, shape, colour, , plain]] of ICONS.entries()) {
+    for (const [i, [name, shape, colour, isLetter, plain]] of ICONS.entries()) {
       const r = g.roles.cache.find(x => foldRole(x.name) === foldRole(name));
-      const data = png(shape, colour, `r${i}`);
+      const data = png(shape, colour, `r${i}`, isLetter);
       if (OUT) await writeFile(`${OUT}/${slug(name)}.png`, data);
       if (!r) { console.warn(`!     role not found: ${name}`); continue; }
       console.log(`${APPLY ? 'SET ' : 'plan'}  ${r.name.slice(0, 26).padEnd(28)} ${shape} ${colour}`);
