@@ -30,13 +30,13 @@ import {
   getEvent, mergeState, players, killPlayer, revivePlayer,
   type EventRow, type PlayerRow,
 } from '../store.js';
-import { applyTextRules, gameHeld } from '../mafia.js';
+import { applyTextRules, configOf, gameHeld } from '../mafia.js';
 import type { Phase } from '../games.js';
 import {
   SCUM_ROLES, roleOf, resolveNight, resolveDayVote, terroristTriggers, fireGun,
   counts, type Gun, type NightAction, type NightResult, type RoleKey, type VoteOutcome,
 } from './rules.js';
-import { publicFacts, nightStory, godRecap } from './narrate.js';
+import { sendNightReport } from './report.js';
 
 const log = logger('scum');
 
@@ -755,9 +755,13 @@ async function resolveTheNight(guild: Guild, ev: EventRow): Promise<NightResult>
   // The holder is offered the trigger at the start of the day, by
   // `promptGunHolders` — one DM, and it never mentions whether the gun is real.
 
-  const facts = publicFacts(result, nameOf, night);
-  await say(chatOf(ev, guild), nightStory(facts), C.day);
-  await dm(guild, ev.hostId, godRecap(result, nameOf, night), C.night);
+  // Delivery lives in report.ts: the detail goes to God's DM, and the written
+  // story only if God asked for one. He narrates it over voice by default, and
+  // the bot posting the same deaths in text mid-sentence steps on the only
+  // dramatic moment the game has.
+  await sendNightReport(guild, ev, result, night, {
+    publicStory: configOf(ev).nightStoryPublic,
+  });
   return result;
 }
 

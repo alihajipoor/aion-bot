@@ -68,8 +68,13 @@ export const gameHeld = new Set<string>();
 
 /* ── scenarios ─────────────────────────────────────────────────── */
 
-/** The host's wizard choices, with defaults for events drafted before it. */
-function configOf(ev: EventRow): MafiaConfig {
+/**
+ * The host's wizard choices, with defaults for events drafted before it.
+ *
+ * Exported because the Scum console reads the same blob — one accessor, so the
+ * two modes cannot disagree about what a missing key defaults to.
+ */
+export function configOf(ev: EventRow): MafiaConfig {
   const raw = (ev.state as { config?: Partial<MafiaConfig> }).config ?? {};
   return { ...MAFIA_DEFAULTS, ...raw };
 }
