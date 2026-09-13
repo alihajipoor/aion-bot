@@ -46,6 +46,19 @@ if [ -f "$APP/.env" ] && [ -f "$APP/packages/db/dist/migrate.js" ]; then
     || echo "!! migration failed (continuing so the service still starts)"
 fi
 
+# Slash command definitions are published to Discord, not shipped in the
+# bundle, so a deploy that adds or changes a command does nothing visible until
+# this runs. It used to be a manual step, which meant a new command could sit
+# deployed and uninvokable with nothing in the logs to say so. Idempotent: it
+# PUTs the whole set, so re-running it changes nothing when nothing changed.
+if [ -f "$APP/.env" ] && [ -f "$APP/apps/bot/dist/register.js" ]; then
+  echo "-- registering slash commands"
+  ( set -a; . "$APP/.env"; set +a
+    sudo -u aionbot --preserve-env=DISCORD_TOKEN,DISCORD_CLIENT_ID,LIVE_GUILD_ID \
+      node "$APP/apps/bot/dist/register.js" ) \
+    || echo "!! command registration failed (continuing; run it by hand)"
+fi
+
 systemctl daemon-reload
 systemctl enable aion-bot >/dev/null 2>&1 || true
 systemctl enable --now aion-watchdog.timer >/dev/null 2>&1 || true
