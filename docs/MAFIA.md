@@ -52,7 +52,11 @@ Usually only one of these appears; both only in a large game.
 **Natasha (ناتاشا)**
 - Always on the mafia team, but never sees mafia chat and never learns the team.
 - Counts as **mafia** for vote and player counts.
-- Night: silences one player. That player cannot speak the following day.
+- Night: silences one player. That player cannot speak the following day —
+  **and cannot vote in either ballot.** A silence that leaves the deciding
+  slip in their hand is not a silence.
+- Being silenced is not protection: they can still be voted against, and
+  they still take their defence turn in order if nominated.
 - **Each player may be silenced only once per game** — no repeats.
 - Detective reads them as **mafia**.
 

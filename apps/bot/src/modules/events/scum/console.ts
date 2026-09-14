@@ -183,10 +183,19 @@ export interface Ballot { voters: string[]; options: string[] }
  * a self-vote is never a real accusation, it is a misclick or a joke, and in a
  * two-vote nomination bar a joke is half a nomination.
  */
-export function ballotFor(round: 1 | 2, roster: readonly Seat[], nominees: readonly string[] = []): Ballot {
+export function ballotFor(
+  round: 1 | 2, roster: readonly Seat[], nominees: readonly string[] = [],
+  silenced: string | null = null,
+): Ballot {
   const living = roster.filter(p => p.alive).map(p => p.userId);
+  // Silence takes the vote as well as the voice. A player who cannot argue for
+  // their read but can still cast the deciding slip has not really been
+  // silenced — and the room would see the count move with nobody speaking.
+  const voters = living.filter(id => id !== silenced);
+  // They stay votable, though: being unable to speak is not protection, and a
+  // silenced nominee is exactly who the mafia would want on the block.
   const pool = round === 1 ? living : living.filter(id => nominees.includes(id));
-  return { voters: living, options: pool };
+  return { voters, options: pool };
 }
 
 /**
@@ -559,7 +568,7 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
   }
 
   if (st.voteOpen) {
-    const b = ballotFor(st.voteRound ?? 1, roster, nominees);
+    const b = ballotFor(st.voteRound ?? 1, roster, nominees, st.silenced ?? null);
     const p = voteProgress(st.votes, b.voters);
     // God watches the vote land in real time; the room sees nothing until the
     // box is closed. The console is ephemeral to God and players are locked out
@@ -847,7 +856,7 @@ async function openVote(i: ButtonInteraction, ev: EventRow, round: 1 | 2): Promi
     return;
   }
 
-  const b = ballotFor(round, roster, nominees);
+  const b = ballotFor(round, roster, nominees, st.silenced ?? null);
   const options = roster.filter(p => b.options.includes(p.userId));
 
   const phase: ScumPhase = round === 1 ? 'vote1' : 'vote2';
@@ -874,8 +883,14 @@ async function castVote(i: StringSelectMenuInteraction, ev: EventRow): Promise<v
     await i.reply({ content: 'Faghat zende-ha ray midan.', flags: MessageFlags.Ephemeral });
     return;
   }
+  if (st.silenced === i.user.id) {
+    // The select menu was rendered before the silence, or they kept the old
+    // message open. Either way the vote is refused here, not just hidden.
+    await i.reply({ content: 'Emrooz sakety — na harf, na ray.', flags: MessageFlags.Ephemeral });
+    return;
+  }
   const round = st.voteRound ?? 1;
-  const b = ballotFor(round, roster, st.nominees ?? []);
+  const b = ballotFor(round, roster, st.nominees ?? [], st.silenced ?? null);
   const target = i.values[0]!;
   if (!b.options.includes(target)) {
     await i.reply({ content: 'In nafar roo ballot nist.', flags: MessageFlags.Ephemeral });
@@ -913,7 +928,7 @@ async function endVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
   const roster = await players(ev.id);
   const nameOf = namer(i.guild, roster);
   const outcome = resolveDayVote(st.votes ?? {}, round);
-  const b = ballotFor(round, roster, st.nominees ?? []);
+  const b = ballotFor(round, roster, st.nominees ?? [], st.silenced ?? null);
   const options = roster.filter(p => b.options.includes(p.userId));
 
   await mergeState(ev.id, { voteOpen: false });

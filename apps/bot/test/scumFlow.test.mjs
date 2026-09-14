@@ -353,3 +353,31 @@ test('a block never names the player it is waiting on', () => {
   const v = pendingBlock({ pending: { kind: 'veto', actor: 'e', target: 'd' } });
   assert.equal(v.includes('<@'), false);
 });
+
+/* ── silence takes the vote too ─────────────────────────────────── */
+
+test('a silenced player is not on the voter list', () => {
+  const roster = [S("a", "shahrvand"), S("b", "shahrvand"), S("c", "shahrvand")];
+  const open = ballotFor(1, roster, [], null);
+  assert.deepEqual(open.voters, ['a', 'b', 'c']);
+
+  const hushed = ballotFor(1, roster, [], 'b');
+  assert.deepEqual(hushed.voters, ['a', 'c'], 'b cannot vote today');
+});
+
+test('a silenced player can still be voted against', () => {
+  const roster = [S("a", "shahrvand"), S("b", "shahrvand"), S("c", "shahrvand")];
+  // Being unable to speak is not protection — a silenced nominee is exactly
+  // who the mafia would want on the block.
+  const b = ballotFor(2, roster, ['b'], 'b');
+  assert.ok(b.options.includes('b'), 'still votable');
+  assert.ok(!b.voters.includes('b'), 'still cannot vote');
+});
+
+test('silence shrinks the expected turnout, so the count is not stuck', () => {
+  const roster = [S("a", "shahrvand"), S("b", "shahrvand"), S("c", "shahrvand")];
+  const b = ballotFor(1, roster, [], 'b');
+  // Without this, God waits forever for a slip that can never arrive.
+  assert.equal(voteProgress({ a: 'c', c: 'a' }, b.voters).total, 2);
+  assert.equal(voteProgress({ a: 'c', c: 'a' }, b.voters).cast, 2);
+});
