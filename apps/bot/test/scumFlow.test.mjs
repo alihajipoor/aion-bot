@@ -18,6 +18,7 @@ import {
   vetoCandidate, nightTargets, nightActors, pendingBlock, tallyLines,
 } from '../dist/modules/events/scum/console.js';
 import { resolveDayVote, resolveNight } from '../dist/modules/events/scum/rules.js';
+import { canSkipNight, NIGHT_SKIP } from '../dist/modules/events/scum/console.js';
 
 /* ── fixtures ──────────────────────────────────────────────────── */
 
@@ -382,4 +383,34 @@ test('silence shrinks the expected turnout, so the count is not stuck', () => {
   // Without this, God waits forever for a slip that can never arrive.
   assert.equal(voteProgress({ a: 'c', c: 'a' }, b.voters).total, 2);
   assert.equal(voteProgress({ a: 'c', c: 'a' }, b.voters).cast, 2);
+});
+
+/* ── sitting a night out ───────────────────────────────────────── */
+
+test('only roles spending from a fixed budget may skip a night', () => {
+  // Holding a bullet back is a real move. An unlimited ability has nothing to
+  // save, so declining it would just be a way to look busy.
+  assert.equal(canSkipNight('sniper'), true);
+  assert.equal(canSkipNight('kalantar'), true);
+  assert.equal(canSkipNight('doctor'), false);
+  assert.equal(canSkipNight('detective'), false);
+  assert.equal(canSkipNight('don'), false);
+  assert.equal(canSkipNight('natasha'), false);
+});
+
+test('the skip value cannot be mistaken for a player', () => {
+  // It is a word, not a snowflake, so no id can ever collide with it.
+  assert.equal(/^\d+$/.test(NIGHT_SKIP), false);
+});
+
+test('a skipped night reaches the resolver as no action at all', () => {
+  // Not an action with an empty target — the resolver must see nothing, or it
+  // would log a failed shot and spend the bullet on it.
+  const res = resolveNight(
+    { players: [S('sn', 'sniper', true), S('v', 'shahrvand')].map(p => ({
+      id: p.userId, role: p.role, alive: p.alive, uses: p.role === 'sniper' ? 2 : undefined })) },
+    [],
+  );
+  assert.deepEqual(res.deaths, []);
+  assert.equal(res.uses.sn, 2, 'the bullet is still there in the morning');
 });

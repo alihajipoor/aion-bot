@@ -270,6 +270,20 @@ export function vetoCandidate(roster: readonly Seat[], state: ScumState): string
 }
 
 /** Who may point at whom tonight. Only the doctor may choose themselves. */
+/**
+ * The value meaning "not tonight".
+ *
+ * A bare word rather than an id, so it can never collide with a snowflake.
+ * Offered to roles spending from a fixed budget: holding a bullet back is a
+ * real move, and without this the only way to decline was to ignore the DM,
+ * which looks identical to not having seen it.
+ */
+export const NIGHT_SKIP = 'skip';
+
+/** Whether this role may decline to act tonight. */
+export const canSkipNight = (role: RoleKey): boolean =>
+  SCUM_ROLES[role]?.limits.total !== null;
+
 export function nightTargets(
   actor: Seat, roster: readonly Seat[], state: ScumState,
 ): string[] {
@@ -686,14 +700,23 @@ async function promptNightActions(guild: Guild, ev: EventRow): Promise<{ ok: num
       a.left !== null ? `-# **${num(a.left)}** bar dige dari.` : null,
     ].filter(Boolean).join('\n');
 
+    const options = ids.slice(0, canSkipNight(a.role) ? 24 : 25).map(id => {
+      const t = byId.get(id)!;
+      return new StringSelectMenuOptionBuilder()
+        .setLabel(`${t.seat ?? '?'} · ${(t.userTag ?? nameOf(id)).slice(0, 60)}`)
+        .setValue(id);
+    });
+    if (canSkipNight(a.role)) {
+      options.push(new StringSelectMenuOptionBuilder()
+        .setLabel('Emshab hich kari nemikonam')
+        .setDescription('Chizi kharj nemishe')
+        .setEmoji('🚫')
+        .setValue(NIGHT_SKIP));
+    }
+
     const select = new StringSelectMenuBuilder().setCustomId(enc('night', ev.id))
       .setPlaceholder(ask.prompt.slice(0, 100))
-      .addOptions(ids.slice(0, 25).map(id => {
-        const t = byId.get(id)!;
-        return new StringSelectMenuOptionBuilder()
-          .setLabel(`${t.seat ?? '?'} · ${(t.userTag ?? nameOf(id)).slice(0, 60)}`)
-          .setValue(id);
-      }));
+      .addOptions(options);
 
     if (await dm(guild, a.userId, body, C.night, { select })) ok++;
     else { failed.push(a.userId); log.warn(`night DM failed for ${me.userTag} (${a.role})`); }
@@ -717,9 +740,23 @@ async function recordNightPick(i: StringSelectMenuInteraction, ev: EventRow): Pr
   }
 
   const target = i.values[0]!;
+  const picks = { ...(st.nightPicks ?? {}) };
+  if (target === NIGHT_SKIP) {
+    // Sitting the night out. The pick is removed rather than stored, so the
+    // resolver is handed no action at all and spends nothing — and choosing
+    // this after already picking someone takes that choice back.
+    delete picks[i.user.id];
+    await mergeState(ev.id, { nightPicks: picks });
+    await i.update({
+      components: [new ContainerBuilder().setAccentColor(C.night)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          '## 🚫 Emshab kari nemikoni.\n-# Ta sobh nazaret ro avaz koni, hanooz mishe.'))],
+      ...v2,
+    }).catch(() => {});
+    return;
+  }
   // The counter is spent at dawn by the resolver, not here — changing your
   // mind before morning has to be free, or a misclick costs a bullet.
-  const picks = { ...(st.nightPicks ?? {}) };
   picks[i.user.id] = { role: def.key, target, at: Date.now() };
   await mergeState(ev.id, { nightPicks: picks });
 
