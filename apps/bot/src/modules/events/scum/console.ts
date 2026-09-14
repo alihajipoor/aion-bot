@@ -37,6 +37,7 @@ import {
   counts, type Gun, type NightAction, type NightResult, type RoleKey, type VoteOutcome,
 } from './rules.js';
 import { sendNightReport } from './report.js';
+import { postMafiaHistory } from '../../mafiaHistory.js';
 
 const log = logger('scum');
 
@@ -1227,6 +1228,20 @@ async function declareWin(i: ButtonInteraction, ev: EventRow, winner: 'mafia' | 
     ...roster.map(p => `${roleOf(p.role)?.countsAs === 'mafia' ? '🔴' : '🟢'} <@${p.userId}> — **${isolate(faOf(p.role))}**`),
     ...(mvpId ? ['', `⭐ **MVP:** <@${mvpId}>`] : []),
   ].join('\n'), winner === 'mafia' ? C.mafia : C.shahr);
+
+  // Written down before the event is torn down: teardown deletes the channels
+  // and the roster is read from the database, so a failure here must not be
+  // discovered after the evidence is gone.
+  if (i.guild) {
+    await postMafiaHistory(i.guild, {
+      guildId: i.guild.id, eventId: ev.id, mode: 'scum', winner, mvpUserId: mvpId,
+      players: roster.map(p => ({
+        userId: p.userId, role: p.role,
+        roleFa: p.role ? SCUM_ROLES[p.role as RoleKey]?.fa ?? null : null,
+        side: p.side,
+      })),
+    }).catch(e => log.error('mafia history failed', e));
+  }
 
   const fresh = (await getEvent(ev.id))!;
   if (finishEvent && i.guild) await finishEvent(i.guild, fresh, `AION scum — ${winner} bord`);

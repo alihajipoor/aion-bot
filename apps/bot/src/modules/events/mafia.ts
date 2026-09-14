@@ -17,6 +17,7 @@ import {
   type RoleDef, type MafiaConfig, type NightAction, type Phase, type TextRule,
 } from './games.js';
 import { hasRole } from '../../lib/roles.js';
+import { postMafiaHistory } from '../mafiaHistory.js';
 import { SETUP_ID, setupButton, setupComponent, setTextRuleApplier } from './setupPanel.js';
 
 const log = logger('mafia');
@@ -451,6 +452,17 @@ async function declareWin(
   const channel = i.guild?.channels.cache.get(ev.textChannelId ?? '');
   if (channel?.isTextBased()) {
     await channel.send({ content: announce, allowedMentions: { parse: [] } }).catch(() => {});
+  }
+
+  // Recorded before teardown: it deletes the channels this roster came from,
+  // and a failure after that point is one nobody can reconstruct.
+  if (i.guild) {
+    await postMafiaHistory(i.guild, {
+      guildId: i.guild.id, eventId: ev.id, mode: 'irani', winner, mvpUserId: mvpId,
+      players: roster.map(p => ({
+        userId: p.userId, role: p.role, roleFa: roleOf(p.role).fa, side: p.side,
+      })),
+    }).catch(e => log.error('mafia history failed', e));
   }
 
   const fresh = (await getEvent(ev.id))!;

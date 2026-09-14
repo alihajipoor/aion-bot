@@ -390,6 +390,17 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
         await i.followUp({ content: 'To az event-ha ban shodi.', flags: MessageFlags.Ephemeral });
         return;
       }
+      // The gate the setup panel offers. It was only ever read by the panel
+      // that set it, so locking signups did nothing at all — the switch looked
+      // like it worked and the door stayed open.
+      const gated = ev.game === 'mafia' && mafiaConfigOf(ev).signupGated;
+      if (gated && i.member && !hasRole(i.member as GuildMember, ['Mafia Player'])) {
+        await i.followUp({
+          content: 'In bazi faghat baraye kesayi-ye ke role e **Mafia Player** daran.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
       await addPlayer(ev.id, i.user.id, i.user.tag);
     } else {
       await removePlayer(ev.id, i.user.id);
