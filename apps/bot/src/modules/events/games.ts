@@ -361,7 +361,7 @@ export const PASSIVES: Record<string, string> = {
   armored:     'Yek bar dar barabare ray giri mosoon e',
   bulletproof: 'Yek shellik ro tahammol mikone',
   psycho:      'Solo — barande mishe age akharin nafar bemoone',
-  sniper:      'Age be shahrvand shellik kone, khodesh mimire',
+  sniper:      'Har ki ro bezane hamoon mimire — hatta shahrvand. Khodesh chizish nemishe',
   gunsmith:    'Aslaheye masnooei sahebesh ro mikoshe, na hadaf ro',
 };
 
