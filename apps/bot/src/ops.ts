@@ -20,6 +20,8 @@ import { config } from './config.js';
 import { openGiveaway, scoreInvites, unattributedJoins } from './lib/giveaway.js';
 import { REASON_TEXT, type Reason } from './lib/invites.js';
 import { postAnnouncement, awardPodium, refreshAnnouncement, refreshBoard } from './modules/giveawayPoster.js';
+import { recentGames, setGameMvp } from './lib/mafiaStats.js';
+import { refreshScoreboard } from './modules/mafiaScoreboard.js';
 
 const argv = process.argv.slice(2);
 const task = argv[0];
@@ -220,8 +222,49 @@ async function setWindow(): Promise<void> {
   console.log('announcement and board refreshed in place');
 }
 
+/** The last games written down, so an event id can be found without guessing. */
+async function mafiaGames(): Promise<void> {
+  const rows = await recentGames(config.guildId, 10);
+  if (!rows.length) { console.log('no games recorded yet'); return; }
+  console.log('event  winner  players  mvp                  ended');
+  for (const g of rows) {
+    console.log(`${String(g.eventId).padEnd(6)} ${g.winner.padEnd(7)} `
+      + `${String(g.playerCount).padEnd(8)} ${(g.mvpUserId ?? '—').padEnd(20)} `
+      + `${g.endedAt?.toISOString() ?? ''}`);
+  }
+}
+
+/**
+ * Names the MVP of a game that is already over.
+ *
+ * Forgetting to pick before pressing the win button is the ordinary mistake,
+ * and the game row is unique on event id, so there is no pressing win again.
+ */
+async function mafiaMvp(): Promise<void> {
+  const eventId = Number(flag('event') ?? NaN);
+  const userId = flag('user');
+  if (!Number.isFinite(eventId)) {
+    console.error('need --event <id>; run giveaway-style `mafia-games` to find it');
+    process.exitCode = 1; return;
+  }
+  const res = await setGameMvp(config.guildId, eventId, userId ?? null);
+  if (!res.changed) {
+    console.log(res.previous === (userId ?? null)
+      ? 'already set to that — nothing to do'
+      : `no game found for event ${eventId}`);
+    return;
+  }
+  console.log(`event ${eventId}: mvp ${res.previous ?? '—'} -> ${userId ?? '—'}`);
+
+  // The scoreboard counts MVPs, so it is wrong until it is redrawn.
+  await withGuild(async g => { await refreshScoreboard(g); });
+  console.log('scoreboard refreshed');
+}
+
 const tasks: Record<string, () => Promise<void>> = {
   'giveaway-review': review,
+  'mafia-games': mafiaGames,
+  'mafia-mvp': mafiaMvp,
   'giveaway-refresh': refresh,
   'giveaway-floors': setFloors,
   'giveaway-joins': joins,

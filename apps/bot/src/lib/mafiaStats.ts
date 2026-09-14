@@ -159,6 +159,50 @@ export async function recordGame(game: FinishedGame): Promise<GameRow | null> {
 /* ── reading ───────────────────────────────────────────────────── */
 
 /** One player's record. Zeros rather than null, so callers need no branch. */
+/**
+ * Names the MVP of a game that is already recorded, or changes it.
+ *
+ * God picks the MVP by hand, and the honest failure mode is forgetting to pick
+ * before pressing the win button — at which point the game is written down, the
+ * row is unique on event_id, and pressing win again is refused. So this exists:
+ * the record stays the one that was written, and only the MVP moves.
+ *
+ * It adjusts both places the MVP lives. A previous pick has their count taken
+ * back, because otherwise correcting a mistake leaves the wrong person credited
+ * forever and the totals slowly stop meaning anything.
+ *
+ * Passing null clears it.
+ */
+export async function setGameMvp(
+  guildId: string, eventId: number, userId: string | null,
+): Promise<{ changed: boolean; previous: string | null }> {
+  const db = getDb();
+  const [game] = await db.select().from(mafiaGames)
+    .where(and(eq(mafiaGames.guildId, guildId), eq(mafiaGames.eventId, eventId))).limit(1);
+  if (!game) return { changed: false, previous: null };
+
+  const previous = game.mvpUserId ?? null;
+  if (previous === userId) return { changed: false, previous };
+
+  await db.update(mafiaGames).set({ mvpUserId: userId })
+    .where(and(eq(mafiaGames.guildId, guildId), eq(mafiaGames.eventId, eventId)));
+
+  if (previous) {
+    await db.update(mafiaStats)
+      .set({ mvpCount: sql`greatest(0, ${mafiaStats.mvpCount} - 1)` })
+      .where(and(eq(mafiaStats.guildId, guildId), eq(mafiaStats.userId, previous)));
+  }
+  if (userId) {
+    await db.insert(mafiaStats)
+      .values({ guildId, userId, mvpCount: 1 })
+      .onConflictDoUpdate({
+        target: [mafiaStats.guildId, mafiaStats.userId],
+        set: { mvpCount: sql`${mafiaStats.mvpCount} + 1` },
+      });
+  }
+  return { changed: true, previous };
+}
+
 export async function playerRecord(guildId: string, userId: string): Promise<StatsRow> {
   const [row] = await getDb().select().from(mafiaStats)
     .where(and(eq(mafiaStats.guildId, guildId), eq(mafiaStats.userId, userId)))
