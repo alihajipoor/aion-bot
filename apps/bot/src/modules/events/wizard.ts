@@ -10,6 +10,8 @@ import {
   type GameKey, type MafiaConfig, type EsmFamilConfig, type SoaliConfig,
 } from './games.js';
 import { settings } from '../../lib/settings.js';
+import { SCUM_ROLES } from './scum/rules.js';
+import { distribution as scumDistribution } from './scum/deal.js';
 
 export const WZ = 'wz';
 const enc = (...p: (string | number)[]) => [WZ, ...p].join('|');
@@ -27,6 +29,15 @@ const ACCENT: Record<GameKey, number> = {
 export interface Draft {
   game: GameKey;
   players: number;
+  /**
+   * Which mafia the host is setting up.
+   *
+   * It belongs on the draft rather than in MafiaConfig because it is written to
+   * the event's state, not its config — `isScum` reads it there, and a second
+   * copy in config is how the wizard and the router end up disagreeing about
+   * which game is being played.
+   */
+  mode: 'irani' | 'scum';
   mafia: MafiaConfig;
   esm: EsmFamilConfig;
   soali: SoaliConfig;
@@ -48,6 +59,7 @@ export function draftFor(userId: string, game?: GameKey): Draft {
   const fresh: Draft = {
     game: game ?? 'mafia',
     players: 9,
+    mode: 'irani',
     mafia: {
       ...MAFIA_DEFAULTS,
       scenario: e.defaultScenario || MAFIA_DEFAULTS.scenario,
@@ -117,6 +129,51 @@ function mafiaScreen(d: Draft) {
       table.slice(0, half).join('\n'),
       table.slice(half).join('\n'),
     ].filter(Boolean).join('\n')));
+
+  box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder().setCustomId(enc('m', 'mode'))
+      .setPlaceholder(d.mode === 'scum' ? 'Halat — Mafia Scum' : 'Halat — Mafiaye Irani')
+      .addOptions(
+        new StringSelectMenuOptionBuilder().setLabel('Mafiaye Irani').setValue('irani')
+          .setDescription('Ray giri avval -> defa -> ejma · sanario dare')
+          .setEmoji('🎲').setDefault(d.mode !== 'scum'),
+        new StringSelectMenuOptionBuilder().setLabel('Mafia Scum').setValue('scum')
+          .setDescription('Mostaghim ray giri, do dor · naghsh ha sabet-e')
+          .setEmoji('🃏').setDefault(d.mode === 'scum'))));
+
+  // Scum has one fixed cast rather than scenarios, so the scenario and the
+  // optional-role pickers below would be choosing from a list it never reads.
+  if (d.mode === 'scum') {
+    const dealt = scumDistribution(d.players, d.mafia);
+    const tally = dealt.reduce<Record<string, number>>((a, k) => {
+      a[k] = (a[k] ?? 0) + 1; return a;
+    }, {});
+    const sideOf = (k: string) => SCUM_ROLES[k as keyof typeof SCUM_ROLES]?.side;
+    const count = (side: string) =>
+      dealt.filter(k => SCUM_ROLES[k as keyof typeof SCUM_ROLES]?.countsAs === side).length;
+
+    box.addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      `**Mafia Scum** · ${d.players} bazikon`,
+      `🔴 **${count('mafia')}** mafia   🟢 **${count('shahr')}** shahr`,
+      '-# Natasha mafia shomorde mishe, traitor shahr — hamoon jori ke too shomaresh miad.',
+      '',
+      ...Object.entries(tally).map(([k, n]) => {
+        const r = SCUM_ROLES[k as keyof typeof SCUM_ROLES];
+        const dot = sideOf(k) === 'mafia' ? '🔴' : sideOf(k) === 'gray' ? '⚪' : '🟢';
+        return `${dot} ${r?.fa ?? k}${n > 1 ? ` ×${n}` : ''}`;
+      }),
+    ].join('\n')));
+    box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder().setCustomId(enc('m', 'players'))
+        .setPlaceholder(`Tedade bazikon — ${d.players}`)
+        .addOptions(Array.from({ length: 16 }, (_, k) => k + 5).map(n =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(`${n} nafar`).setValue(String(n)).setDefault(n === d.players)))));
+    return {
+      components: [box],
+      flags: (MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral) as number,
+    };
+  }
 
   box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
     new StringSelectMenuBuilder().setCustomId(enc('m', 'scenario'))
@@ -270,7 +327,8 @@ export function timerModal(d: Draft): ModalBuilder {
 /** Applies one wizard control and returns the redrawn screen. */
 export function applyChange(d: Draft, group: string, field: string, values: string[]) {
   if (group === 'm') {
-    if (field === 'scenario') { d.mafia.scenario = values[0]!; d.mafia.optionalRoles = []; }
+    if (field === 'mode') { d.mode = values[0] === 'scum' ? 'scum' : 'irani'; }
+    else if (field === 'scenario') { d.mafia.scenario = values[0]!; d.mafia.optionalRoles = []; }
     if (field === 'players') d.players = Number(values[0]);
     if (field === 'roles') d.mafia.optionalRoles = values;
     if (field === 'flags') {
@@ -287,6 +345,9 @@ export function applyChange(d: Draft, group: string, field: string, values: stri
   d.touched = Date.now();
   return screenFor(d);
 }
+
+/** Written to the event's state, beside config but not inside it. */
+export const modeOf = (d: Draft): 'irani' | 'scum' => d.game === 'mafia' ? d.mode : 'irani';
 
 export const configOf = (d: Draft): Record<string, unknown> =>
   d.game === 'mafia' ? { ...d.mafia, players: d.players }

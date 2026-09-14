@@ -12,6 +12,7 @@ import { renderHeaderBanner } from '../../lib/banner.js';
 import { CATALOGUE, type GameKey } from './games.js';
 import {
   WZ, decWizard, draftFor, clearDraft, screenFor, applyChange, timerModal, configOf,
+  modeOf as draftMode,
 } from './wizard.js';
 import { asciiFold, isolate } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
@@ -338,7 +339,10 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
   });
   // Everything the wizard collected rides along, so start-up reads config
   // rather than guessing defaults.
-  await mergeState(ev.id, { config: configOf(draft) });
+  // The mode sits beside config, not inside it: isScum reads state.mode, and a
+  // second copy in config is how the wizard and the router come to disagree
+  // about which game is being played.
+  await mergeState(ev.id, { config: configOf(draft), mode: draftMode(draft) });
   clearDraft(i.user.id);
 
   const ch = interfaceChannel(i.guild!);
