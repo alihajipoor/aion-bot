@@ -88,6 +88,8 @@ export interface ScumState {
   uses?: Record<string, number>;
   /** Who was actually silenced last night — the only repeat the rule forbids. */
   lastSilenced?: string | null;
+  /** Who the Detective checked last night; a repeat strips the Don's cover. */
+  lastAsked?: string | null;
   /** Cannot speak today. Cleared when the next night begins. */
   silenced?: string | null;
   gunHolders?: Gun[];
@@ -483,6 +485,7 @@ export async function startScum(_guild: Guild, ev: EventRow): Promise<void> {
     gunHolders: [],
     gunSince: {},
     lastSilenced: null,
+    lastAsked: null,
     silenced: null,
     votes: {},
     nominees: [],
@@ -800,6 +803,7 @@ async function resolveTheNight(guild: Guild, ev: EventRow): Promise<NightResult>
         : { id: p.userId, role: roleOf(p.role)!.key, uses: left };
     }),
     lastSilenced: st.lastSilenced ?? null,
+    lastAsked: st.lastAsked ?? null,
     gunHolders: st.gunHolders ?? [],
   }, actions);
 
@@ -818,6 +822,7 @@ async function resolveTheNight(guild: Guild, ev: EventRow): Promise<NightResult>
     gunHolders: result.gunHolders,
     gunSince: since,
     lastSilenced: result.lastSilenced,
+    lastAsked: result.lastAsked,
     silenced: result.silenced,
     nightPicks: {},
   });

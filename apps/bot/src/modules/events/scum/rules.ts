@@ -113,6 +113,14 @@ export interface NightState {
    */
   lastSilenced?: string | null;
   /**
+   * Who the Detective checked last night.
+   *
+   * The Don's cover holds once. Check the same person again the very next
+   * night and the truth comes back — so the Detective can burn two nights to
+   * be certain, which is the cost of that certainty.
+   */
+  lastAsked?: string | null;
+  /**
    * Who is already carrying one of Kalantar's guns. It is fired in daylight,
    * from the day after it is handed over, so it has to survive the night.
    */
@@ -188,6 +196,7 @@ export interface NightResult {
   drunk: string[];
   /** Natasha's history, extended. Persist this or the once-per-game rule dies. */
   lastSilenced: string | null;
+  lastAsked: string | null;
   /** Every submitted action and what became of it, for God's console. */
   log: ActionLog[];
 }
@@ -322,7 +331,11 @@ export function resolveNight(state: NightState, actions: NightAction[]): NightRe
     const truth = SCUM_ROLES[a.targetRole].countsAs;
     // The Don's disguise is permanent, not a one-time miss, so it is applied
     // to the reading itself rather than remembered as a night that went wrong.
-    const shown = a.targetRole === 'don' ? flip(truth) : truth;
+    // The Don reads as Shahr the first time. Asked about again the next night
+    // running, his cover is gone and the true answer comes back — the cover
+    // holds for one night, not forever.
+    const repeated = a.target === (state.lastAsked ?? null);
+    const shown = a.targetRole === 'don' && !repeated ? flip(truth) : truth;
     // Drunk inverts whatever would have been said — which means a drunk
     // Detective asking about the Don is handed the truth back. Two lies.
     const answer = drunk.has(a.id) ? flip(shown) : shown;
@@ -359,6 +372,7 @@ export function resolveNight(state: NightState, actions: NightAction[]): NightRe
     uses,
     drunk: [...drunk],
     lastSilenced: silenced,
+    lastAsked: detective?.target ?? null,
     log,
   };
 }

@@ -769,3 +769,61 @@ test("God's recap is the opposite — it holds what the story may not", () => {
   assert.ok(recap.includes('alaki'), 'God must be told the gun is a blank');
   assert.ok(recap.includes('v'), 'and who is carrying it');
 });
+
+/* ── the Don's cover lasts exactly one night ───────────────────── */
+
+test("the Don reads Shahr the first time he is checked", () => {
+  const res = resolveNight(
+    { players: [P('de', 'detective', 1), P('dn', 'don')] },
+    [act('de', 'dn')],
+  );
+  assert.equal(res.detective.answer, 'shahr');
+  assert.equal(res.lastAsked, 'dn', "and the check is remembered");
+});
+
+test("checked again the very next night, the truth comes back", () => {
+  const res = resolveNight(
+    { players: [P('de', 'detective', 1), P('dn', 'don')], lastAsked: 'dn' },
+    [act('de', 'dn')],
+  );
+  assert.equal(res.detective.answer, 'mafia', 'the cover is gone');
+});
+
+test('the cover comes back if the Detective looks elsewhere in between', () => {
+  // Night 1: check the Don, get shahr. Night 2: check somebody else.
+  // Night 3: check the Don again — not "in a row", so he is covered again.
+  const n1 = resolveNight(
+    { players: [P('de', 'detective', 1), P('dn', 'don'), P('v', 'shahrvand')] },
+    [act('de', 'dn')],
+  );
+  const n2 = resolveNight(
+    { players: [P('de', 'detective', 1), P('dn', 'don'), P('v', 'shahrvand')],
+      lastAsked: n1.lastAsked },
+    [act('de', 'v')],
+  );
+  const n3 = resolveNight(
+    { players: [P('de', 'detective', 1), P('dn', 'don'), P('v', 'shahrvand')],
+      lastAsked: n2.lastAsked },
+    [act('de', 'dn')],
+  );
+  assert.equal(n3.detective.answer, 'shahr', 'covered again');
+});
+
+test('a repeat check while drunk still inverts, so it reads Shahr', () => {
+  // The repeat strips the cover, leaving the truth — and drunkenness flips
+  // whatever would have been said. Two separate rules, applied in order.
+  const res = resolveNight(
+    { players: [P('sa', 'saghi'), P('de', 'detective', 1), P('dn', 'don')],
+      lastAsked: 'dn' },
+    [act('sa', 'de'), act('de', 'dn')],
+  );
+  assert.equal(res.detective.answer, 'shahr');
+});
+
+test('checking an ordinary player twice changes nothing', () => {
+  const res = resolveNight(
+    { players: [P('de', 'detective', 1), P('v', 'shahrvand')], lastAsked: 'v' },
+    [act('de', 'v')],
+  );
+  assert.equal(res.detective.answer, 'shahr');
+});

@@ -120,14 +120,21 @@ The Detective learns a **side**, not a role.
 
 | Target | Answer |
 |---|---|
-| Don | **Shahr** — always inverted |
+| Don | **Shahr** the first time; **mafia** if checked again the very next night |
 | Natasha | mafia |
 | Traitor Police | Shahr, whichever side they chose |
 | anyone else | their true side |
 
-Asked while drunk, the answer above is inverted again. Asking about the Don on a
-later, sober night still returns Shahr — the Don's disguise is permanent, not a
-one-time miss.
+Asked while drunk, the answer above is inverted again.
+
+**The Don's cover holds for one night only.** Check him, get Shahr; check the
+same person again the *very next* night and the true answer comes back. Looking
+elsewhere in between restores the cover — it must be back to back. So the
+Detective can spend two consecutive nights to be certain of one man, and that
+is what the certainty costs.
+
+I had this written as a permanent disguise, which was my invention rather than
+Ali's rule.
 
 ### Guns
 
