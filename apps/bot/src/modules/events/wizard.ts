@@ -108,8 +108,12 @@ const OPTION_FLAGS: { key: keyof MafiaConfig; label: string; hint: string }[] = 
 ];
 
 function mafiaScreen(d: Draft) {
+  const scum = d.mode === 'scum';
   const sc = scenarioOf(d.mafia.scenario);
-  const roles = distribution(sc, d.players, d.mafia.optionalRoles);
+  // Only worked out for the Persian game. Computing it regardless was how the
+  // scenario's cast ended up printed above the Scum one, two tables on a screen
+  // that can only deal from a single one.
+  const roles = scum ? [] : distribution(sc, d.players, d.mafia.optionalRoles);
   const sides = sideCounts(roles);
   const fits = d.players >= sc.min && d.players <= sc.max;
 
@@ -120,9 +124,12 @@ function mafiaScreen(d: Draft) {
 
   const box = new ContainerBuilder().setAccentColor(C.mafia)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `## 🕵️ Setup — Mafia\n-# Sanario, tedad va naghsh ha ro tanzim kon. Har chizi avaz koni, jadval zir hamoon lahze update mishe.`))
-    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      scum
+        ? '## 🃏 Setup — Mafia Scum\n-# Naghsh ha sabet-an. Faghat tedad ro entekhab kon.'
+        : '## 🕵️ Setup — Mafia\n-# Sanario, tedad va naghsh ha ro tanzim kon. Har chizi avaz koni, jadval zir hamoon lahze update mishe.'))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+  if (!scum) box.addTextDisplayComponents(new TextDisplayBuilder().setContent([
       `**${sc.fa}** · ${d.players} bazikon${fits ? '' : `  ⚠️ in sanario ${sc.min}–${sc.max} nafar mikhad`}`,
       `🔴 **${sides.mafia}** mafia   🟢 **${sides.town}** shahr${sides.solo ? `   🟣 **${sides.solo}** solo` : ''}`,
       '',
