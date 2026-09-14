@@ -5,6 +5,7 @@ import { handleComponent as unpunishComponent } from '../commands/unpunish.js';
 import { handleButton as vfButton, handleSelect as vfSelect, handleModal as vfModal, VF } from '../modules/verification.js';
 import { handleButton as tvButton, handleModal as tvModal, handleUserSelect as tvSelect, TV } from '../modules/tempvoice.js';
 import { handleButton as gwButton, GW } from '../commands/giveaway.js';
+import { handleButton as scoreButton, SCORE_ID } from '../modules/mafiaScoreboard.js';
 import type { AionClient } from '../client.js';
 import type { EventHandler } from '../types.js';
 
@@ -45,6 +46,7 @@ const handler: EventHandler = {
       if (i.isModalSubmit() && i.customId.startsWith('pn|'))      { await punishModal(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith('up|')) { await unpunishComponent(i); return; }
       if (i.isButton() && i.customId.startsWith(`${GW}|`))        { await gwButton(i); return; }
+      if (i.isButton() && i.customId.startsWith(`${SCORE_ID}|`))  { await scoreButton(i); return; }
     } catch (e) {
       const label = i.isChatInputCommand() ? `/${i.commandName}`
         : 'customId' in i ? String(i.customId) : i.type;

@@ -24,6 +24,7 @@ const APPLY  = process.argv.includes('--apply');
 const REPOST = process.argv.includes('--repost');
 
 const GUIDE   = '•︱📜│𝙼𝙰𝙵𝙸𝙰-𝙶𝚄𝙸𝙳𝙴';
+const SCORE   = '•︱📊│𝙼𝙰𝙵𝙸𝙰-𝚂𝙲𝙾𝚁𝙴';
 const HISTORY = '•︱🏆│𝙼𝙰𝙵𝙸𝙰-𝙷𝙸𝚂𝚃𝙾𝚁𝚈';
 const STAFF = ['Consultant', 'Dev'];   // Consultant and above
 
@@ -331,6 +332,7 @@ c.once('clientReady', async () => {
     const SPECS = [
       { name: GUIDE,   match: /mafia-?guide/,   topic: 'Ghavanin-e mafia — naghsh-ha, shab, rooz' },
       { name: HISTORY, match: /mafia-?history/, topic: 'Natije-ye har bazi — barande, tarkib, MVP' },
+      { name: SCORE,   match: /mafia-?score/,   topic: 'Jadval-e bazikon-ha — har saat update mishe' },
     ];
 
     const made = {};

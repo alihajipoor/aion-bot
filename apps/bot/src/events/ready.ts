@@ -14,6 +14,7 @@ import { installNickGuard } from '../modules/nickguard.js';
 import { installContentRules } from '../modules/contentrules.js';
 import { installSanctionGuard } from '../modules/sanctionguard.js';
 import { installGiveawayPoster } from '../modules/giveawayPoster.js';
+import { installMafiaScoreboard } from '../modules/mafiaScoreboard.js';
 import { installEvents, ensureEventPanel } from '../modules/events/index.js';
 import { ensureGuide } from '../commands/guide.js';
 import { startBackupWorker } from '../modules/backup.js';
@@ -71,6 +72,7 @@ const handler: EventHandler = {
     installContentRules(client);
     installSanctionGuard(client);
     installGiveawayPoster(client);
+    installMafiaScoreboard(client);
     installEvents(client);
     startCounters(client);
     if (config.databaseUrl) {
