@@ -503,6 +503,11 @@ export async function startScum(_guild: Guild, ev: EventRow): Promise<void> {
 
 /** Teardown. Releases every voice hold the game took. */
 export async function endScum(guild: Guild, ev: EventRow): Promise<void> {
+  // A timer outliving its game would be harmless — it re-reads the event and
+  // finds the vote shut — but leaving it armed is how a process ends up holding
+  // handles for games nobody remembers.
+  clearTimeout(autoCloseTimers.get(ev.id));
+  autoCloseTimers.delete(ev.id);
   for (const p of await players(ev.id).catch(() => [])) {
     gameHeld.delete(p.userId);
     const m = guild.members.cache.get(p.userId);
@@ -917,8 +922,50 @@ async function openVote(i: ButtonInteraction, ev: EventRow, round: 1 | 2): Promi
 
   const msg = await ch.send(voteCard(fresh, round, options, { cast: 0, total: b.voters.length }, null));
   await mergeState(ev.id, { voteMessageId: msg.id });
+  scheduleAutoClose(i.guild!, ev.id, round);
   await i.update(await scumConsole((await getEvent(ev.id))!,
     `Ray-e ${round === 1 ? 'aval' : 'dovom'} baz shod too <#${ch.id}>. Shomaresh makhfi-ye.`));
+}
+
+/**
+ * Closes the vote on a timer, when God has asked for one.
+ *
+ * A plain timeout rather than a stored deadline and a sweeper: a vote lasts a
+ * minute or two, and the sweeper that would survive a restart costs more than
+ * the case it covers. If the bot does restart mid-ballot the timer is lost and
+ * the button still works — which is the same position as having the toggle off.
+ *
+ * The round is captured so a timer from a vote that has already been closed and
+ * reopened cannot shut the new one: it only fires if the same round is still
+ * open, and that is checked against the database rather than against what was
+ * true when it was armed.
+ */
+const autoCloseTimers = new Map<number, NodeJS.Timeout>();
+
+function scheduleAutoClose(guild: Guild, eventId: number, round: 1 | 2): void {
+  clearTimeout(autoCloseTimers.get(eventId));
+  autoCloseTimers.delete(eventId);
+
+  void (async () => {
+    const ev = await getEvent(eventId);
+    if (!ev) return;
+    const cfg = configOf(ev);
+    if (!cfg.voteAutoClose) return;
+    const ms = Math.max(10, cfg.voteSeconds) * 1000;
+
+    const t = setTimeout(() => {
+      void (async () => {
+        const now = await getEvent(eventId);
+        if (!now) return;
+        const st = stateOf(now);
+        if (!st.voteOpen || (st.voteRound ?? 1) !== round) return;   // already settled
+        log.info(`event #${eventId}: vote ${round} auto-closed after ${cfg.voteSeconds}s`);
+        await endVote(now, guild).catch(e => log.error('auto-close failed', e));
+      })();
+    }, ms);
+    t.unref?.();
+    autoCloseTimers.set(eventId, t);
+  })();
 }
 
 /** A player dropping a slip in the box. Nothing about it becomes visible. */
@@ -969,19 +1016,33 @@ async function castVote(i: StringSelectMenuInteraction, ev: EventRow): Promise<v
  * nobody. The Shahrdar is asked before anything is applied — a veto cancels the
  * elimination, so a Terrorist whose death was vetoed never went off.
  */
-async function endVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
+/**
+ * Closes the box.
+ *
+ * The interaction is optional because the timer closes it too, and a vote that
+ * only ends when somebody is looking is not a timer. Without one there is
+ * nobody to answer, so the refusals go quiet and the console is left to catch
+ * up on its next refresh.
+ */
+async function endVote(
+  ev: EventRow, guild: Guild, i?: ButtonInteraction,
+): Promise<void> {
   const st = stateOf(ev);
-  if (!st.voteOpen) { await i.reply({ content: 'Ray-giri baz nist.', flags: MessageFlags.Ephemeral }); return; }
+  // Already shut — a timer racing God's button lands here and does nothing.
+  if (!st.voteOpen) {
+    await i?.reply({ content: 'Ray-giri baz nist.', flags: MessageFlags.Ephemeral });
+    return;
+  }
 
   const round = st.voteRound ?? 1;
   const roster = await players(ev.id);
-  const nameOf = namer(i.guild, roster);
+  const nameOf = namer(guild, roster);
   const outcome = resolveDayVote(st.votes ?? {}, round);
   const b = ballotFor(round, roster, st.nominees ?? [], st.silenced ?? null);
   const options = roster.filter(p => b.options.includes(p.userId));
 
   await mergeState(ev.id, { voteOpen: false });
-  const ch = chatOf(ev, i.guild!);
+  const ch = chatOf(ev, guild);
   const msgId = st.voteMessageId;
   // Opened: totals first, then the names behind them. Both only now.
   const detail = voterLines(st.votes, nameOf);
@@ -996,12 +1057,12 @@ async function endVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
       defence: { order: outcome.nominees, at: -1 },
     });
     const fresh = (await getEvent(ev.id))!;
-    await applyTextRules(i.guild!, fresh, 'defense');
+    await applyTextRules(guild, fresh, 'defense');
     await say(ch, outcome.nominees.length
       ? `## 🗣️ Roo miz\n${outcome.nominees.map((id, k) => `\`${k + 1}\` <@${id}>`).join('\n')}`
         + '\n-# Be tartib defa mikonan. Gardanande nobat ro rad mikone.'
       : '## 😐 Hich kas 2 ray nayavord\nEmrooz kesi roo miz nemire. Shab mishe.', C.day);
-    await i.update(await scumConsole(fresh, outcome.nominees.length
+    await i?.update(await scumConsole(fresh, outcome.nominees.length
       ? `${outcome.nominees.length} nafar raftan roo miz.`
       : 'Kesi be 2 ray nareside — Shab bezan.'));
     return;
@@ -1011,11 +1072,11 @@ async function endVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
   if (!outcome.eliminated) {
     await mergeState(ev.id, { phase: 'day', nominees: [], defence: { order: [], at: -1 } });
     const fresh = (await getEvent(ev.id))!;
-    await applyTextRules(i.guild!, fresh, 'day');
+    await applyTextRules(guild, fresh, 'day');
     await say(ch, outcome.tied
       ? '## ⚖️ Mosavi shod\nHich kas hazf nemishe. Rooz tamoom shod.'
       : '## 😐 Hich ray-i sabt nashod\nHich kas hazf nemishe. Rooz tamoom shod.', C.day);
-    await i.update(await scumConsole(fresh, outcome.tied
+    await i?.update(await scumConsole(fresh, outcome.tied
       ? 'Mosavi — kesi hazf nashod. Shab bezan.'
       : 'Hich ray-i nayoomad. Shab bezan.'));
     return;
@@ -1026,7 +1087,7 @@ async function endVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
     await mergeState(ev.id, { pending: { kind: 'veto', actor: veto, target: outcome.eliminated } });
     await say(ch, `## ⚖️ Ray tamoom shod\nBishtarin ray: <@${outcome.eliminated}>`
       + '\n-# Ye lahze sabr konid — hanooz ghati nashode.', C.day);
-    const sent = await dm(i.guild!, veto,
+    const sent = await dm(guild, veto,
       `## 🏛 Shahrdar\nShahr ray dad be ${isolate(nameOf(outcome.eliminated))}.`
       + '\nMitooni bezari bere, ya veto koni va **ye nafar dige** ro jash bezari biroon.'
       + '\n-# Veto kardan yani hatman yeki mire — kesi az bazi kam nashodan dar kar nist.',
@@ -1036,13 +1097,16 @@ async function endVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
         new ButtonBuilder().setCustomId(enc('veto', ev.id, 'no')).setLabel('Bezar bere')
           .setEmoji('👌').setStyle(ButtonStyle.Secondary),
       ] });
-    await i.update(await scumConsole((await getEvent(ev.id))!, sent
+    await i?.update(await scumConsole((await getEvent(ev.id))!, sent
       ? 'Shahrdar DM shod. Ta javab nade rooz tamoom nemishe.'
       : `⚠️ DM-e shahrdar baste-st — <@${veto}> ro dasti bepors, bad "Rad kardan" bezan.`));
     return;
   }
 
-  await applyElimination(i, ev, outcome.eliminated);
+  // The console-bound version when God pressed the button, and the standalone
+  // one the veto path already needed when there is nobody to answer.
+  if (i) await applyElimination(i, ev, outcome.eliminated);
+  else await finishEliminationOutsideConsole(guild, ev, outcome.eliminated);
 }
 
 /**
@@ -1324,7 +1388,7 @@ export async function scumComponent(i: ButtonInteraction | StringSelectMenuInter
   }
   if (step === 'phase' && i.isButton()) { await changePhase(i, ev, arg === 'night' ? 'night' : 'day'); return; }
   if (step === 'vote' && i.isButton()) { await openVote(i, ev, arg === '2' ? 2 : 1); return; }
-  if (step === 'endvote' && i.isButton()) { await endVote(i, ev); return; }
+  if (step === 'endvote' && i.isButton()) { await endVote(ev, i.guild!, i); return; }
   if (step === 'defence' && i.isButton()) { await advanceDefence(i, ev); return; }
   if (step === 'win' && i.isButton()) { await declareWin(i, ev, arg === 'mafia' ? 'mafia' : 'shahr'); return; }
   if (step === 'clear' && i.isButton()) { await clearPending(i, ev); return; }
