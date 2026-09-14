@@ -105,6 +105,14 @@ export interface ScumState {
   pending?: ScumPending | null;
   config?: ScumLimits;
   mvpId?: string;
+  /**
+   * God has muted the room by hand.
+   *
+   * Sticky rather than a one-off mute, because the next phase change re-derives
+   * everyone's state and would quietly undo it — the room would go quiet and
+   * then start talking again on its own.
+   */
+  forceMute?: boolean;
   winner?: string;
 }
 
@@ -455,7 +463,9 @@ async function applyVoice(guild: Guild, ev: EventRow, night: boolean): Promise<n
     const p = byId.get(m.id);
     if (!p) continue;                        // spectators are not the game's business
     gameHeld.add(m.id);
-    const shouldMute = night || !p.alive;
+    // Hand-mute wins over the phase: God asked for quiet and the clock does not
+    // get a vote.
+    const shouldMute = stateOf(ev).forceMute === true || night || !p.alive;
     if (m.voice.serverMute !== shouldMute) {
       await m.voice.setMute(shouldMute, 'AION scum').catch(() => {});
       touched++;
@@ -650,6 +660,10 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
         .setEmoji('🔴').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'shahr')).setLabel('Shahr bord')
         .setEmoji('🟢').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(enc('hush', ev.id))
+        .setLabel(st.forceMute ? 'Baz kon' : 'Hame ro mute kon')
+        .setEmoji(st.forceMute ? '🔊' : '🔇')
+        .setStyle(st.forceMute ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(enc('mvp', ev.id)).setLabel('MVP')
         .setEmoji('⭐').setStyle(ButtonStyle.Secondary),
     ));
@@ -1422,6 +1436,18 @@ export async function scumComponent(i: ButtonInteraction | StringSelectMenuInter
     await applyVoice(i.guild!, fresh, stateOf(fresh).phase === 'night');
     await i.update(await scumConsole(fresh,
       `<@${target}> ${kind === 'kill' ? 'az baazi kharej shod' : 'bargasht be baazi'}.`));
+    return;
+  }
+
+  if (step === 'hush' && i.isButton()) {
+    const on = !stateOf(ev).forceMute;
+    await mergeState(ev.id, { forceMute: on });
+    const fresh = (await getEvent(ev.id))!;
+    const st2 = stateOf(fresh);
+    const touched = await applyVoice(i.guild!, fresh, st2.phase === 'night');
+    await i.update(await scumConsole(fresh, on
+      ? `🔇 Hame mute shodan (${num(touched)} nafar). Ta khodet baz nakoni, mimoonan.`
+      : `🔊 Mute bardashte shod (${num(touched)} nafar).`));
     return;
   }
 

@@ -195,7 +195,13 @@ async function applyVoice(guild: Guild, ev: EventRow, phase: 'night' | 'day'): P
     const p = byId.get(state.id);
     if (!p) continue;                       // spectators are not the game's business
     const cfg = configOf(ev);
-    const shouldMute = (phase === 'night' && cfg.autoMuteNight) || (!p.alive && cfg.deadStayMuted);
+    // A hand-mute outranks the phase: God asked for quiet and the clock does
+    // not get a vote. Sticky, or the next phase change would quietly undo it
+    // and the room would start talking again on its own.
+    const forced = (ev.state as { forceMute?: boolean }).forceMute === true;
+    const shouldMute = forced
+      || (phase === 'night' && cfg.autoMuteNight)
+      || (!p.alive && cfg.deadStayMuted);
     gameHeld.add(state.id);
     if (state.voice.serverMute !== shouldMute) {
       await state.voice.setMute(shouldMute, `AION mafia ${phase}`).catch(() => {});
@@ -383,6 +389,10 @@ async function console_(ev: EventRow, note?: string) {
         .setEmoji('🔴').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'shahr')).setLabel('Shahr bord')
         .setEmoji('🟢').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(enc('hush', ev.id))
+        .setLabel((ev.state as { forceMute?: boolean }).forceMute ? 'Baz kon' : 'Hame ro mute kon')
+        .setEmoji((ev.state as { forceMute?: boolean }).forceMute ? '🔊' : '🔇')
+        .setStyle((ev.state as { forceMute?: boolean }).forceMute ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(enc('mvp', ev.id)).setLabel('MVP')
         .setEmoji('⭐').setStyle(ButtonStyle.Secondary),
     ));
@@ -500,6 +510,18 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
 
   if (step === 'win' && i.isButton()) {
     await declareWin(i, ev, arg === 'mafia' ? 'mafia' : 'shahr');
+    return;
+  }
+
+  if (step === 'hush' && i.isButton()) {
+    const on = !(ev.state as { forceMute?: boolean }).forceMute;
+    await mergeState(ev.id, { forceMute: on });
+    const fresh = (await getEvent(ev.id))!;
+    const phase = ((fresh.state as { phase?: string }).phase as 'night' | 'day') ?? 'day';
+    const touched = await applyVoice(i.guild!, fresh, phase);
+    await i.update(await console_(fresh, on
+      ? `🔇 Hame mute shodan (${num(touched)} nafar). Ta khodet baz nakoni, mimoonan.`
+      : `🔊 Mute bardashte shod (${num(touched)} nafar).`));
     return;
   }
 
