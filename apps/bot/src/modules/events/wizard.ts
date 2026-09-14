@@ -107,6 +107,10 @@ const OPTION_FLAGS: { key: keyof MafiaConfig; label: string; hint: string }[] = 
   { key: 'mafiaRoom',      label: 'Otagh e mafia',          hint: 'Chat e khosoosi baraye team' },
 ];
 
+/** Scum's own table-size range; it has no scenario to take one from. */
+const SCUM_MIN = 5;
+const SCUM_MAX = 20;
+
 function mafiaScreen(d: Draft) {
   const scum = d.mode === 'scum';
   const sc = scenarioOf(d.mafia.scenario);
@@ -115,7 +119,11 @@ function mafiaScreen(d: Draft) {
   // that can only deal from a single one.
   const roles = scum ? [] : distribution(sc, d.players, d.mafia.optionalRoles);
   const sides = sideCounts(roles);
-  const fits = d.players >= sc.min && d.players <= sc.max;
+  // Scum has no scenario, so its range is its own. Reading the scenario's here
+  // is what would grey out Besaz on a perfectly valid Scum table.
+  const fits = scum
+    ? d.players >= SCUM_MIN && d.players <= SCUM_MAX
+    : d.players >= sc.min && d.players <= sc.max;
 
   const table = roles.map((r, i) =>
     `\`${String(i + 1).padStart(2, ' ')}\` ${r.side === 'mafia' ? '🔴' : r.side === 'solo' ? '🟣' : '🟢'} ${r.fa}`,
@@ -173,16 +181,12 @@ function mafiaScreen(d: Draft) {
     box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
       new StringSelectMenuBuilder().setCustomId(enc('m', 'players'))
         .setPlaceholder(`Tedade bazikon — ${d.players}`)
-        .addOptions(Array.from({ length: 16 }, (_, k) => k + 5).map(n =>
+        .addOptions(Array.from({ length: SCUM_MAX - SCUM_MIN + 1 }, (_, k) => k + SCUM_MIN).map(n =>
           new StringSelectMenuOptionBuilder()
             .setLabel(`${n} nafar`).setValue(String(n)).setDefault(n === d.players)))));
-    return {
-      components: [box],
-      flags: (MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral) as number,
-    };
   }
 
-  box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+  if (!scum) box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
     new StringSelectMenuBuilder().setCustomId(enc('m', 'scenario'))
       .setPlaceholder(`Sanario — ${sc.fa}`)
       .addOptions(SCENARIOS.map(s => new StringSelectMenuOptionBuilder()
@@ -190,13 +194,13 @@ function mafiaScreen(d: Draft) {
         .setDefault(s.key === sc.key)))));
 
   const counts = Array.from({ length: Math.min(25, sc.max - sc.min + 1) }, (_, i) => sc.min + i);
-  box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+  if (!scum) box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
     new StringSelectMenuBuilder().setCustomId(enc('m', 'players'))
       .setPlaceholder(`Tedade bazikon — ${d.players}`)
       .addOptions(counts.map(n => new StringSelectMenuOptionBuilder()
         .setLabel(`${n} nafar`).setValue(String(n)).setDefault(n === d.players)))));
 
-  const optional = sc.roles.filter(r => r.optional);
+  const optional = scum ? [] : sc.roles.filter(r => r.optional);
   if (optional.length) {
     box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
       new StringSelectMenuBuilder().setCustomId(enc('m', 'roles'))
