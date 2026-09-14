@@ -10,7 +10,7 @@ import {
   type GameKey, type MafiaConfig, type EsmFamilConfig, type SoaliConfig,
 } from './games.js';
 import { settings } from '../../lib/settings.js';
-import { SCUM_ROLES } from './scum/rules.js';
+import { SCUM_ROLES, canDisable } from './scum/rules.js';
 import { distribution as scumDistribution } from './scum/deal.js';
 
 export const WZ = 'wz';
@@ -184,6 +184,28 @@ function mafiaScreen(d: Draft) {
         .addOptions(Array.from({ length: SCUM_MAX - SCUM_MIN + 1 }, (_, k) => k + SCUM_MIN).map(n =>
           new StringSelectMenuOptionBuilder()
             .setLabel(`${n} nafar`).setValue(String(n)).setDefault(n === d.players)))));
+
+    /*
+     * Roles, at the point they are actually being chosen.
+     *
+     * Ticked means in the game. The stored field is the inverse — a list of
+     * what is switched off — because a game with nothing configured should
+     * deal the full cast rather than none of it, and an empty list has to mean
+     * "everything" for that to hold.
+     *
+     * The Don is not offered: he is the mafia's only night shot, so a table
+     * without him leaves them unable to kill. Absent from the list rather than
+     * ticked-and-refused, since a switch that cannot move is just a puzzle.
+     */
+    const toggleable = Object.values(SCUM_ROLES).filter(r => canDisable(r.key));
+    box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder().setCustomId(enc('m', 'scumroles'))
+        .setPlaceholder('Naghsh ha — tik = too bazi hast')
+        .setMinValues(0).setMaxValues(Math.min(25, toggleable.length))
+        .addOptions(toggleable.slice(0, 25).map(r => new StringSelectMenuOptionBuilder()
+          .setLabel(r.fa).setValue(r.key)
+          .setDescription(r.side === 'mafia' ? 'Mafia' : r.side === 'gray' ? 'Khakestari' : 'Shahr')
+          .setDefault(!d.mafia.disabledRoles.includes(r.key))))));
   }
 
   if (!scum) box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
@@ -342,6 +364,12 @@ export function applyChange(d: Draft, group: string, field: string, values: stri
     else if (field === 'scenario') { d.mafia.scenario = values[0]!; d.mafia.optionalRoles = []; }
     if (field === 'players') d.players = Number(values[0]);
     if (field === 'roles') d.mafia.optionalRoles = values;
+    // Ticked is in, so anything left unticked is what gets stored as off.
+    if (field === 'scumroles') {
+      d.mafia.disabledRoles = Object.values(SCUM_ROLES)
+        .filter(r => canDisable(r.key) && !values.includes(r.key))
+        .map(r => r.key);
+    }
     if (field === 'flags') {
       for (const f of OPTION_FLAGS) (d.mafia[f.key] as boolean) = values.includes(f.key);
     }
