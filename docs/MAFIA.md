@@ -143,10 +143,14 @@ Ali's rule.
 
 - **Sniper** shoots at night, one per night, from a fixed total.
 - **Don** shoots at night, one per night.
-- **Kalantar's gun** is fired **during the open day** by whoever holds it,
-  starting the very next morning — the holder is told it is theirs first thing.
-  The window shuts the moment Ray-giri opens: a shot landing mid-ballot changes
-  who is even on it, and a room that has voted cannot unvote. The victim's **role is announced
+- **Kalantar's gun** is fired **in daylight** by whoever holds it, starting the
+  very next morning — the holder is told it is theirs first thing. They may fire
+  at any point in the day, **including the middle of somebody else's defence**:
+  open the mic, say who they are shooting, and shoot. That interruption is the
+  drama of the gun, so the window is deliberately wide.
+  It shuts when the **Ejma** opens. The nominees are fixed by then and the room
+  is choosing between them; a shot inside that ballot changes who is on it after
+  people have already voted, and a vote cannot be taken back. The victim's **role is announced
   immediately and publicly** — the only death in the game that reveals a role on
   the spot. The holder may be mafia; that is the risk.
 - Rooyintan is immune to all three **[filled]** — a shot is a shot.

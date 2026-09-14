@@ -231,12 +231,14 @@ test('eligibility is blind to whether the gun is a blank', () => {
   assert.deepEqual(gunEligible(st, 2), ['d', 'c']);
 });
 
-test('a gun fires on the open day only — the window shuts when Ray-giri opens', () => {
+test('the gun fires any time in daylight until the Ejma opens', () => {
   assert.equal(isDaylight('day'), true);
-  // Not once voting has begun. A shot landing mid-ballot changes who is even on
-  // it, and a room that has already voted cannot unvote.
-  assert.equal(isDaylight('vote1'), false);
-  assert.equal(isDaylight('defence'), false);
+  assert.equal(isDaylight('vote1'), true);
+  // Explicitly allowed mid-defence: the holder may cut in, name their target
+  // out loud and shoot. That interruption is the point of the gun.
+  assert.equal(isDaylight('defence'), true);
+  // The Ejma is where it stops. The nominees are fixed by then and a shot
+  // inside that ballot changes who is on it after people have voted.
   assert.equal(isDaylight('vote2'), false);
   assert.equal(isDaylight('night'), false);
   assert.equal(isDaylight('setup'), false);

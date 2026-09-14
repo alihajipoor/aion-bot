@@ -237,13 +237,18 @@ export const gunEligible = (state: ScumState, day: number): string[] =>
   (state.gunHolders ?? []).map(g => g.userId).filter(id => canFireGun(state, id, day));
 
 /**
- * When a gun may be fired: the open day, and nothing else.
+ * When a gun may be fired: any time in daylight up to the final vote.
  *
- * Not during the vote or a defence. A shot landing mid-ballot changes who is
- * even on it, and a room that has already voted cannot unvote — so the window
- * closes the moment Ray-giri opens.
+ * Including the middle of somebody else's defence — the holder may cut in, say
+ * out loud who they are shooting, and shoot. That interruption is the whole
+ * drama of the gun, so the window is deliberately wide.
+ *
+ * It shuts when the Ejma opens. By then the nominees are fixed and the room is
+ * deciding between them; a shot landing inside that ballot changes who is on it
+ * after people have already voted, and a vote cannot be taken back.
  */
-export const isDaylight = (phase: ScumPhase | undefined): boolean => phase === 'day';
+export const isDaylight = (phase: ScumPhase | undefined): boolean =>
+  phase === 'day' || phase === 'vote1' || phase === 'defence';
 
 /** Whose turn it is to defend, or null when the queue is finished. */
 export function nextDefender(
