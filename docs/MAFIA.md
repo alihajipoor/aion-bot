@@ -57,7 +57,11 @@ Usually only one of these appears; both only in a large game.
   slip in their hand is not a silence.
 - Being silenced is not protection: they can still be voted against, and
   they still take their defence turn in order if nominated.
-- **Each player may be silenced only once per game** — no repeats.
+- **Never the same player two nights running.** They are free again the night
+  after, so a target can be silenced repeatedly, just not back to back.
+- A drunk Natasha silences nobody, so there is nothing for the next night
+  to be a repeat of — the block follows who was actually silenced, not who
+  was aimed at.
 - Detective reads them as **mafia**.
 
 ### Shahr (team)

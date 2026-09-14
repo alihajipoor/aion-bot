@@ -86,7 +86,8 @@ export interface ScumState {
   nightPicks?: Record<string, ScumPick>;
   /** Uses left per player, for every counted ability including the veto. */
   uses?: Record<string, number>;
-  silencedEver?: string[];
+  /** Who was actually silenced last night — the only repeat the rule forbids. */
+  lastSilenced?: string | null;
   /** Cannot speak today. Cleared when the next night begins. */
   silenced?: string | null;
   gunHolders?: Gun[];
@@ -275,7 +276,7 @@ export function nightTargets(
   const def = roleOf(actor.role);
   if (!def?.night) return [];
   const living = roster.filter(p => p.alive);
-  const seen = new Set(state.silencedEver ?? []);
+  const seen = new Set(state.lastSilenced ? [state.lastSilenced] : []);
   return living.filter(t => {
     if (t.userId === actor.userId) return def.key === 'doctor';
     // Natasha may not repeat a target, and offering one she cannot use would
@@ -467,7 +468,7 @@ export async function startScum(_guild: Guild, ev: EventRow): Promise<void> {
     nightPicks: {},
     gunHolders: [],
     gunSince: {},
-    silencedEver: [],
+    lastSilenced: null,
     silenced: null,
     votes: {},
     nominees: [],
@@ -761,7 +762,7 @@ async function resolveTheNight(guild: Guild, ev: EventRow): Promise<NightResult>
         ? { id: p.userId, role: roleOf(p.role)!.key }
         : { id: p.userId, role: roleOf(p.role)!.key, uses: left };
     }),
-    silencedEver: st.silencedEver ?? [],
+    lastSilenced: st.lastSilenced ?? null,
     gunHolders: st.gunHolders ?? [],
   }, actions);
 
@@ -779,7 +780,7 @@ async function resolveTheNight(guild: Guild, ev: EventRow): Promise<NightResult>
     uses: mergeUses(st.uses, result.uses),
     gunHolders: result.gunHolders,
     gunSince: since,
-    silencedEver: result.silencedEver,
+    lastSilenced: result.lastSilenced,
     silenced: result.silenced,
     nightPicks: {},
   });

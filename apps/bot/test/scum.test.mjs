@@ -443,55 +443,70 @@ test('Kalantar may arm a mafia player — that is the risk', () => {
 
 /* ── night: Natasha ────────────────────────────────────────────── */
 
-test('Natasha silences, and the target is remembered forever', () => {
+test('Natasha silences, and last night\'s target is what carries forward', () => {
   const res = resolveNight(
     { players: [P('na', 'natasha'), P('v', 'shahrvand')] },
     [act('na', 'v')],
   );
   assert.equal(res.silenced, 'v');
-  assert.deepEqual(res.silencedEver, ['v']);
+  assert.equal(res.lastSilenced, 'v');
 });
 
-test('natasha repeat-target rejection: nobody may be silenced twice', () => {
+test('the same person cannot be silenced two nights running', () => {
   const res = resolveNight(
-    { players: [P('na', 'natasha'), P('v', 'shahrvand')], silencedEver: ['v'] },
+    { players: [P('na', 'natasha'), P('v', 'shahrvand')], lastSilenced: 'v' },
     [act('na', 'v')],
   );
   assert.equal(res.silenced, null);
   assert.equal(outcome(res, 'na'), 'repeat-target');
-  assert.deepEqual(res.silencedEver, ['v'], 'and the history does not grow');
+  assert.equal(res.lastSilenced, null, 'nobody was silenced, so nothing carries forward');
 });
 
-test('saghi + natasha: nobody is silenced, but the target is burned anyway', () => {
+test('but the night after that, they are fair game again', () => {
+  // Night 1 silences v. Night 2 must skip them. Night 3 may take them again —
+  // the rule is "not twice in a row", not "once per game".
+  const n1 = resolveNight(
+    { players: [P('na', 'natasha'), P('v', 'shahrvand'), P('w', 'shahrvand')] },
+    [act('na', 'v')],
+  );
+  const n2 = resolveNight(
+    { players: [P('na', 'natasha'), P('v', 'shahrvand'), P('w', 'shahrvand')],
+      lastSilenced: n1.lastSilenced },
+    [act('na', 'w')],
+  );
+  const n3 = resolveNight(
+    { players: [P('na', 'natasha'), P('v', 'shahrvand'), P('w', 'shahrvand')],
+      lastSilenced: n2.lastSilenced },
+    [act('na', 'v')],
+  );
+  assert.equal(n3.silenced, 'v', 'free again one night later');
+});
+
+test('a drunk Natasha silences nobody, so nothing is blocked tomorrow', () => {
+  // The block follows who was actually silenced, not who was aimed at. There
+  // is nothing for the next night to be a repeat of.
   const res = resolveNight(
     { players: [P('sa', 'saghi'), P('na', 'natasha'), P('v', 'shahrvand')] },
     [act('sa', 'na'), act('na', 'v')],
   );
   assert.equal(res.silenced, null);
   assert.equal(outcome(res, 'na'), 'drunk');
-  assert.deepEqual(res.silencedEver, ['v'], 'that player can never be silenced now');
-});
+  assert.equal(res.lastSilenced, null);
 
-test('a burned target stays burned on a later night', () => {
-  const first = resolveNight(
-    { players: [P('sa', 'saghi'), P('na', 'natasha'), P('v', 'shahrvand')] },
-    [act('sa', 'na'), act('na', 'v')],
-  );
-  const second = resolveNight(
-    { players: [P('na', 'natasha'), P('v', 'shahrvand')], silencedEver: first.silencedEver },
+  const next = resolveNight(
+    { players: [P('na', 'natasha'), P('v', 'shahrvand')], lastSilenced: res.lastSilenced },
     [act('na', 'v')],
   );
-  assert.equal(second.silenced, null);
-  assert.equal(outcome(second, 'na'), 'repeat-target');
+  assert.equal(next.silenced, 'v', 'the failed attempt cost nothing');
 });
 
-test('Natasha may silence somebody new the next night', () => {
+test('Natasha may silence somebody else the next night', () => {
   const res = resolveNight(
-    { players: [P('na', 'natasha'), P('a', 'shahrvand'), P('b', 'doctor')], silencedEver: ['a'] },
+    { players: [P('na', 'natasha'), P('a', 'shahrvand'), P('b', 'doctor')], lastSilenced: 'a' },
     [act('na', 'b')],
   );
   assert.equal(res.silenced, 'b');
-  assert.deepEqual(res.silencedEver.sort(), ['a', 'b']);
+  assert.equal(res.lastSilenced, 'b');
 });
 
 /* ── night: resolution order and rubbish input ─────────────────── */

@@ -104,7 +104,14 @@ export interface NightState {
   /** The living only. The dead do not act, and cannot be shot a second time. */
   players: NightPlayer[];
   /** Everyone Natasha has ever silenced; nobody may be silenced twice. */
-  silencedEver?: string[];
+  /**
+   * Who Natasha actually silenced last night, if anyone.
+   *
+   * Not a list of everyone ever silenced: the rule is that she may not take the
+   * same person two nights running, so only the previous night matters and a
+   * target is free again the night after.
+   */
+  lastSilenced?: string | null;
   /**
    * Who is already carrying one of Kalantar's guns. It is fired in daylight,
    * from the day after it is handed over, so it has to survive the night.
@@ -180,7 +187,7 @@ export interface NightResult {
   uses: Record<string, number>;
   drunk: string[];
   /** Natasha's history, extended. Persist this or the once-per-game rule dies. */
-  silencedEver: string[];
+  lastSilenced: string | null;
   /** Every submitted action and what became of it, for God's console. */
   log: ActionLog[];
 }
@@ -325,19 +332,17 @@ export function resolveNight(state: NightState, actions: NightAction[]): NightRe
     log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'ok' });
   }
 
-  // 6. Natasha's silence.
-  const silencedEver = new Set(state.silencedEver ?? []);
+  // 6. Natasha's silence. Never the same person two nights running.
   let silenced: string | null = null;
   for (const a of of('natasha')) {
-    if (a.def.limits.oncePerTarget && silencedEver.has(a.target)) {
+    if (a.def.limits.oncePerTarget && a.target === (state.lastSilenced ?? null)) {
       log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'repeat-target' });
       continue;
     }
-    // Burned before the drunkenness check on purpose: the doc rules that a
-    // drunk Natasha still spends the target [filled], and the table cannot
-    // tell, because a silence that fails is announced exactly like one that
-    // was never attempted.
-    silencedEver.add(a.target);
+    // A drunk Natasha silences nobody, so there is nothing for the next night
+    // to be a repeat *of* — the block follows who was actually silenced, not
+    // who was aimed at. Only Natasha can tell the difference, and the table
+    // still cannot: a silence that fails looks like one never attempted.
     if (drunk.has(a.id)) { log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'drunk' }); continue; }
     silenced = a.target;
     log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'ok' });
@@ -353,7 +358,7 @@ export function resolveNight(state: NightState, actions: NightAction[]): NightRe
       .map(([userId, fake]) => ({ userId, fake })),
     uses,
     drunk: [...drunk],
-    silencedEver: [...silencedEver],
+    lastSilenced: silenced,
     log,
   };
 }

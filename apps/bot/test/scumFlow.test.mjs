@@ -314,12 +314,14 @@ test('the Kalantar is never offered their own name — they never shoot themselv
   assert.equal(nightTargets(S('k', 'kalantar'), roster, {}).includes('k'), false);
 });
 
-test('Natasha is not offered anyone she has already silenced', () => {
+test('Natasha is not offered last night\'s target — and only that one', () => {
   const roster = [...TOWN, S('n', 'natasha')];
-  const targets = nightTargets(S('n', 'natasha'), roster, { silencedEver: ['b', 'd'] });
-  assert.equal(targets.includes('b'), false);
-  assert.equal(targets.includes('d'), false);
+  const targets = nightTargets(S('n', 'natasha'), roster, { lastSilenced: 'b' });
+  assert.equal(targets.includes('b'), false, 'not two nights running');
+  // Everyone else is available, including people silenced on earlier nights.
+  // The rule bars a repeat, not a second turn.
   assert.ok(targets.includes('a'));
+  assert.ok(targets.includes('d'));
 });
 
 test('the dead are never a target', () => {
