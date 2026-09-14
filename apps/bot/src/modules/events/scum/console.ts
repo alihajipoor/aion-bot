@@ -1133,7 +1133,14 @@ async function fireTheGun(i: StringSelectMenuInteraction, ev: EventRow): Promise
   const st = stateOf(ev);
   const day = st.day ?? 0;
   if (!isDaylight(st.phase)) {
-    await i.reply({ content: 'Faghat too rooz mitooni shellik koni.', flags: MessageFlags.Ephemeral });
+    // Naming the actual boundary: "only in the day" reads as though the
+    // defence and the first ballot were closed too, and they are not.
+    await i.reply({
+      content: st.phase === 'vote2'
+        ? 'Ejma shoro shode — dige nemishe shellik kard.'
+        : 'Faghat too rooz mishe shellik kard, ta ghabl az Ejma.',
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
   if (!canFireGun(st, i.user.id, day)) {

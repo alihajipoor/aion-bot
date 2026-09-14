@@ -61,6 +61,16 @@ export type PanelConfig = MafiaConfig;
 
 export const PANEL_DEFAULTS: PanelConfig = MAFIA_DEFAULTS;
 
+/**
+ * Which console runs this game.
+ *
+ * Lives on the event's state rather than in config, because `isScum` reads it
+ * there and one source is the whole point — a second copy in config would let
+ * the panel and the router disagree about which game is being played.
+ */
+export const modeOf = (ev: EventRow): 'scum' | 'irani' =>
+  (ev.state as { mode?: string }).mode === 'scum' ? 'scum' : 'irani';
+
 /** The stored blob, untouched — including keys this panel knows nothing about. */
 const rawConfig = (ev: EventRow): Record<string, unknown> =>
   (ev.state as { config?: Record<string, unknown> }).config ?? {};
@@ -204,6 +214,9 @@ function hubScreen(ev: EventRow) {
         : 'dasti, ba dokmeye gardanande'}`,
       `🔫 **Sahmiye** — Sniper ${num(cfg.sniperBullets)} golole · `
         + `Shahrdar ${num(cfg.shahrdarVetoes)} veto · Kalantar ${num(cfg.kalantarGuns)} asleha`,
+      `${modeOf(ev) === 'scum' ? '🃏' : '🎲'} **Halat** — ${modeOf(ev) === 'scum'
+        ? 'Mafia Scum (mostaghim ray giri, do dor)'
+        : 'Mafiaye Irani (ray giri avval -> defa -> ejma)'}`,
       `${cfg.signupGated ? '🔒' : '🌐'} **Sabt nam** — ${cfg.signupGated
         ? 'faghat kesi ke role e Mafia Player dare'
         : 'baz baraye hame'}`,
@@ -223,8 +236,19 @@ function hubScreen(ev: EventRow) {
       .setEmoji('🔫').setStyle(ButtonStyle.Primary),
   ));
 
-  // The two plain booleans live on the hub itself. Giving each a screen of its
-  // own would be three clicks to flip one switch.
+  box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(enc('cfgmode', ev.id))
+      .setLabel(modeOf(ev) === 'scum' ? 'Halat: Mafia Scum' : 'Halat: Mafiaye Irani')
+      .setEmoji(modeOf(ev) === 'scum' ? '🃏' : '🎲')
+      .setStyle(ButtonStyle.Primary)
+      // Roles are dealt at start, and the two modes deal different casts.
+      // Changing this afterwards would leave people holding roles their own
+      // console has never heard of.
+      .setDisabled(ev.status === 'running'),
+  ));
+
+  // The plain booleans live on the hub itself. Giving each a screen of its own
+  // would be three clicks to flip one switch.
   box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(enc('cfgflag', ev.id, 'signupGated'))
       .setLabel(cfg.signupGated ? 'Sabt nam: mahdood' : 'Sabt nam: baz')
@@ -459,6 +483,20 @@ export async function setupComponent(
           '### ⚙️ Tanzimat baste shod\n-# Az console dobare bazesh kon.'))],
       flags: MessageFlags.IsComponentsV2 as number,
     });
+    return true;
+  }
+
+  if (step === 'cfgmode' && i.isButton()) {
+    if (ev.status === 'running') {
+      await i.reply({
+        content: 'Bazi shoro shode — halat ro dige nemishe avaz kard.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+    const mode = modeOf(ev) === 'scum' ? 'irani' : 'scum';
+    await mergeState(ev.id, { mode });
+    await i.update(screen((await getEvent(ev.id))!, 'hub'));
     return true;
   }
 
