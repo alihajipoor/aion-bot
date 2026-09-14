@@ -159,6 +159,20 @@ Ali's rule.
 - A Doctor save blocks **[filled]** every shot on that player that night, not
   just the first.
 
+### Fake guns
+
+A fake gun kills **nobody** — not the target, not the holder. This is one rule
+across the whole server: Kalantar's blank in Scum, and the Gunsmith's fake gun
+in the Persian scenarios. The Persian one had said it killed its holder, which
+made the same object mean two different things depending on which game you sat
+down to.
+
+### Sitting a night out
+
+Only roles spending from a fixed budget may decline: the **Sniper** and the
+**Kalantar**. The Don, the Doctor and the Detective act every night — their
+abilities have nothing to save, so passing would only be a way to look busy.
+
 ### Terrorist
 
 Triggers **only** on elimination by vote. Not on any shot, not on a God

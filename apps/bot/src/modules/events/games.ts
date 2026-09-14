@@ -57,7 +57,7 @@ export const SCENARIOS: Scenario[] = [
       R('saul', 'ساول', 'mafia', 4, 'Yek bar mitoone naghshe yek nafar ro befahme.'),
       R('sniper', 'اسنایپر', 'town', 5, 'Do shellik dare. Har ki ro bezane hamoon mimire — hatta shahrvand.'),
       R('bomber', 'بمب گذار', 'mafia', 6, 'Yek bar mitoone yek nafar ro bomb gozari kone.'),
-      R('gunsmith', 'اسلحه ساز', 'town', 7, 'Be yek nafar aslahe mide — vagheie ya masnooei.'),
+      R('gunsmith', 'اسلحه ساز', 'town', 7, 'Be yek nafar aslahe mide — vagheie ya masnooei. Masnooei hich kas ro nemikoshe.'),
       R('tough', 'جان سخت', 'town', 8, 'Do jan.'),
       R('bulletproof', 'ضدگلوله', 'town', 9, 'Yek shellik ro tahammol mikone.', true),
       R('psycho', 'روانی', 'solo', 10, 'Solo.', true),
@@ -362,7 +362,7 @@ export const PASSIVES: Record<string, string> = {
   bulletproof: 'Yek shellik ro tahammol mikone',
   psycho:      'Solo — barande mishe age akharin nafar bemoone',
   sniper:      'Har ki ro bezane hamoon mimire — hatta shahrvand. Khodesh chizish nemishe',
-  gunsmith:    'Aslaheye masnooei sahebesh ro mikoshe, na hadaf ro',
+  gunsmith:    'Aslaheye masnooei hich kas ro nemikoshe — na hadaf, na sahebesh',
 };
 
 export const passiveFor = (roleKey: string | null): string | null =>
