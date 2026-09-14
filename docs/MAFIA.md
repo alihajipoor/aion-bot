@@ -107,7 +107,9 @@ Order is not cosmetic — a different order produces different survivors.
 Saghi's target loses their ability that night, whatever it is:
 
 - Doctor drunk → the save fails.
-- Don or Sniper drunk → the shot does not fire (bullet **[filled]** not spent).
+- Don or Sniper drunk → **they still fire; the shot goes wide.** Nobody dies
+  and the bullet is spent anyway. A drink costs the shooter the round, not
+  merely the night.
 - **Rooyintan drunk → immunity is gone; a shot kills them that night.**
 - Detective drunk → the answer comes back **inverted**.
 - Natasha drunk → nobody is silenced; that target is **[filled]** still spent.

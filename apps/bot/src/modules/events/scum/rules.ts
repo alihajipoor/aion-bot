@@ -299,15 +299,18 @@ export function resolveNight(state: NightState, actions: NightAction[]): NightRe
   // 4. Shots: Don, then Sniper.
   const deaths: string[] = [];
   const shoot = (a: Act) => {
-    if (drunk.has(a.id)) {
-      // The gun never came up, so the bullet is not spent [filled].
-      log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'drunk' });
-      return;
-    }
     if (a.def.limits.total !== null) {
       const left = uses[a.id] ?? 0;
       if (left <= 0) { log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'spent' }); return; }
       uses[a.id] = left - 1;
+    }
+    // Drunk, he still pulls the trigger — the shot just goes wide. Nobody
+    // falls and the bullet is gone all the same, which is the point: being
+    // poured a drink costs the shooter the round, not merely the night.
+    // Checked after the bullet is counted, because the firing is what happens.
+    if (drunk.has(a.id)) {
+      log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'drunk' });
+      return;
     }
     // From here the bullet is gone whatever happens. A save or a skin of iron
     // stops the body, not the shot — and a Sniper who hits a Shahr teammate is

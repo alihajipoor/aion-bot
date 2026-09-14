@@ -215,14 +215,25 @@ test('doctor save vs two shooters: the save blocks every shot, not just the firs
   assert.equal(res.uses.sn, 1, 'the bullet still left the barrel');
 });
 
-test('saghi + shooter: a drunk Sniper does not fire and does not spend a bullet', () => {
+test('a drunk Sniper still fires — the shot goes wide and the bullet is gone', () => {
   const res = resolveNight(
     { players: [P('sa', 'saghi'), P('sn', 'sniper', 2), P('v', 'shahrvand')] },
     [act('sa', 'sn'), act('sn', 'v')],
   );
-  assert.deepEqual(res.deaths, []);
+  assert.deepEqual(res.deaths, [], 'nobody falls');
   assert.equal(outcome(res, 'sn'), 'drunk');
-  assert.equal(res.uses.sn, 2, 'the gun never came up');
+  // A drink costs the shooter the round, not just the night.
+  assert.equal(res.uses.sn, 1, 'the bullet is spent anyway');
+});
+
+test('a drunk shot still misses a target the doctor never touched', () => {
+  // Nothing saved them and they are not Rooyintan — the shot simply went wide.
+  const res = resolveNight(
+    { players: [P('sa', 'saghi'), P('sn', 'sniper', 1), P('v', 'shahrvand')] },
+    [act('sa', 'sn'), act('sn', 'v')],
+  );
+  assert.deepEqual(res.deaths, []);
+  assert.equal(res.uses.sn, 0, 'and that was their last one');
 });
 
 test('a drunk Don shoots nobody', () => {
@@ -573,7 +584,7 @@ test('a full night resolves every role at once', () => {
       act('ka', 'v'),    // the Shahrvand is armed
       act('dr', 'ro'),   // the doctor covers the Rooyintan
       act('dn', 'v'),    // the Don shoots the armed Shahrvand
-      act('sn', 'm'),    // and the drunk Sniper does nothing
+      act('sn', 'm'),    // the drunk Sniper fires and misses
       act('de', 'dn'),   // the Detective asks about the Don
       act('na', 'de'),   // Natasha silences the Detective
     ],
@@ -582,7 +593,8 @@ test('a full night resolves every role at once', () => {
   assert.equal(res.silenced, 'de');
   assert.equal(res.detective.answer, 'shahr');
   assert.deepEqual(res.gunHolders, [], 'the man holding the gun is the man who died');
-  assert.equal(res.uses.sn, 2);
+  // The Sniper was drunk, fired anyway, and hit nothing — one of two bullets gone.
+  assert.equal(res.uses.sn, 1);
   assert.equal(res.uses.ka, 0);
 });
 
