@@ -86,8 +86,8 @@ export interface ScumState {
   nightPicks?: Record<string, ScumPick>;
   /** Uses left per player, for every counted ability including the veto. */
   uses?: Record<string, number>;
-  /** Who was actually silenced last night — the only repeat the rule forbids. */
-  lastSilenced?: string | null;
+  /** Who Natasha went for last night, successful or not — she cannot repeat it. */
+  lastSilenceTarget?: string | null;
   /** Who the Detective checked last night; a repeat strips the Don's cover. */
   lastAsked?: string | null;
   /** Cannot speak today. Cleared when the next night begins. */
@@ -292,7 +292,7 @@ export function nightTargets(
   const def = roleOf(actor.role);
   if (!def?.night) return [];
   const living = roster.filter(p => p.alive);
-  const seen = new Set(state.lastSilenced ? [state.lastSilenced] : []);
+  const seen = new Set(state.lastSilenceTarget ? [state.lastSilenceTarget] : []);
   return living.filter(t => {
     if (t.userId === actor.userId) return def.key === 'doctor';
     // Natasha may not repeat a target, and offering one she cannot use would
@@ -484,7 +484,7 @@ export async function startScum(_guild: Guild, ev: EventRow): Promise<void> {
     nightPicks: {},
     gunHolders: [],
     gunSince: {},
-    lastSilenced: null,
+    lastSilenceTarget: null,
     lastAsked: null,
     silenced: null,
     votes: {},
@@ -802,7 +802,7 @@ async function resolveTheNight(guild: Guild, ev: EventRow): Promise<NightResult>
         ? { id: p.userId, role: roleOf(p.role)!.key }
         : { id: p.userId, role: roleOf(p.role)!.key, uses: left };
     }),
-    lastSilenced: st.lastSilenced ?? null,
+    lastSilenceTarget: st.lastSilenceTarget ?? null,
     lastAsked: st.lastAsked ?? null,
     gunHolders: st.gunHolders ?? [],
   }, actions);
@@ -821,7 +821,7 @@ async function resolveTheNight(guild: Guild, ev: EventRow): Promise<NightResult>
     uses: mergeUses(st.uses, result.uses),
     gunHolders: result.gunHolders,
     gunSince: since,
-    lastSilenced: result.lastSilenced,
+    lastSilenceTarget: result.lastSilenceTarget,
     lastAsked: result.lastAsked,
     silenced: result.silenced,
     nightPicks: {},

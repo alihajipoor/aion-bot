@@ -454,70 +454,71 @@ test('Kalantar may arm a mafia player — that is the risk', () => {
 
 /* ── night: Natasha ────────────────────────────────────────────── */
 
-test('Natasha silences, and last night\'s target is what carries forward', () => {
+test('Natasha silences, and the target she went for carries forward', () => {
   const res = resolveNight(
     { players: [P('na', 'natasha'), P('v', 'shahrvand')] },
     [act('na', 'v')],
   );
   assert.equal(res.silenced, 'v');
-  assert.equal(res.lastSilenced, 'v');
+  assert.equal(res.lastSilenceTarget, 'v');
 });
 
 test('the same person cannot be silenced two nights running', () => {
   const res = resolveNight(
-    { players: [P('na', 'natasha'), P('v', 'shahrvand')], lastSilenced: 'v' },
+    { players: [P('na', 'natasha'), P('v', 'shahrvand')], lastSilenceTarget: 'v' },
     [act('na', 'v')],
   );
   assert.equal(res.silenced, null);
   assert.equal(outcome(res, 'na'), 'repeat-target');
-  assert.equal(res.lastSilenced, null, 'nobody was silenced, so nothing carries forward');
+  assert.equal(res.lastSilenceTarget, null, 'a refused pick burns nothing');
 });
 
 test('but the night after that, they are fair game again', () => {
-  // Night 1 silences v. Night 2 must skip them. Night 3 may take them again —
-  // the rule is "not twice in a row", not "once per game".
   const n1 = resolveNight(
     { players: [P('na', 'natasha'), P('v', 'shahrvand'), P('w', 'shahrvand')] },
     [act('na', 'v')],
   );
   const n2 = resolveNight(
     { players: [P('na', 'natasha'), P('v', 'shahrvand'), P('w', 'shahrvand')],
-      lastSilenced: n1.lastSilenced },
+      lastSilenceTarget: n1.lastSilenceTarget },
     [act('na', 'w')],
   );
   const n3 = resolveNight(
     { players: [P('na', 'natasha'), P('v', 'shahrvand'), P('w', 'shahrvand')],
-      lastSilenced: n2.lastSilenced },
+      lastSilenceTarget: n2.lastSilenceTarget },
     [act('na', 'v')],
   );
   assert.equal(n3.silenced, 'v', 'free again one night later');
 });
 
-test('a drunk Natasha silences nobody, so nothing is blocked tomorrow', () => {
-  // The block follows who was actually silenced, not who was aimed at. There
-  // is nothing for the next night to be a repeat of.
+test('a drunk Natasha fails AND burns the target anyway', () => {
+  // The block follows who she went for, not whether it worked. A Saghi who
+  // catches her costs her the night and the target both.
   const res = resolveNight(
     { players: [P('sa', 'saghi'), P('na', 'natasha'), P('v', 'shahrvand')] },
     [act('sa', 'na'), act('na', 'v')],
   );
-  assert.equal(res.silenced, null);
+  assert.equal(res.silenced, null, 'nobody is silenced');
   assert.equal(outcome(res, 'na'), 'drunk');
-  assert.equal(res.lastSilenced, null);
+  assert.equal(res.lastSilenceTarget, 'v', 'but she went for them');
 
   const next = resolveNight(
-    { players: [P('na', 'natasha'), P('v', 'shahrvand')], lastSilenced: res.lastSilenced },
+    { players: [P('na', 'natasha'), P('v', 'shahrvand')],
+      lastSilenceTarget: res.lastSilenceTarget },
     [act('na', 'v')],
   );
-  assert.equal(next.silenced, 'v', 'the failed attempt cost nothing');
+  assert.equal(next.silenced, null, 'and cannot try the same person again');
+  assert.equal(outcome(next, 'na'), 'repeat-target');
 });
 
 test('Natasha may silence somebody else the next night', () => {
   const res = resolveNight(
-    { players: [P('na', 'natasha'), P('a', 'shahrvand'), P('b', 'doctor')], lastSilenced: 'a' },
+    { players: [P('na', 'natasha'), P('a', 'shahrvand'), P('b', 'doctor')],
+      lastSilenceTarget: 'a' },
     [act('na', 'b')],
   );
   assert.equal(res.silenced, 'b');
-  assert.equal(res.lastSilenced, 'b');
+  assert.equal(res.lastSilenceTarget, 'b');
 });
 
 /* ── night: resolution order and rubbish input ─────────────────── */

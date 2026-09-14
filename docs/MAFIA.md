@@ -59,9 +59,10 @@ Usually only one of these appears; both only in a large game.
   they still take their defence turn in order if nominated.
 - **Never the same player two nights running.** They are free again the night
   after, so a target can be silenced repeatedly, just not back to back.
-- A drunk Natasha silences nobody, so there is nothing for the next night
-  to be a repeat of — the block follows who was actually silenced, not who
-  was aimed at.
+- The block follows **who she went for**, not whether it worked. A drunk
+  Natasha silences nobody *and* still burns that target, so she cannot simply
+  try them again tomorrow — a Saghi who catches her costs her the night and the
+  target both.
 - Detective reads them as **mafia**.
 
 ### Shahr (team)
