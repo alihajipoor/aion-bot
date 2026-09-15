@@ -9,7 +9,7 @@ import {
   leaderboard, playerRecord, recentGames, totalWins, totalLosses, winRate,
   type StatsRow,
 } from '../lib/mafiaStats.js';
-import { isolate, num, asciiFold } from '../lib/text.js';
+import { isolate, num, asciiFold, LRI, PDI } from '../lib/text.js';
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
 import type { AionClient } from '../client.js';
@@ -48,18 +48,27 @@ async function writeMarks(guildId: string, patch: Marks): Promise<void> {
 /**
  * One row of the table.
  *
- * Every name is isolated and every figure carries an Arabic Letter Mark. This
- * line is nothing but Latin names and digits inside Persian text, which is the
- * exact mix that reorders — a table where the wins column lands beside the
- * wrong player is worse than no table.
+ * The whole row is forced left-to-right, not just the names inside it.
+ *
+ * Isolating each name was not enough: the row sits in a Persian message, and
+ * one right-to-left character anywhere in it flips the lot. The Arabic percent
+ * sign was doing exactly that — U+066A carries bidi class AN, so "`4.` Nima —
+ * 1/3 · 33٪" came out as "2/1 — Nima `.4` bord · 3300٪", with the rank in the
+ * middle and the score reversed. A table whose numbers read backwards is worse
+ * than no table.
+ *
+ * So: a plain ASCII percent, and the row wrapped in a left-to-right isolate.
+ * Names keep their own isolate inside it, which is what lets a Persian display
+ * name still read correctly in a row that is otherwise LTR.
  */
 const line = (r: StatsRow, i: number, nameOf: (id: string) => string): string => {
-  const rank = i < 3 ? MEDALS[i]! : `\`${num(i + 1)}.\``;
-  const w = totalWins(r);
-  const l = totalLosses(r);
-  return `${rank} **${isolate(nameOf(r.userId))}** — ${num(w)}${l ? `/${num(w + l)}` : ''} bord`
-    + `  ·  ${num(Math.round(winRate(r) * 100))}٪`
-    + (r.mvpCount ? `  ·  ⭐${num(r.mvpCount)}` : '');
+  const rank = i < 3 ? MEDALS[i]! : `\`${i + 1}.\``;
+  // winRate is already a whole-number percentage. Multiplying it again is how
+  // a 100% record was displayed as 10000%.
+  const body = `${rank} **${isolate(nameOf(r.userId))}** — `
+    + `${totalWins(r)}/${r.games} · ${winRate(r)}%`
+    + (r.mvpCount ? ` · ⭐${r.mvpCount}` : '');
+  return `${LRI}${body}${PDI}`;
 };
 
 const buttons = () => new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -87,7 +96,7 @@ async function render(guild: Guild) {
 
   box.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      '-# مرتب‌شده بر اساس تعداد برد. درصد کنارش نسبت برد به کل بازی‌هاست.'));
+      '-# مرتب‌شده بر اساس تعداد برد. عدد وسط یعنی برد از کل بازی‌ها.'));
 
   return { components: [box, buttons()], flags: MessageFlags.IsComponentsV2 as const };
 }
@@ -140,7 +149,7 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
     await i.editReply([
       `## 📊 ${isolate(nameOf(i.user.id))}`,
       `بازی: **${num(r.games)}**  ·  برد: **${num(totalWins(r))}**  ·  باخت: **${num(totalLosses(r))}**`,
-      `درصد برد: **${num(Math.round(winRate(r) * 100))}٪**${r.mvpCount ? `  ·  ⭐ **${num(r.mvpCount)}** بار MVP` : ''}`,
+      `درصد برد: **${num(winRate(r))}%**${r.mvpCount ? `  ·  ⭐ **${num(r.mvpCount)}** بار MVP` : ''}`,
       '',
       `🔴 با مافیا: ${num(r.winsMafia)} برد / ${num(r.winsMafia + r.lossesMafia)} بازی`,
       `🟢 با شهر: ${num(r.winsShahr)} برد / ${num(r.winsShahr + r.lossesShahr)} بازی`,
@@ -153,7 +162,9 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
     const top = rows.filter(r => r.mvpCount > 0);
     await i.editReply(top.length
       ? ['## ⭐ بیشترین MVP', '',
-         ...top.map((r, k) => `${k < 3 ? MEDALS[k] : `\`${num(k + 1)}.\``} **${isolate(nameOf(r.userId))}** — ${num(r.mvpCount)}`)].join('\n')
+         // Same shape as a board row, so the same isolate — rank, name, number.
+         ...top.map((r, k) =>
+           `${LRI}${k < 3 ? MEDALS[k] : `\`${k + 1}.\``} **${isolate(nameOf(r.userId))}** — ${r.mvpCount}${PDI}`)].join('\n')
       : 'هنوز کسی MVP نشده.');
     return;
   }
