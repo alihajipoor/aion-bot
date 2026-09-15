@@ -9,12 +9,12 @@ import {
   type MessageCreateOptions,
 } from 'discord.js';
 import { renderHeaderBanner } from '../../lib/banner.js';
-import { CATALOGUE, type GameKey } from './games.js';
+import { CATALOGUE, SCENARIOS, scenarioOf, distribution, type GameKey } from './games.js';
 import {
   WZ, decWizard, draftFor, clearDraft, screenFor, applyChange, timerModal, configOf,
   modeOf as draftMode,
 } from './wizard.js';
-import { asciiFold, isolate } from '../../lib/text.js';
+import { asciiFold, isolate, LRI, PDI } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
 import { emitLog } from '../../lib/logbus.js';
 import {
@@ -29,6 +29,7 @@ import { startMafia, endMafia, mafiaComponent, mafiaModal, setEventFinisher,
 import {
   SCUM_ID, isScum, startScum, endScum, scumComponent, setScumFinisher,
   SCUM_DEAL_ID, scumDealComponent, dealScum,
+  SCUM_ROLES, distribution as scumDistribution,
 } from './scum/index.js';
 import { resealEventAccess } from './lockout.js';
 import { startEsmFamil, endEsmFamil, esmComponent, esmModal, esmSelect, ESM_ID } from './esmfamil.js';
@@ -233,8 +234,54 @@ async function refreshCard(guild: Guild, ev: EventRow): Promise<void> {
 
 /* ── signup card ───────────────────────────────────────────────── */
 
+/**
+ * The cast, on the signup post.
+ *
+ * Which roles are in play is public in both games — people decide whether to
+ * join on exactly this, and asking the host in chat every time is friction the
+ * post can remove. Only the list is shown, never who gets what.
+ *
+ * Each line is wrapped left-to-right with the Persian role name isolated
+ * inside. A Persian name beside a digit in an otherwise Latin card is the mix
+ * that reorders, and a cast list that renders "٢× پدرخوانده" as something else
+ * is worse than no list.
+ */
+async function castLines(ev: EventRow): Promise<string[]> {
+  if (ev.game !== 'mafia') return [];
+  const cfg = mafiaConfigOf(ev);
+  const count = Number((ev.state as { config?: { players?: number } }).config?.players)
+    || ev.capacity || 9;
+
+  let dealt: { fa: string; side: string }[] = [];
+  if (isScum(ev)) {
+    dealt = scumDistribution(count, cfg)
+      .map(k => SCUM_ROLES[k as keyof typeof SCUM_ROLES])
+      .filter(Boolean)
+      .map(r => ({ fa: r.fa, side: r.side }));
+  } else {
+    const sc = scenarioOf(cfg.scenario);
+    dealt = distribution(sc, count, cfg.optionalRoles).map(r => ({ fa: r.fa, side: r.side }));
+  }
+  if (!dealt.length) return [];
+
+  const tally = new Map<string, { n: number; side: string }>();
+  for (const r of dealt) {
+    const e = tally.get(r.fa) ?? { n: 0, side: r.side };
+    e.n += 1;
+    tally.set(r.fa, e);
+  }
+
+  const dot = (side: string) =>
+    side === 'mafia' ? '🔴' : side === 'gray' || side === 'solo' ? '⚪' : '🟢';
+
+  return [...tally.entries()].map(([fa, e]) =>
+    `${LRI}${dot(e.side)} ${isolate(fa)}${e.n > 1 ? ` ×${e.n}` : ''}${PDI}`);
+}
+
+
 async function signupCard(ev: EventRow) {
   const roster = await players(ev.id).catch(() => []);
+  const cast = await castLines(ev).catch(() => []);
   const g = CATALOGUE[ev.game as GameKey];
   const full = ev.capacity > 0 && roster.length >= ev.capacity;
 
@@ -251,6 +298,7 @@ async function signupCard(ev: EventRow) {
         `👥 **Sabt-nam** ${roster.length}${ev.capacity ? ` az ${ev.capacity}` : ''}${full ? ' — **por shod**' : ''}`,
         '',
         roster.length ? roster.map((p, i) => `\`${i + 1}\` <@${p.userId}>`).join('\n') : '-# Hanooz kesi sabt-nam nakarde. Avvalin nafar bash.',
+        ...(cast.length ? ['', '**Naghsh haye in bazi**', ...cast] : []),
       ].join('\n')))
       .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(enc('join', ev.id)).setLabel('Sabt-nam').setEmoji('✅')
