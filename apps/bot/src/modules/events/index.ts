@@ -208,6 +208,15 @@ export async function controlCard(ev: EventRow) {
     row.addComponents(
       new ButtonBuilder().setCustomId(enc('start', ev.id)).setLabel('Shoroo').setEmoji('▶️').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(enc('cancel', ev.id)).setLabel('Laghv').setEmoji('🗑️').setStyle(ButtonStyle.Secondary));
+    // The console carries Tanzimat, and half of what lives there — bullet
+    // counts, which roles are dealt — is read once when the roles go out. Only
+    // offering it after the game is running meant those settings appeared
+    // exactly when they had stopped mattering.
+    if (ev.game === 'mafia') {
+      row.addComponents(new ButtonBuilder()
+        .setCustomId(`${isScum(ev) ? SCUM_ID : MAFIA_ID}|console|${ev.id}`)
+        .setLabel('Console').setEmoji('🎛').setStyle(ButtonStyle.Secondary));
+    }
   } else if (ev.status === 'running') {
     row.addComponents(
       new ButtonBuilder().setCustomId(enc('end', ev.id)).setLabel('Payan').setEmoji('🏁').setStyle(ButtonStyle.Danger));
