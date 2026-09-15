@@ -26,7 +26,10 @@ const REPOST = process.argv.includes('--repost');
 const GUIDE   = '•︱📜│𝙼𝙰𝙵𝙸𝙰-𝙶𝚄𝙸𝙳𝙴';
 const SCORE   = '•︱📊│𝙼𝙰𝙵𝙸𝙰-𝚂𝙲𝙾𝚁𝙴';
 const HISTORY = '•︱🏆│𝙼𝙰𝙵𝙸𝙰-𝙷𝙸𝚂𝚃𝙾𝚁𝚈';
-const STAFF = ['Consultant', 'Dev'];   // Consultant and above
+const STAFF = ['Consultant', 'Dev'];
+// Verified members. QUIDDITCH grants sight through these, never through
+// @everyone — which is exactly what these channels got wrong.
+const MEMBERS = ['ʙᴏʏ│𝙼𝙴𝙼𝙱𝙴𝚁│•', 'ɢɪʀʟ│𝙼𝙴𝙼𝙱𝙴𝚁│•'];   // Consultant and above
 
 /* ── the guide, in Persian ─────────────────────────────────────── */
 
@@ -313,14 +316,37 @@ c.once('clientReady', async () => {
       return [{ id: r.id, deny: perms }];
     };
 
+    /*
+     * Sight comes from the member roles, not from @everyone.
+     *
+     * These sit in QUIDDITCH, which is gated behind verification, and every
+     * other channel there grants ViewChannel to the member roles and leaves
+     * @everyone without it. Copying the giveaway channel's shape — where
+     * @everyone *is* given sight on purpose, because people are invited to read
+     * it before they join — handed the whole category's contents to anyone who
+     * had not verified yet.
+     */
+    const memberRoles = MEMBERS
+      .map(n => g.roles.cache.find(r => foldRole(r.name) === foldRole(n)))
+      .filter(Boolean);
+    for (const n of MEMBERS) {
+      if (!memberRoles.some(r => foldRole(r.name) === foldRole(n))) console.warn(`! member role not found: ${n}`);
+    }
+
     const overwrites = [
+      // No ViewChannel here: unverified accounts hold only @everyone.
       { id: g.roles.everyone.id,
-        allow: [P.ViewChannel, P.ReadMessageHistory, P.AddReactions],
-        deny:  [P.SendMessages, P.SendMessagesInThreads, P.CreatePublicThreads] },
+        deny:  [P.ViewChannel, P.SendMessages, P.SendMessagesInThreads, P.CreatePublicThreads] },
+      ...memberRoles.map(r => ({
+        id: r.id, allow: [P.ViewChannel, P.ReadMessageHistory, P.AddReactions],
+      })),
       { id: g.members.me.id,
         allow: [P.ViewChannel, P.ReadMessageHistory, P.SendMessages,
                 P.ManageMessages, P.EmbedLinks, P.AttachFiles] },
-      ...staffRoles.map(r => ({ id: r.id, allow: [P.SendMessages, P.ManageMessages] })),
+      ...staffRoles.map(r => ({
+        id: r.id,
+        allow: [P.ViewChannel, P.ReadMessageHistory, P.SendMessages, P.ManageMessages],
+      })),
       // A section ban removes the section from view entirely.
       ...sanction('Event Banned',        [P.ViewChannel]),
       ...sanction('Server Banned',       [P.ViewChannel]),
