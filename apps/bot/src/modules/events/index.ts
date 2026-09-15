@@ -768,6 +768,9 @@ export function installEvents(client: AionClient): void {
       if (i.isModalSubmit() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaModal(i); return; }
       if (i.isButton() && i.customId.startsWith(`${SCUM_ID}|`)) { await scumComponent(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${SCUM_ID}|`)) { await scumComponent(i); return; }
+      // Adding somebody mid-game picks them from a user menu, which is its own
+      // interaction type — without this the picker would silently do nothing.
+      if (i.isUserSelectMenu() && i.customId.startsWith(`${SCUM_ID}|`)) { await scumComponent(i); return; }
       // Its own namespace: the Traitor answering their side-pick is a player,
       // not the narrator, and must not meet the console's host check.
       if (i.isButton() && i.customId.startsWith(`${SCUM_DEAL_ID}|`)) { await scumDealComponent(i); return; }

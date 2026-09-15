@@ -19,8 +19,8 @@
 import {
   MessageFlags, ContainerBuilder, TextDisplayBuilder, SeparatorBuilder,
   SeparatorSpacingSize, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  StringSelectMenuBuilder, StringSelectMenuOptionBuilder, PermissionFlagsBits,
-  type ButtonInteraction, type StringSelectMenuInteraction,
+  StringSelectMenuBuilder, StringSelectMenuOptionBuilder, UserSelectMenuBuilder, ChannelType, PermissionFlagsBits,
+  type ButtonInteraction, type StringSelectMenuInteraction, type UserSelectMenuInteraction,
   type MessageComponentInteraction, type Guild, type GuildMember, type TextChannel,
 } from 'discord.js';
 import { isolate, num } from '../../../lib/text.js';
@@ -29,6 +29,7 @@ import { logger } from '../../../lib/log.js';
 import {
   getEvent, mergeState, players, killPlayer, revivePlayer,
   type EventRow, type PlayerRow,
+  addPlayer, assignRole,
 } from '../store.js';
 import { applyTextRules, configOf, gameHeld } from '../mafia.js';
 import type { Phase } from '../games.js';
@@ -660,6 +661,8 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
         .setEmoji('🔴').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'shahr')).setLabel('Shahr bord')
         .setEmoji('🟢').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(enc('addp', ev.id)).setLabel('Ezafe kon')
+        .setEmoji('➕').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(enc('hush', ev.id))
         .setLabel(st.forceMute ? 'Baz kon' : 'Hame ro mute kon')
         .setEmoji(st.forceMute ? '🔊' : '🔇')
@@ -1376,7 +1379,9 @@ async function changePhase(i: ButtonInteraction, ev: EventRow, to: 'day' | 'nigh
  * Player-facing steps are handled before the God check, because the people
  * pressing them are not God and must not be told off for it.
  */
-export async function scumComponent(i: ButtonInteraction | StringSelectMenuInteraction): Promise<void> {
+export async function scumComponent(
+  i: ButtonInteraction | StringSelectMenuInteraction | UserSelectMenuInteraction,
+): Promise<void> {
   const [step, idRaw, arg] = dec(i.customId);
   const ev = await getEvent(Number(idRaw));
   if (!ev) { await i.reply({ content: 'Event peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
@@ -1436,6 +1441,92 @@ export async function scumComponent(i: ButtonInteraction | StringSelectMenuInter
     await applyVoice(i.guild!, fresh, stateOf(fresh).phase === 'night');
     await i.update(await scumConsole(fresh,
       `<@${target}> ${kind === 'kill' ? 'az baazi kharej shod' : 'bargasht be baazi'}.`));
+    return;
+  }
+
+  /*
+   * Bringing somebody into a game already under way.
+   *
+   * Somebody gets disconnected, or timed out, and comes back on a different
+   * account — the game is mid-flight and their seat is stranded. Without this
+   * the only options were to abandon the game or carry on a player short.
+   *
+   * God picks the person, then the role. The roles offered are the ones dealt
+   * in this game, because the ordinary use is handing a stranded seat back to
+   * the human who was sitting in it.
+   */
+  if (step === 'addpick' && i.isUserSelectMenu()) {
+    const who = i.values[0]!;
+    const roster = await players(ev.id);
+    // The roles this game actually dealt. Offering the full catalogue would let
+    // a role into the game that its own cast never had.
+    const dealt = [...new Set(roster.map(p => p.role).filter(Boolean))] as RoleKey[];
+    if (!dealt.length) {
+      await i.update({ content: 'Hanooz naghsh pakhsh nashode.', components: [] });
+      return;
+    }
+    // The id rides in the custom id, so nothing has to be remembered between
+    // two ephemeral screens that may be minutes apart.
+    await i.update({
+      content: `<@${who}> — kodoom naghsh?`,
+      components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder().setCustomId(enc('addrole', ev.id, who))
+          .setPlaceholder('Naghsh')
+          .addOptions(dealt.slice(0, 25).map(k => {
+            const taken = roster.filter(p => p.role === k);
+            const gone = taken.filter(p => !p.alive).length;
+            return new StringSelectMenuOptionBuilder()
+              .setLabel(SCUM_ROLES[k]?.fa ?? k)
+              .setValue(k)
+              .setDescription(gone ? `${gone} ta az in naghsh az bazi rafte` : 'hanooz zende-st');
+          })))],
+    });
+    return;
+  }
+
+  if (step === 'addrole' && i.isStringSelectMenu() && arg) {
+    const role = i.values[0] as RoleKey;
+    const def = SCUM_ROLES[role];
+    if (!def) { await i.update({ content: 'Naghsh peyda nashod.', components: [] }); return; }
+
+    const roster = await players(ev.id);
+    const member = await i.guild?.members.fetch(arg).catch(() => null);
+    await addPlayer(ev.id, arg, member?.user.tag ?? arg);
+    await assignRole(ev.id, arg, role, def.side, roster.length + 1);
+
+    // They need to know what they are, and the team needs them in the room.
+    await dm(i.guild!, arg,
+      `## ${def.side === 'mafia' ? '🔴' : def.side === 'gray' ? '⚪' : '🟢'} ${isolate(def.fa)}`
+      + '\nVasate bazi ezafe shodi. Naghshet ino.',
+      def.side === 'mafia' ? C.mafia : C.shahr);
+
+    if (def.side === 'mafia') {
+      const room = [...(i.guild?.channels.cache.values() ?? [])]
+        .find(c => c.type === ChannelType.GuildText && c.name === `🕵-scum-${ev.id}`) as TextChannel | undefined;
+      if (room) {
+        await room.permissionOverwrites.edit(arg, {
+          ViewChannel: true, SendMessages: true,
+        }, { reason: 'AION scum: added mid-game' }).catch(() => {});
+      }
+    }
+
+    await i.update({
+      content: `✅ <@${arg}> ba naghsh **${isolate(def.fa)}** ezafe shod.`
+        + (def.side === 'mafia' ? '\n-# Be otagh-e mafia ham dastresi peyda kard.' : '')
+        + '\n-# Age jaye kesi neshaste, oon yeki ro ba "Bokosh" az bazi dar bebar.',
+      components: [],
+    });
+    return;
+  }
+
+  if (step === 'addp' && i.isButton()) {
+    await i.reply({
+      content: 'Ki ro ezafe konam?',
+      components: [new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
+        new UserSelectMenuBuilder().setCustomId(enc('addpick', ev.id))
+          .setPlaceholder('Bazikon'))],
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
 
