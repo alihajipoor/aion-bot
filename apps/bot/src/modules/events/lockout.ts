@@ -47,9 +47,9 @@ interface LockState { lockedIds?: string[] }
  */
 export async function resealEventAccess(
   guild: Guild, ev: EventRow, reason: string,
-): Promise<void> {
+): Promise<string[]> {
   const channels = secretChannels(guild, ev);
-  if (!channels.length) return;
+  if (!channels.length) return [];
 
   const roster = await players(ev.id).catch(() => []);
   const live = ev.status !== 'ended' && ev.status !== 'cancelled';
@@ -75,4 +75,25 @@ export async function resealEventAccess(
     log.info(`event #${ev.id}: locked ${added}, restored ${removed}`);
     await mergeState(ev.id, { lockedIds: [...want] }).catch(() => {});
   }
+
+  /*
+   * Who this could not shut out.
+   *
+   * Administrator bypasses every channel overwrite there is — that is Discord's
+   * rule, not a gap in the deny. A member overwrite beats a role allow, which
+   * is the whole reason this file exists, but nothing beats Administrator.
+   *
+   * So the ones it cannot cover are named rather than silently missed. A
+   * lockout that quietly fails for exactly the people with the most access is
+   * worse than no lockout, because everybody assumes it worked.
+   */
+  const immune: string[] = [];
+  for (const id of want) {
+    const m = guild.members.cache.get(id);
+    if (m?.permissions.has(PermissionFlagsBits.Administrator)) immune.push(id);
+  }
+  if (immune.length) {
+    log.warn(`event #${ev.id}: ${immune.length} player(s) hold Administrator and cannot be locked out`);
+  }
+  return immune;
 }

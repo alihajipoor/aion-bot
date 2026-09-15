@@ -279,9 +279,25 @@ async function castLines(ev: EventRow): Promise<string[]> {
 }
 
 
-async function signupCard(ev: EventRow) {
+async function signupCard(ev: EventRow, guild?: Guild) {
   const roster = await players(ev.id).catch(() => []);
   const cast = await castLines(ev).catch(() => []);
+
+  /*
+   * Players the lockout cannot cover.
+   *
+   * Administrator bypasses every channel overwrite Discord has, so a signed-up
+   * admin can read the console and the mafia room however hard the bot denies
+   * them. Nothing in code fixes that — only not holding Administrator does.
+   *
+   * Said out loud on the signup post, where the host decides whether to start.
+   * A lockout that quietly fails for the people with the most access is worse
+   * than none, because everyone assumes it worked.
+   */
+  const immune = guild
+    ? roster.filter(p => p.userId !== ev.hostId
+        && guild.members.cache.get(p.userId)?.permissions.has(PermissionFlagsBits.Administrator))
+    : [];
   const g = CATALOGUE[ev.game as GameKey];
   const full = ev.capacity > 0 && roster.length >= ev.capacity;
 
@@ -299,6 +315,10 @@ async function signupCard(ev: EventRow) {
         '',
         roster.length ? roster.map((p, i) => `\`${i + 1}\` <@${p.userId}>`).join('\n') : '-# Hanooz kesi sabt-nam nakarde. Avvalin nafar bash.',
         ...(cast.length ? ['', '**Naghsh haye in bazi**', ...cast] : []),
+        ...(immune.length ? ['',
+          `⚠️ ${immune.map(p => `<@${p.userId}>`).join(' ')} **Administrator** daran —`,
+          '-# Discord ejaze nemide bot jelosheshoon ro begire. Console va otagh-e mafia ro mibinan.',
+        ] : []),
       ].join('\n')))
       .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(enc('join', ev.id)).setLabel('Sabt-nam').setEmoji('✅')
@@ -312,7 +332,7 @@ async function refreshSignup(guild: Guild, ev: EventRow): Promise<void> {
   if (!ev.announceChannelId || !ev.announceMessageId) return;
   const ch = guild.channels.cache.get(ev.announceChannelId) as TextChannel | undefined;
   const msg = await ch?.messages.fetch(ev.announceMessageId).catch(() => null);
-  if (msg) await msg.edit(await signupCard(ev)).catch(() => {});
+  if (msg) await msg.edit(await signupCard(ev, guild)).catch(() => {});
 }
 
 /* ── interactions ──────────────────────────────────────────────── */
@@ -483,7 +503,7 @@ async function doAnnounce(guild: Guild, ev: EventRow): Promise<void> {
   const news = newsChannel(guild);
   if (!news) throw new Error('EVENT-NEWS channel not found');
 
-  const msg = await news.send(await signupCard(ev));
+  const msg = await news.send(await signupCard(ev, guild));
 
   // A native scheduled event buys reminders and the server's event tab for
   // free; reimplementing either would be strictly worse.
