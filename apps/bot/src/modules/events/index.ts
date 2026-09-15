@@ -2,9 +2,9 @@ import {
   ChannelType, Events, MessageFlags, PermissionFlagsBits, GuildScheduledEventEntityType,
   GuildScheduledEventPrivacyLevel, ContainerBuilder, TextDisplayBuilder, SeparatorBuilder,
   SeparatorSpacingSize, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
+  StringSelectMenuOptionBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
   MediaGalleryBuilder, MediaGalleryItemBuilder, AttachmentBuilder, SectionBuilder,
-  type ButtonInteraction, type StringSelectMenuInteraction, type ModalSubmitInteraction,
+  type ButtonInteraction, type StringSelectMenuInteraction, type UserSelectMenuInteraction, type ModalSubmitInteraction,
   type Guild, type GuildMember, type TextChannel, type VoiceChannel,
   type MessageCreateOptions,
 } from 'discord.js';
@@ -212,6 +212,8 @@ export async function controlCard(ev: EventRow) {
         .setCustomId(`${isScum(ev) ? SCUM_ID : MAFIA_ID}|console|${ev.id}`)
         .setLabel('Console').setEmoji('🎛').setStyle(ButtonStyle.Secondary));
     }
+    row.addComponents(new ButtonBuilder().setCustomId(enc('edit', ev.id))
+      .setLabel('Edit').setEmoji('✏️').setStyle(ButtonStyle.Secondary));
   } else if (ev.status === 'announced') {
     row.addComponents(
       new ButtonBuilder().setCustomId(enc('start', ev.id)).setLabel('Shoroo').setEmoji('▶️').setStyle(ButtonStyle.Success),
@@ -225,6 +227,8 @@ export async function controlCard(ev: EventRow) {
         .setCustomId(`${isScum(ev) ? SCUM_ID : MAFIA_ID}|console|${ev.id}`)
         .setLabel('Console').setEmoji('🎛').setStyle(ButtonStyle.Secondary));
     }
+    row.addComponents(new ButtonBuilder().setCustomId(enc('edit', ev.id))
+      .setLabel('Edit').setEmoji('✏️').setStyle(ButtonStyle.Secondary));
   } else if (ev.status === 'running') {
     row.addComponents(
       new ButtonBuilder().setCustomId(enc('end', ev.id)).setLabel('Payan').setEmoji('🏁').setStyle(ButtonStyle.Danger));
@@ -355,9 +359,41 @@ async function refreshSignup(guild: Guild, ev: EventRow): Promise<void> {
 /* ── interactions ──────────────────────────────────────────────── */
 
 /** The panel no longer has a game dropdown; setup is a button per game. */
-export async function handleSelect(i: StringSelectMenuInteraction): Promise<void> {
-  const [step] = dec(i.customId);
-  if (step === 'noop') await i.deferUpdate();
+export async function handleSelect(
+  i: StringSelectMenuInteraction | UserSelectMenuInteraction,
+): Promise<void> {
+  const [step, idRaw] = dec(i.customId);
+  if (step === 'noop') { await i.deferUpdate(); return; }
+
+  // The edit panel. Roster and capacity only — game settings live behind
+  // Console → Tanzimat, and splitting them keeps each screen answerable.
+  if (step === 'editkick' || step === 'editadd' || step === 'editcap') {
+    const ev = await getEvent(Number(idRaw));
+    if (!ev) { await i.reply({ content: 'Event peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
+    if (!isStaff(i.member as GuildMember)) {
+      await i.reply({ content: 'Faghat staff.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    if (step === 'editkick' && i.isStringSelectMenu()) {
+      for (const id of i.values) await removePlayer(ev.id, id);
+      await afterRosterEdit(i, ev, `${i.values.length} nafar hazf shod.`);
+      return;
+    }
+    if (step === 'editadd' && i.isUserSelectMenu()) {
+      for (const id of i.values) {
+        const m = await i.guild?.members.fetch(id).catch(() => null);
+        await addPlayer(ev.id, id, m?.user.tag ?? id);
+      }
+      await afterRosterEdit(i, ev, `${i.values.length} nafar ezafe shod.`);
+      return;
+    }
+    if (step === 'editcap' && i.isStringSelectMenu()) {
+      await patchEvent(ev.id, { capacity: Number(i.values[0]) });
+      await afterRosterEdit(i, ev, `Zarfiat shod ${i.values[0]}.`);
+      return;
+    }
+  }
 }
 
 /** Wizard controls: every change redraws the same ephemeral screen. */
@@ -503,6 +539,7 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
     return;
   }
 
+  if (step === 'edit')      { await editPanel(i, ev); return; }
   if (step === 'announce') { await announce(i, ev); return; }
   if (step === 'start')    { await start(i, ev); return; }
   if (step === 'end')      { await end(i, ev); return; }
@@ -510,6 +547,75 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
 }
 
 /* ── lifecycle ─────────────────────────────────────────────────── */
+
+/**
+ * Editing a listed event without tearing it down.
+ *
+ * Cancelling and relisting loses the signup list and makes everyone join again,
+ * which is a heavy price for removing one name or adding a seat. Game settings
+ * live behind Console → Tanzimat; this is the roster and the capacity.
+ */
+async function editPanel(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  const roster = await players(ev.id).catch(() => []);
+  const nameOf = (id: string) => i.guild?.members.cache.get(id)?.displayName ?? id;
+
+  const rows: ActionRowBuilder<StringSelectMenuBuilder | UserSelectMenuBuilder>[] = [];
+
+  if (roster.length) {
+    rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder().setCustomId(enc('editkick', ev.id))
+        .setPlaceholder('Hazf az liste sabt-nam')
+        .setMinValues(1).setMaxValues(Math.min(25, roster.length))
+        .addOptions(roster.slice(0, 25).map((p, k) => new StringSelectMenuOptionBuilder()
+          .setLabel(nameOf(p.userId).slice(0, 100))
+          .setValue(p.userId)
+          .setDescription(`nafar ${k + 1}`)))));
+  }
+
+  rows.push(new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
+    new UserSelectMenuBuilder().setCustomId(enc('editadd', ev.id))
+      .setPlaceholder('Ezafe kardan be liste sabt-nam')
+      .setMinValues(1).setMaxValues(5)));
+
+  rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder().setCustomId(enc('editcap', ev.id))
+      .setPlaceholder(`Zarfiat — ${ev.capacity || 'bi nahayat'}`)
+      .addOptions(Array.from({ length: 21 }, (_, k) => k + 4).slice(0, 25).map(n =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(`${n} nafar`).setValue(String(n)).setDefault(n === ev.capacity)))));
+
+  await i.reply({
+    components: [new ContainerBuilder().setAccentColor(C.brand)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## ✏️ Edit — ${isolate(ev.title)}\n`
+        + `-# Sabt-nam ${roster.length}${ev.capacity ? ` az ${ev.capacity}` : ''}`
+        + ' · tanzimat e baazi too Console → Tanzimat e.'))
+      .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        roster.length
+          ? roster.map((p, k) => `\`${k + 1}\` <@${p.userId}>`).join('\n')
+          : '-# Hanooz kesi sabt-nam nakarde.')),
+      ...rows],
+    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+  });
+}
+
+/** Both cards and the panel itself, so nothing on screen is a step behind. */
+async function afterRosterEdit(
+  i: StringSelectMenuInteraction | UserSelectMenuInteraction, ev: EventRow, note: string,
+): Promise<void> {
+  const guild = i.guild!;
+  const fresh = (await getEvent(ev.id))!;
+  // The roster changed, so who may see the console changed with it.
+  await resealEventAccess(guild, fresh, `AION event #${fresh.id} edited`);
+  await refreshSignup(guild, fresh);
+  await refreshCard(guild, fresh);
+  await i.update({
+    components: [new ContainerBuilder().setAccentColor(C.brand)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(`✅ ${note}`))],
+    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+  });
+}
 
 async function announce(i: ButtonInteraction, ev: EventRow): Promise<void> {
   await i.deferUpdate();
@@ -816,6 +922,8 @@ export function installEvents(client: AionClient): void {
       if (i.isModalSubmit() && i.customId.startsWith(`${WZ}|`)) { await handleTimers(i); return; }
       if (i.isButton() && i.customId.startsWith(`${EV}|`)) { await handleButton(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${EV}|`)) { await handleSelect(i); return; }
+      // Adding somebody to the list uses a user menu, its own interaction type.
+      if (i.isUserSelectMenu() && i.customId.startsWith(`${EV}|`)) { await handleSelect(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${EV}|`)) { await handleModal(i); return; }
     } catch (e) {
       log.error('event interaction failed', e);
