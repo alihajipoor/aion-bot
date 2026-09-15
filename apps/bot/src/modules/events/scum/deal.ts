@@ -34,7 +34,7 @@ import {
   getEvent, patchEvent, mergeState, players, assignRole,
   type EventRow, type PlayerRow,
 } from '../store.js';
-import { SCUM_ROLES, canDisable, type RoleKey, type Team } from './rules.js';
+import { SCUM_ROLES, canDisable, MANDATORY_ROLES, type RoleKey, type Team } from './rules.js';
 import { setScumLimits, type ScumLimits } from './console.js';
 
 const log = logger('scum-deal');
@@ -59,6 +59,11 @@ export interface ScumDealConfig {
   kalantarGuns?: number;
   /** Off means no mafia room at all; the team simply never gets one. */
   mafiaRoom?: boolean;
+  /**
+   * Exactly how many of each role, when God has decided rather than letting the
+   * automatic split decide. Absent or all-zero means the split runs.
+   */
+  roleCounts?: Record<string, number>;
 }
 
 /** A shuffle. Passed in so `distribution` never reaches for Math.random. */
@@ -166,12 +171,47 @@ const SHAHR_ORDER: readonly RoleKey[] = [
  * would have taken go to the town instead. That only ever lowers the mafia
  * count, so it can never break parity.
  */
+/**
+ * The cast God typed out, when they typed one.
+ *
+ * Returns null when no counts are set, which is how the automatic split stays
+ * the default. The Don is forced in regardless — he is the mafia's only night
+ * shot, and a table built by hand is exactly where he would be left out by
+ * accident.
+ *
+ * Short of the table size it pads with citizens and over it truncates, because
+ * `dealScum` hands one role to one seat and a mismatch would otherwise leave
+ * somebody holding nothing. The setup screen says when that has happened; it is
+ * not the sort of thing to fix silently.
+ */
+export function explicitCast(count: number, cfg: ScumDealConfig = {}): RoleKey[] | null {
+  const counts = cfg.roleCounts ?? {};
+  const keys = Object.keys(counts).filter(k => (counts[k] ?? 0) > 0);
+  if (!keys.length) return null;
+
+  const out: RoleKey[] = [];
+  for (const k of keys) {
+    if (!Object.hasOwn(SCUM_ROLES, k)) continue;
+    for (let n = 0; n < (counts[k] ?? 0); n++) out.push(k as RoleKey);
+  }
+  for (const m of MANDATORY_ROLES) if (!out.includes(m)) out.unshift(m);
+
+  while (out.length < count) out.push('shahrvand');
+  return out.slice(0, count);
+}
+
 export function distribution(
   count: number,
   cfg: ScumDealConfig = {},
   shuffle: Shuffle = asDealt,
 ): RoleKey[] {
   if (count <= 0) return [];
+
+  // An explicit cast wins outright. The automatic split below is a good default
+  // and a poor straitjacket — a host who wants three plain mafia and no Saghi
+  // should get that, not an approximation of it.
+  const explicit = explicitCast(count, cfg);
+  if (explicit) return shuffle(explicit);
 
   // A disable on a mandatory role is dropped here, once, so nothing below has
   // to remember the rule.

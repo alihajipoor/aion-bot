@@ -157,6 +157,12 @@ export interface MafiaConfig {
   kalantarGuns: number;
   /** Roles switched off for this game entirely. */
   disabledRoles: string[];
+  /**
+   * Exactly how many of each role. Empty means the automatic split decides,
+   * which is the right default and a poor rule — a host who wants three plain
+   * mafia and no Saghi should be able to say so.
+   */
+  roleCounts: Record<string, number>;
 }
 
 export const MAFIA_DEFAULTS: MafiaConfig = {
@@ -184,6 +190,7 @@ export const MAFIA_DEFAULTS: MafiaConfig = {
   shahrdarVetoes: 1,
   kalantarGuns: 2,
   disabledRoles: [],
+  roleCounts: {},
 };
 
 export interface EsmFamilConfig {

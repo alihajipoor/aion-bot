@@ -303,3 +303,43 @@ test('dealtCounts reports the console columns, not the teams', () => {
   assert.deepEqual(dealtCounts(['don', 'natasha', 'shahrvand', 'traitor']), { mafia: 2, shahr: 2 });
   assert.deepEqual(dealtCounts([]), { mafia: 0, shahr: 0 });
 });
+
+/* ── an explicit cast ──────────────────────────────────────────── */
+
+test('explicit counts replace the automatic split entirely', () => {
+  const roles = distribution(8, { roleCounts: { mafia_sade: 3, doctor: 1, detective: 1 } });
+  const tally = roles.reduce((a, k) => ({ ...a, [k]: (a[k] ?? 0) + 1 }), {});
+  assert.equal(tally.mafia_sade, 3);
+  assert.equal(tally.doctor, 1);
+  assert.equal(tally.detective, 1);
+  assert.equal(roles.length, 8, 'always one role per seat');
+});
+
+test('the Don is forced in even when the host forgot him', () => {
+  // A hand-built table is exactly where the mafia ends up with no night shot.
+  const roles = distribution(6, { roleCounts: { mafia_sade: 1, doctor: 1 } });
+  assert.ok(roles.includes('don'));
+});
+
+test('short of the table, the rest are citizens', () => {
+  const roles = distribution(9, { roleCounts: { don: 1, doctor: 1 } });
+  assert.equal(roles.length, 9);
+  assert.equal(roles.filter(k => k === 'shahrvand').length, 7);
+});
+
+test('over the table, the cast is cut to fit', () => {
+  // dealScum hands one role to one seat, so a longer list would leave somebody
+  // holding nothing. The setup screen warns; the resolver never sees a mismatch.
+  const roles = distribution(4, { roleCounts: { shahrvand: 20 } });
+  assert.equal(roles.length, 4);
+});
+
+test('all-zero counts fall back to the automatic split', () => {
+  const zeroed = distribution(9, { roleCounts: { doctor: 0, saghi: 0 } });
+  const auto = distribution(9);
+  assert.deepEqual(zeroed, auto);
+});
+
+test('no counts at all is still the automatic split', () => {
+  assert.deepEqual(distribution(9, {}), distribution(9));
+});
