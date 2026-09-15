@@ -343,3 +343,29 @@ test('all-zero counts fall back to the automatic split', () => {
 test('no counts at all is still the automatic split', () => {
   assert.deepEqual(distribution(9, {}), distribution(9));
 });
+
+test('raising a role on a full table does not trim that same role', () => {
+  // The bug this guards: setting three plain mafia on a table already full
+  // returned one, because the surplus was taken off the biggest group — which
+  // was the one just raised. Asking for three is deliberate; a role sitting at
+  // one is only the default nobody touched.
+  const auto = {};
+  for (const k of distribution(12, {})) auto[k] = (auto[k] ?? 0) + 1;
+
+  const dealt = distribution(12, { roleCounts: { ...auto, mafia_sade: 3 } });
+  assert.equal(dealt.length, 12, 'one role per seat');
+  assert.equal(dealt.filter(k => k === 'mafia_sade').length, 3, 'what was asked for');
+});
+
+test('plain citizens are spent before any real role', () => {
+  const dealt = distribution(6, { roleCounts: { don: 1, doctor: 1, shahrvand: 8 } });
+  assert.equal(dealt.length, 6);
+  assert.ok(dealt.includes('don'));
+  assert.ok(dealt.includes('doctor'), 'the doctor survives the trim');
+});
+
+test('the Don survives a trim even when everything is over capacity', () => {
+  const dealt = distribution(3, { roleCounts: { doctor: 5, detective: 5 } });
+  assert.equal(dealt.length, 3);
+  assert.ok(dealt.includes('don'));
+});

@@ -197,7 +197,51 @@ export function explicitCast(count: number, cfg: ScumDealConfig = {}): RoleKey[]
   for (const m of MANDATORY_ROLES) if (!out.includes(m)) out.unshift(m);
 
   while (out.length < count) out.push('shahrvand');
-  return out.slice(0, count);
+  if (out.length <= count) return out;
+
+  /*
+   * Over the table: take the surplus off whatever there is most of.
+   *
+   * Cutting from the end silently deleted whichever role was edited last — set
+   * three plain mafia on a full table and all three vanished, because they were
+   * appended and the slice took them straight back off. Trimming the biggest
+   * group instead means a role asked for once survives a role asked for five
+   * times, which is the expectation anybody setting these numbers has.
+   *
+   * The screen still says the table is over capacity. This decides what happens
+   * if the game is started anyway.
+   */
+  const tally = new Map<RoleKey, number>();
+  for (const k of out) tally.set(k, (tally.get(k) ?? 0) + 1);
+
+  let surplus = out.length - count;
+  while (surplus > 0) {
+    /*
+     * Citizens first, then the *smallest* groups — not the largest.
+     *
+     * Asking for three of something is a deliberate statement; a role sitting
+     * at one is just the default nobody touched. Trimming the biggest group
+     * took the surplus straight back off whatever had been raised, so setting
+     * three plain mafia on a full table returned one and looked broken.
+     *
+     * The screen already says the table is over capacity and by how much. This
+     * only decides what happens if the game is started without fixing it.
+     */
+    let victim: RoleKey | null = (tally.get('shahrvand') ?? 0) > 0 ? 'shahrvand' : null;
+    if (!victim) {
+      for (const [k, n] of tally) {
+        if (MANDATORY_ROLES.includes(k) || n <= 0) continue;
+        if (!victim || n < (tally.get(victim) ?? 0)) victim = k;
+      }
+    }
+    if (!victim || (tally.get(victim) ?? 0) <= 0) break;
+    tally.set(victim, (tally.get(victim) ?? 0) - 1);
+    surplus--;
+  }
+
+  const trimmed: RoleKey[] = [];
+  for (const [k, n] of tally) for (let x = 0; x < n; x++) trimmed.push(k);
+  return trimmed;
 }
 
 export function distribution(

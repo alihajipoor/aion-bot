@@ -30,6 +30,7 @@ import {
   type MafiaConfig, type Phase, type TextRule,
 } from './games.js';
 import { SCUM_ROLES, canDisable, roleOf as scumRoleOf, type ScumRole } from './scum/rules.js';
+import { distribution as scumDistribution } from './scum/deal.js';
 
 /**
  * The custom-id prefix. It must stay equal to `MAFIA_ID`, because index.ts
@@ -138,49 +139,6 @@ const SIDE_EMOJI: Record<ScumRole['side'], string> = {
 
 const roleList = (): ScumRole[] => Object.values(SCUM_ROLES);
 
-const isOn = (cfg: PanelConfig, key: string): boolean => !cfg.disabledRoles.includes(key);
-
-/** Four rows of buttons at most; the fifth belongs to the way back. */
-const ROLE_ROW_BUDGET = 4;
-
-/**
- * Role buttons, grouped by side and chunked to Discord's five-per-row.
- *
- * Grouped rather than packed because God reads this while a game waits: shahr
- * on its own lines, then mafia, then the two grays who are nobody's team.
- *
- * Thirteen roles fill 5+3, 3, 2 — exactly the budget. A fourteenth mafia role
- * would push the grays off the screen, so the overflow is handed back rather
- * than dropped: the screen says which roles it could not draw, instead of
- * quietly presenting a role list that is missing two names.
- */
-function roleRows(
-  cfg: PanelConfig, eventId: number,
-): { rows: ActionRowBuilder<ButtonBuilder>[]; cut: ScumRole[] } {
-  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
-  const cut: ScumRole[] = [];
-
-  for (const side of ['shahr', 'mafia', 'gray'] as const) {
-    const group = roleList().filter(r => r.side === side);
-    for (let i = 0; i < group.length; i += 5) {
-      const chunk = group.slice(i, i + 5);
-      if (rows.length === ROLE_ROW_BUDGET) { cut.push(...chunk); continue; }
-      rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
-        chunk.map(r => new ButtonBuilder()
-          .setCustomId(enc('cfgrole', eventId, r.key))
-          .setLabel(isolate(r.fa))
-          .setEmoji(SIDE_EMOJI[r.side])
-          .setStyle(isOn(cfg, r.key) ? ButtonStyle.Success : ButtonStyle.Secondary)
-          // The Don is the mafia's only night shot; a game without one has no
-          // mafia turn at all. Rendered dead rather than refused on click —
-          // being told "no" after pressing is a worse answer than not being
-          // offered the press.
-          .setDisabled(!canDisable(r.key))),
-      ));
-    }
-  }
-  return { rows, cut };
-}
 
 /* ── the hub ───────────────────────────────────────────────────── */
 
@@ -193,17 +151,23 @@ const backRow = (eventId: number, extra: ButtonBuilder[] = []) =>
 
 function hubScreen(ev: EventRow) {
   const cfg = panelConfig(ev);
-  const off = roleList().filter(r => !isOn(cfg, r.key));
-  const on = roleList().length - off.length;
+  // Summarised as counts, matching the roles screen. "9 on, 4 off" said
+  // nothing about how many of each, which is the question being asked.
+  const { counts, auto } = effectiveCounts(ev);
+  const total = Object.values(counts).reduce((a, n) => a + n, 0);
+  const sideTotal = (side: 'mafia' | 'shahr') => roleList()
+    .filter(r => r.countsAs === side)
+    .reduce((a, r) => a + (counts[r.key] ?? 0), 0);
 
   const box = new ContainerBuilder().setAccentColor(C.panel)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       '## ⚙️ Tanzimat\n-# Har chi avaz koni hamoon lahze emal mishe — vasate baazi ham eshkal nadare.'))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      `🎭 **Naghsh ha** — ${num(on)} roshan · ${num(off.length)} khamoosh`,
-      off.length
-        ? `-# Khamoosh: ${off.map(r => isolate(r.fa)).join(' · ')}`
+      `🎭 **Naghsh ha** — 🔴 ${num(sideTotal('mafia'))} mafia · 🟢 ${num(sideTotal('shahr'))} shahr`
+        + `  ·  ${num(total)}/${num(tableSize(ev))} ja${auto ? '' : '  ✍️'}`,
+      auto
+        ? '-# Khodkar pakhsh mishe.'
         : '-# Hameye naghsh ha too baazian.',
       '',
       '💬 **Chat**',
@@ -267,31 +231,93 @@ function hubScreen(ev: EventRow) {
 
 /* ── roles ─────────────────────────────────────────────────────── */
 
-function rolesScreen(ev: EventRow) {
+/** The table size the cast is worked out against. */
+const tableSize = (ev: EventRow): number =>
+  Number((ev.state as { config?: { players?: number } }).config?.players) || ev.capacity || 9;
+
+/**
+ * What each role's count is right now.
+ *
+ * With nothing set by hand this reports what the automatic split would deal, so
+ * the screen always shows the real cast rather than a column of zeroes that
+ * quietly becomes a full game. Touching any count switches the whole cast to
+ * the explicit list — which is what `explicitCast` does — so the first edit
+ * inherits the split's numbers instead of wiping the table.
+ */
+function effectiveCounts(ev: EventRow): { counts: Record<string, number>; auto: boolean } {
   const cfg = panelConfig(ev);
-  const { rows, cut } = roleRows(cfg, ev.id);
-  const mandatory = roleList().filter(r => !canDisable(r.key));
+  const set = cfg.roleCounts ?? {};
+  if (Object.values(set).some(n => n > 0)) return { counts: set, auto: false };
+
+  const counts: Record<string, number> = {};
+  for (const key of scumDistribution(tableSize(ev), cfg)) {
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return { counts, auto: true };
+}
+
+function rolesScreen(ev: EventRow, picked?: string) {
+  const { counts, auto } = effectiveCounts(ev);
+  const size = tableSize(ev);
+  const total = Object.values(counts).reduce((a, n) => a + n, 0);
+
+  const sideTotal = (side: 'mafia' | 'shahr') => roleList()
+    .filter(r => r.countsAs === side)
+    .reduce((a, r) => a + (counts[r.key] ?? 0), 0);
+
+  const listed = roleList().filter(r => (counts[r.key] ?? 0) > 0 || r.key === picked);
 
   const box = new ContainerBuilder().setAccentColor(C.panel)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      '## 🎭 Naghsh ha\n-# Bezan roo har naghsh ta roshan/khamoosh she. Baazi bedoone Saghi ham baazi e.'))
+      '## 🎭 Naghsh ha\n'
+      + (auto
+        ? '-# Alan khodkar pakhsh mishe. Har adadi ro dast bezani, az inja be bad khodet tain mikoni.'
+        : '-# Khodet tain karde-i. Ba "Khodkar" bar migarde be halat e avval.')))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      ...roleList().map(r =>
-        `${isOn(cfg, r.key) ? '✅' : '⬜'} ${SIDE_EMOJI[r.side]} ${isolate(r.fa)}`
-        + (canDisable(r.key) ? '' : '  🔒')),
-      // `-#` only makes subtext at the start of a line, so the note about the
-      // locked roles gets a line of its own rather than trailing the Don.
-      `-# 🔒 ${mandatory.map(r => isolate(r.fa)).join(' · ')} hatmi e — `
-        + 'bedoone oon mafia shellik e shab nadare.',
-      ...(cut.length
-        ? [`⚠️ Ja nashod: ${cut.map(r => isolate(r.fa)).join(' · ')} — `
-           + 'dokmash roo in safhe ja nemishe.']
+      `🔴 **${num(sideTotal('mafia'))}** mafia   🟢 **${num(sideTotal('shahr'))}** shahr`
+        + `   ·   ${num(total)}/${num(size)} ja`,
+      ...(total !== size
+        ? [total < size
+            ? `-# ⚠️ ${num(size - total)} ja khali mimoone — ba shahrvand e sade por mishe.`
+            : `-# ⚠️ ${num(total - size)} nafar ezafe-st — az akhar hazf mishan.`]
         : []),
+      '',
+      ...listed.map(r =>
+        `${SIDE_EMOJI[r.side]} ${isolate(r.fa)} — **${num(counts[r.key] ?? 0)}**`
+        + (canDisable(r.key) ? '' : '  🔒')
+        + (r.key === picked ? '   ⬅️' : '')),
     ].join('\n')));
 
-  for (const row of rows) box.addActionRowComponents(row);
-  box.addActionRowComponents(backRow(ev.id));
+  box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder().setCustomId(enc('cfgrolepick', ev.id))
+      .setPlaceholder(picked
+        ? `Naghsh — ${roleList().find(r => r.key === picked)?.fa ?? picked}`
+        : 'Kodoom naghsh ro avaz koni?')
+      .addOptions(roleList().slice(0, 25).map(r => new StringSelectMenuOptionBuilder()
+        .setLabel(r.fa)
+        .setValue(r.key)
+        .setDescription(`${counts[r.key] ?? 0} ta · ${r.side === 'mafia' ? 'mafia' : r.side === 'gray' ? 'khakestari' : 'shahr'}`)
+        .setDefault(r.key === picked)))));
+
+  if (picked) {
+    // The Don cannot go to zero; he is the mafia's only night shot.
+    const floor = canDisable(picked) ? 0 : 1;
+    box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder().setCustomId(enc('cfgrolecount', ev.id, picked))
+        .setPlaceholder(`Chand ta? — alan ${counts[picked] ?? 0}`)
+        .addOptions(Array.from({ length: 9 - floor }, (_, k) => k + floor).map(n =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(`${n} ta`).setValue(String(n))
+            .setDefault(n === (counts[picked] ?? 0))))));
+  }
+
+  box.addActionRowComponents(backRow(ev.id, [
+    new ButtonBuilder().setCustomId(enc('cfgroleauto', ev.id))
+      .setLabel('Khodkar').setEmoji('🎲')
+      .setStyle(auto ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setDisabled(auto),
+  ]));
 
   return { components: [box], flags: (MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral) as number };
 }
@@ -500,21 +526,34 @@ export async function setupComponent(
     return true;
   }
 
-  if (step === 'cfgrole' && i.isButton() && arg) {
-    // The Don's button is already rendered dead; this is the second lock, for
-    // a replayed or hand-crafted custom id.
-    if (!canDisable(arg)) {
+  // Choosing which role to edit. Re-renders with it selected; the count menu
+  // below only exists once there is something for it to count.
+  if (step === 'cfgrolepick' && i.isStringSelectMenu()) {
+    await i.update(rolesScreen(ev, i.values[0]!));
+    return true;
+  }
+
+  if (step === 'cfgrolecount' && i.isStringSelectMenu() && arg) {
+    const n = Number(i.values[0]);
+    if (!Number.isFinite(n) || n < 0 || n > 8) return true;
+    if (!canDisable(arg) && n === 0) {
+      // The floor is already 1 in the menu; this is for a replayed custom id.
       await i.reply({
-        content: `${isolate(scumRoleOf(arg)?.fa ?? arg)} hatmi e — nemishe khamoosh kard.`,
+        content: `${isolate(scumRoleOf(arg)?.fa ?? arg)} hatmi e — nemishe sefr kard.`,
         flags: MessageFlags.Ephemeral,
       });
       return true;
     }
-    const cfg = panelConfig(ev);
-    const disabled = isOn(cfg, arg)
-      ? [...cfg.disabledRoles, arg]
-      : cfg.disabledRoles.filter(k => k !== arg);
-    await i.update(screen(await write(ev, { disabledRoles: disabled }), 'roles'));
+    // The first edit inherits whatever the automatic split was going to deal,
+    // so changing one role does not silently empty the other twelve.
+    const { counts } = effectiveCounts(ev);
+    const next = { ...counts, [arg]: n };
+    await i.update(rolesScreen(await write(ev, { roleCounts: next }), arg));
+    return true;
+  }
+
+  if (step === 'cfgroleauto' && i.isButton()) {
+    await i.update(rolesScreen(await write(ev, { roleCounts: {} })));
     return true;
   }
 
