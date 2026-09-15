@@ -14,6 +14,8 @@ import { installNickGuard } from '../modules/nickguard.js';
 import { installContentRules } from '../modules/contentrules.js';
 import { installSanctionGuard } from '../modules/sanctionguard.js';
 import { installGiveawayPoster } from '../modules/giveawayPoster.js';
+import { resealEventAccess } from '../modules/events/lockout.js';
+import { eventsWithStrippedRoles } from '../modules/events/store.js';
 import { installMafiaScoreboard } from '../modules/mafiaScoreboard.js';
 import { installEvents, ensureEventPanel } from '../modules/events/index.js';
 import { ensureGuide } from '../commands/guide.js';
@@ -72,6 +74,19 @@ const handler: EventHandler = {
     installContentRules(client);
     installSanctionGuard(client);
     installGiveawayPoster(client);
+
+    // A crash between taking an Administrator role off a player and giving it
+    // back would otherwise strand them without it. Every event still holding
+    // one is reconciled here: finished games hand them back, live ones keep
+    // them off, which is the same rule as everywhere else.
+    if (g) {
+      void (async () => {
+        for (const ev of await eventsWithStrippedRoles(g.id).catch(() => [])) {
+          await resealEventAccess(g, ev, 'AION: startup reconcile')
+            .catch(e => log.warn(`role restore failed for event #${ev.id}`, e));
+        }
+      })();
+    }
     installMafiaScoreboard(client);
     installEvents(client);
     startCounters(client);

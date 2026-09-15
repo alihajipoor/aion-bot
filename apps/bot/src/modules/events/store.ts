@@ -26,6 +26,22 @@ export const liveEvents = (guildId: string): Promise<EventRow[]> =>
     .where(and(eq(events.guildId, guildId), inArray(events.status, LIVE)))
     .orderBy(desc(events.id));
 
+/**
+ * Events still holding roles taken off a player.
+ *
+ * A crash between stripping a role and giving it back would otherwise leave
+ * somebody without it indefinitely, and nobody would know which role or whose
+ * — the record is on the event, so the event is what has to be found again.
+ */
+export const eventsWithStrippedRoles = (guildId: string): Promise<EventRow[]> =>
+  getDb().select().from(events)
+    .where(and(
+      eq(events.guildId, guildId),
+      sql`${events.state} -> 'strippedRoles' is not null`,
+      sql`${events.state} -> 'strippedRoles' <> '{}'::jsonb`,
+    ))
+    .orderBy(desc(events.id));
+
 export async function patchEvent(id: number, patch: Partial<EventRow>): Promise<void> {
   await getDb().update(events).set(patch).where(eq(events.id, id));
 }

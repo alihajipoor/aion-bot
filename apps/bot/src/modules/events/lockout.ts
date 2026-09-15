@@ -32,7 +32,18 @@ const secretChannels = (guild: Guild, ev: EventRow): TextChannel[] => {
   return out;
 };
 
-interface LockState { lockedIds?: string[] }
+interface LockState {
+  lockedIds?: string[];
+  /**
+   * Administrator-carrying roles taken off players for the duration, by user.
+   *
+   * Written before the roles are removed, never after. If the process dies
+   * between the two, the worst case is a restore that puts back a role somebody
+   * still has — which does nothing — instead of a role nobody can prove they
+   * were owed.
+   */
+  strippedRoles?: Record<string, string[]>;
+}
 
 /**
  * Derives the whole lockout from the current roster, in both directions.
@@ -76,6 +87,8 @@ export async function resealEventAccess(
     await mergeState(ev.id, { lockedIds: [...want] }).catch(() => {});
   }
 
+  await resealAdminRoles(guild, ev, want, reason);
+
   /*
    * Who this could not shut out.
    *
@@ -93,7 +106,70 @@ export async function resealEventAccess(
     if (m?.permissions.has(PermissionFlagsBits.Administrator)) immune.push(id);
   }
   if (immune.length) {
-    log.warn(`event #${ev.id}: ${immune.length} player(s) hold Administrator and cannot be locked out`);
+    log.warn(`event #${ev.id}: ${immune.length} player(s) still hold Administrator`);
   }
   return immune;
+}
+
+/**
+ * Takes Administrator off players for the duration, and gives it back after.
+ *
+ * Nothing else works. Administrator bypasses every channel overwrite Discord
+ * has, so an admin who is playing reads the console and the mafia room however
+ * hard the bot denies them — the only way to shut that door is for them not to
+ * hold the key while they are at the table.
+ *
+ * Derived from the roster in both directions, like everything else here, and
+ * restored the moment the event stops being live. The removals are written to
+ * the event *before* the roles come off: dying between the two then leaves a
+ * restore that puts back a role somebody still has, which does nothing, rather
+ * than a role nobody can prove they were owed.
+ *
+ * The host is never stripped. They are running the game and need the access.
+ */
+async function resealAdminRoles(
+  guild: Guild, ev: EventRow, playing: Set<string>, reason: string,
+): Promise<void> {
+  const stored = ((ev.state as LockState)?.strippedRoles) ?? {};
+  const next: Record<string, string[]> = { ...stored };
+  let changed = false;
+
+  // Give back first. Somebody who left the roster, or a game that has finished,
+  // should not wait on the rest of this succeeding.
+  for (const [userId, roleIds] of Object.entries(stored)) {
+    if (playing.has(userId)) continue;
+    const m = await guild.members.fetch(userId).catch(() => null);
+    if (m) {
+      for (const id of roleIds) {
+        await m.roles.add(id, `${reason} — restoring`).catch(
+          e => log.warn(`could not restore ${id} to ${m.user.tag}: ${(e as Error).message}`));
+      }
+      log.info(`event #${ev.id}: gave ${roleIds.length} role(s) back to ${m.user.tag}`);
+    }
+    delete next[userId];
+    changed = true;
+  }
+
+  for (const userId of playing) {
+    if (stored[userId]) continue;                    // already stripped
+    const m = guild.members.cache.get(userId) ?? await guild.members.fetch(userId).catch(() => null);
+    if (!m) continue;
+    const admin = m.roles.cache.filter(r =>
+      r.id !== guild.id && r.permissions.has(PermissionFlagsBits.Administrator) && r.editable);
+    if (!admin.size) continue;
+
+    const ids = [...admin.keys()];
+    next[userId] = ids;
+    // Recorded before removal, on purpose — see the note on strippedRoles.
+    await mergeState(ev.id, { strippedRoles: next }).catch(() => {});
+    changed = false;                                  // just written
+
+    for (const id of ids) {
+      await m.roles.remove(id, `${reason} — playing`).catch(
+        e => log.warn(`could not strip ${id} from ${m.user.tag}: ${(e as Error).message}`));
+    }
+    log.info(`event #${ev.id}: stripped ${ids.length} admin role(s) from ${m.user.tag}`);
+  }
+
+  if (changed) await mergeState(ev.id, { strippedRoles: next }).catch(() => {});
 }
