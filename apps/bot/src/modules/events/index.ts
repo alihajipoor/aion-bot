@@ -204,6 +204,14 @@ export async function controlCard(ev: EventRow) {
     row.addComponents(
       new ButtonBuilder().setCustomId(enc('announce', ev.id)).setLabel('Elan kon').setEmoji('📣').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(enc('cancel', ev.id)).setLabel('Bikhial').setEmoji('🗑️').setStyle(ButtonStyle.Secondary));
+    // Tanzimat from the very first card. Nothing there depends on the event
+    // having been announced, and the alternative is a host who tunes the game
+    // only after the signup post has already told everyone what it will be.
+    if (ev.game === 'mafia') {
+      row.addComponents(new ButtonBuilder()
+        .setCustomId(`${isScum(ev) ? SCUM_ID : MAFIA_ID}|console|${ev.id}`)
+        .setLabel('Console').setEmoji('🎛').setStyle(ButtonStyle.Secondary));
+    }
   } else if (ev.status === 'announced') {
     row.addComponents(
       new ButtonBuilder().setCustomId(enc('start', ev.id)).setLabel('Shoroo').setEmoji('▶️').setStyle(ButtonStyle.Success),
