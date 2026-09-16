@@ -369,11 +369,53 @@ export async function renderHeaderBanner(opts: {
  * Discord lays the server name over the lower-left of the banner, so that
  * corner is deliberately left empty — anything placed there is read through
  * white text at a size nobody chose.
+ *
+ * `phase` is one turn of the loop, 0 → 1. Left out, this renders the still
+ * banner exactly as it always did; passed, it moves the light. It is the same
+ * composition either way on purpose — an animated banner that is a *different*
+ * picture from the still one makes the server look like two servers to
+ * everyone whose client shows them the first frame and stops.
+ *
+ * Everything phase drives is periodic and lands back on its starting value at
+ * 1, so the last frame hands over to the first with no jump. That is the whole
+ * difficulty of a looping banner: a seam is not subtle, it is the only thing
+ * anybody sees.
  */
-export async function renderServerArt(w: number, h: number, tagline: string): Promise<Buffer | null> {
+export async function renderServerArt(
+  w: number, h: number, tagline: string, phase?: number,
+): Promise<Buffer | null> {
   try {
     const k = w / 960;                       // one composition, two sizes
     const px = (n: number) => Math.round(n * k);
+    const hex = (n: number) =>
+      Math.round(Math.min(255, Math.max(0, n))).toString(16).padStart(2, '0');
+
+    const p = phase === undefined ? null : ((phase % 1) + 1) % 1;
+
+    /*
+     * Two curves drive the whole animation.
+     *
+     * breath is a cosine, not a triangle, so the light has no corner at the top
+     * of its swing and none at the seam. At rest it sits at one half — which is
+     * why the still banner is untouched: every value below collapses to its old
+     * constant when breath is a half.
+     *
+     * sweep is a sine, which is zero at *both* ends of the turn. That is what
+     * lets the travelling highlight loop: it fades out where it fades in,
+     * instead of teleporting back to the left.
+     */
+    const breath = p === null ? 0.5 : 0.5 - 0.5 * Math.cos(2 * Math.PI * p);
+    // The exponent is well under 1 on purpose. A plain sine spends most of the
+    // turn near zero, which turned the sweep into a flare that swelled in the
+    // middle and never reached either end; raised to 0.45 it is already bright
+    // a tenth of the way in and only lets go at the seam itself.
+    const sweep = p === null ? 0 : Math.sin(Math.PI * p) ** 0.45;
+    const drift = p === null ? 0 : Math.sin(2 * Math.PI * p);
+
+    const riftW = w - px(120);
+    const bandW = px(300);
+    const bloomW = px(330);
+    const white = (a: number) => `rgba(255,255,255,${a.toFixed(3)})`;
 
     const tree = el('div', {
       display: 'flex', position: 'relative', width: w, height: h,
@@ -381,9 +423,11 @@ export async function renderServerArt(w: number, h: number, tagline: string): Pr
     }, [
       // Lit from the upper right, so the lower left stays quiet for the name.
       el('div', {
-        ...absolute, top: -h * 0.55, right: -w * 0.22, width: w * 0.95, height: w * 0.95,
-        borderRadius: w, backgroundImage:
-          `radial-gradient(circle, ${BRAND.blue}52 0%, ${BRAND.blue}1a 40%, rgba(5,6,12,0) 68%)`,
+        ...absolute, top: -h * 0.55 + px(12) * drift, right: -w * 0.22,
+        width: w * 0.95, height: w * 0.95, borderRadius: w,
+        backgroundImage: 'radial-gradient(circle, '
+          + `${BRAND.blue}${hex(0x52 + (breath - 0.5) * 0x24)} 0%, `
+          + `${BRAND.blue}${hex(0x1a + (breath - 0.5) * 0x10)} 40%, rgba(5,6,12,0) 68%)`,
       }),
       el('div', {
         ...absolute, bottom: -h * 0.5, left: -w * 0.12, width: w * 0.6, height: w * 0.6,
@@ -393,15 +437,53 @@ export async function renderServerArt(w: number, h: number, tagline: string): Pr
       el('div', {
         ...absolute, top: h * 0.28, left: 0, width: w, justifyContent: 'center',
         alignItems: 'center', fontSize: px(150), fontWeight: 700, letterSpacing: px(24),
-        color: BRAND.text, textShadow: `0 0 ${px(44)}px ${BRAND.blue}f2`,
+        color: BRAND.text,
+        textShadow: `0 0 ${px(36) + px(16) * breath}px `
+          + `${BRAND.blue}${hex(0xf2 + (breath - 0.5) * 0x2a)}`,
       }, [lambda(px(150)), el('div', { display: 'flex' }, WORDMARK)]),
 
-      el('div', { ...absolute, top: h * 0.52, left: px(60) }, [rift(w - px(120), BRAND.blue)]),
+      el('div', { ...absolute, top: h * 0.52, left: px(60) }, [rift(riftW, BRAND.blue)]),
 
       el('div', {
         ...absolute, top: h * 0.60, left: 0, width: w, justifyContent: 'center',
-        fontSize: px(26), letterSpacing: px(9), color: BRAND.dim,
+        fontSize: px(26), letterSpacing: px(9),
+        color: `rgba(180,205,235,${(0.62 + (breath - 0.5) * 0.22).toFixed(3)})`,
       }, tagline),
+
+      /*
+       * The light that runs along the rift.
+       *
+       * Two pieces, because one is not enough. The rift's own centre is already
+       * white, so a brighter *line* laid over it barely reads — it is +20 on a
+       * pixel that is at 255. The bloom is what the eye actually follows: a
+       * soft round glow standing off the line, travelling with it.
+       *
+       * The bloom's box is square and its gradient is spent well inside it. A
+       * wide flat box was the obvious shape and the wrong one: a circular
+       * gradient in a 360x78 box is still bright where it meets the top and
+       * bottom edges, so the glow showed up as a lit rectangle sliding across
+       * the wordmark, hard corners and all.
+       *
+       * The line runs end to end of the rift; the bloom's centre does too, and
+       * is allowed to hang past both ends, because the envelope has taken it to
+       * nothing long before it gets there.
+       */
+      ...(p === null ? [] : [
+        el('div', {
+          ...absolute, top: h * 0.52 - bloomW / 2,
+          left: Math.round(px(60) - bloomW / 2 + p * riftW), width: bloomW, height: bloomW,
+          borderRadius: bloomW,
+          backgroundImage: `radial-gradient(circle, rgba(214,234,255,${(sweep * 0.30).toFixed(3)}) 0%, `
+            + `rgba(74,166,255,${(sweep * 0.15).toFixed(3)}) 26%, rgba(5,6,12,0) 54%)`,
+        }),
+        el('div', {
+          ...absolute, top: h * 0.52 - px(1),
+          left: px(60) + Math.round(p * (riftW - bandW)), width: bandW, height: px(4),
+          backgroundImage: `linear-gradient(90deg, ${white(0)} 0%, `
+            + `${white(sweep * 0.95)} 50%, ${white(0)} 100%)`,
+          boxShadow: `0 0 ${px(26)}px ${px(3)}px ${BRAND.blue}${hex(sweep * 0xc8)}`,
+        }),
+      ]),
     ]);
 
     const svg = await satori(tree as never, { width: w, height: h, fonts: await loadFonts() });

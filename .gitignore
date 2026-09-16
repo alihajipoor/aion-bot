@@ -19,3 +19,6 @@ docs/sync-*.txt
 
 # Agent worktrees — separate checkouts, never part of this tree
 .claude/worktrees/
+
+# rendered previews (banner frames, GIFs)
+out/

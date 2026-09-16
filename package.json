@@ -23,7 +23,9 @@
     "dotenv": "^17.2.1"
   },
   "devDependencies": {
-    "@types/node": "22.20.1"
+    "@types/node": "22.20.1",
+    "gifenc": "^1.0.3",
+    "sharp": "^0.35.4"
   },
   "overrides": {
     "@types/node": "22.20.1"
