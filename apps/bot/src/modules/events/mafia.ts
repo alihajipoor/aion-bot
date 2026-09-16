@@ -13,7 +13,8 @@ import {
   killPlayer, revivePlayer, liveEvents, type EventRow, type PlayerRow,
 } from './store.js';
 import {
-  SCENARIOS, CITIZEN, scenarioOf, distribution, MAFIA_DEFAULTS, nightActionFor, passiveFor,
+  SCENARIOS, CITIZEN, scenarioOf, distribution, explicitDistribution,
+  MAFIA_DEFAULTS, nightActionFor, passiveFor,
   type RoleDef, type MafiaConfig, type NightAction, type Phase, type TextRule,
 } from './games.js';
 import { hasRole } from '../../lib/roles.js';
@@ -232,7 +233,15 @@ export async function startMafia(guild: Guild, ev: EventRow): Promise<void> {
 
   const cfg = configOf(ev);
   const sc = scenarioOf(cfg.scenario);
-  const roles = shuffle(distribution(sc, roster.length, cfg.optionalRoles));
+  /*
+   * God's own numbers win over the scenario's ladder.
+   *
+   * Tanzimat wrote these and, until now, this line threw them away — the panel
+   * let a host set three of a role and then dealt the fixed order anyway, which
+   * is worse than not offering the control at all.
+   */
+  const cast = explicitDistribution(sc, roster.length, cfg.roleCounts ?? {});
+  const roles = shuffle(cast ?? distribution(sc, roster.length, cfg.optionalRoles));
   const seats = shuffle(roster);
 
   const owned = [...ev.ownedChannelIds];
@@ -383,20 +392,28 @@ async function console_(ev: EventRow, note?: string) {
   // The overrides. Every rule this bot enforces can be wrong about a situation
   // nobody anticipated, and a game that cannot be rescued by hand is a game that
   // ends in an argument. These are the escape hatches.
-  if (phase !== 'setup') {
-    box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+  /*
+   * The hand-mute is always on the console, including before Shoroo — just
+   * disabled until there is a voice channel to mute, which only exists once the
+   * game starts. Hiding it until then meant looking for it and concluding it
+   * had never been built.
+   */
+  const muted = (ev.state as { forceMute?: boolean }).forceMute === true;
+  box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(enc('hush', ev.id))
+      .setLabel(muted ? 'Baz kon' : 'Hame ro mute kon')
+      .setEmoji(muted ? '🔊' : '🔇')
+      .setStyle(muted ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setDisabled(!ev.voiceChannelId),
+    ...(phase === 'setup' ? [] : [
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'mafia')).setLabel('Mafia bord')
         .setEmoji('🔴').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'shahr')).setLabel('Shahr bord')
         .setEmoji('🟢').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(enc('hush', ev.id))
-        .setLabel((ev.state as { forceMute?: boolean }).forceMute ? 'Baz kon' : 'Hame ro mute kon')
-        .setEmoji((ev.state as { forceMute?: boolean }).forceMute ? '🔊' : '🔇')
-        .setStyle((ev.state as { forceMute?: boolean }).forceMute ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(enc('mvp', ev.id)).setLabel('MVP')
         .setEmoji('⭐').setStyle(ButtonStyle.Secondary),
-    ));
-  }
+    ]),
+  ));
 
   if (phase !== 'setup') {
     const alive = roster.filter(p => p.alive);

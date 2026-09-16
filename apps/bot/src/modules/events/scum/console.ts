@@ -32,6 +32,8 @@ import {
   addPlayer, assignRole,
 } from '../store.js';
 import { applyTextRules, configOf, gameHeld } from '../mafia.js';
+// setupPanel imports games/store/scum-rules and never this file, so no cycle.
+import { setupButton } from '../setupPanel.js';
 import type { Phase } from '../games.js';
 import {
   SCUM_ROLES, roleOf, resolveNight, resolveDayVote, terroristTriggers, fireGun,
@@ -655,6 +657,27 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
       .setEmoji('🔄').setStyle(ButtonStyle.Secondary),
   ));
 
+  /*
+   * Settings and the hand-mute, before the game as well as during it.
+   *
+   * Tanzimat was missing from this console entirely — the Persian console had
+   * it, Scum did not, so in Scum mode the role counts could not be reached at
+   * all. Its own row, so it survives whatever else this console grows.
+   *
+   * The mute is shown before Shoroo rather than hidden, but disabled: the game
+   * voice channel does not exist until the game starts, so the button would
+   * silently do nothing. A control that is visibly unavailable answers "where
+   * is it?". An absent one does not.
+   */
+  box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+    setupButton(ev.id),
+    new ButtonBuilder().setCustomId(enc('hush', ev.id))
+      .setLabel(st.forceMute ? 'Baz kon' : 'Hame ro mute kon')
+      .setEmoji(st.forceMute ? '🔊' : '🔇')
+      .setStyle(st.forceMute ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setDisabled(!ev.voiceChannelId),
+  ));
+
   if (phase !== 'setup') {
     box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'mafia')).setLabel('Mafia bord')
@@ -663,10 +686,6 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
         .setEmoji('🟢').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(enc('addp', ev.id)).setLabel('Ezafe kon')
         .setEmoji('➕').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(enc('hush', ev.id))
-        .setLabel(st.forceMute ? 'Baz kon' : 'Hame ro mute kon')
-        .setEmoji(st.forceMute ? '🔊' : '🔇')
-        .setStyle(st.forceMute ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(enc('mvp', ev.id)).setLabel('MVP')
         .setEmoji('⭐').setStyle(ButtonStyle.Secondary),
     ));

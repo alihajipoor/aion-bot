@@ -26,10 +26,11 @@ import {
 import { isolate, num } from '../../lib/text.js';
 import { getEvent, mergeState, type EventRow } from './store.js';
 import {
-  MAFIA_DEFAULTS, PHASES, TEXT_RULE_FA,
-  type MafiaConfig, type Phase, type TextRule,
+  MAFIA_DEFAULTS, PHASES, TEXT_RULE_FA, CITIZEN, scenarioOf, distribution,
+  countsAsOf, mandatoryOf,
+  type MafiaConfig, type Phase, type TextRule, type RoleDef,
 } from './games.js';
-import { SCUM_ROLES, canDisable, roleOf as scumRoleOf, type ScumRole } from './scum/rules.js';
+import { SCUM_ROLES, canDisable, type ScumRole } from './scum/rules.js';
 import { distribution as scumDistribution } from './scum/deal.js';
 
 /**
@@ -133,11 +134,55 @@ const RULE_SHORT: Record<TextRule, string> = {
   free: 'Azad', reactions: 'Reaction', emoji: '👍👎', locked: 'Baste',
 };
 
-const SIDE_EMOJI: Record<ScumRole['side'], string> = {
+const SIDE_EMOJI: Record<PanelRole['side'], string> = {
   shahr: '🟢', mafia: '🔴', gray: '⚪',
 };
 
-const roleList = (): ScumRole[] => Object.values(SCUM_ROLES);
+/**
+ * One role, as this screen needs it, whichever game is being set up.
+ *
+ * The screen used to read SCUM_ROLES directly. That was wrong in both
+ * directions and in a way nothing complained about: Mafiaye Irani — the default
+ * mode — showed God a list of Scum roles it does not have, and then the Irani
+ * dealer ignored the numbers anyway. Setting a count appeared to work and
+ * changed nothing about the game that followed.
+ */
+interface PanelRole {
+  key: string;
+  fa: string;
+  side: 'shahr' | 'mafia' | 'gray';
+  /** Undefined for a solo role, which tallies on neither side. */
+  countsAs?: 'shahr' | 'mafia';
+  /** Cannot be taken to zero. */
+  locked: boolean;
+}
+
+const fromScum = (r: ScumRole): PanelRole => ({
+  key: r.key, fa: r.fa, side: r.side, countsAs: r.countsAs, locked: !canDisable(r.key),
+});
+
+const fromIrani = (r: RoleDef, boss: string): PanelRole => ({
+  key: r.key,
+  fa: r.fa,
+  side: r.side === 'mafia' ? 'mafia' : r.side === 'solo' ? 'gray' : 'shahr',
+  countsAs: countsAsOf(r),
+  locked: r.key === boss,
+});
+
+/** The roles this event's game actually has, in the order they are dealt. */
+const roleList = (ev: EventRow): PanelRole[] => {
+  if (modeOf(ev) === 'scum') return Object.values(SCUM_ROLES).map(fromScum);
+  const sc = scenarioOf(panelConfig(ev).scenario);
+  const boss = mandatoryOf(sc);
+  // The plain citizen is not in a scenario's list — it is what the empty seats
+  // become — but God must be able to put a number on it like anything else.
+  return [...sc.roles, CITIZEN].map(r => fromIrani(r, boss));
+};
+
+const panelRole = (ev: EventRow, key: string): PanelRole | undefined =>
+  roleList(ev).find(r => r.key === key);
+
+const isLocked = (ev: EventRow, key: string): boolean => panelRole(ev, key)?.locked ?? false;
 
 
 /* ── the hub ───────────────────────────────────────────────────── */
@@ -155,7 +200,7 @@ function hubScreen(ev: EventRow) {
   // nothing about how many of each, which is the question being asked.
   const { counts, auto } = effectiveCounts(ev);
   const total = Object.values(counts).reduce((a, n) => a + n, 0);
-  const sideTotal = (side: 'mafia' | 'shahr') => roleList()
+  const sideTotal = (side: 'mafia' | 'shahr') => roleList(ev)
     .filter(r => r.countsAs === side)
     .reduce((a, r) => a + (counts[r.key] ?? 0), 0);
 
@@ -250,8 +295,14 @@ function effectiveCounts(ev: EventRow): { counts: Record<string, number>; auto: 
   if (Object.values(set).some(n => n > 0)) return { counts: set, auto: false };
 
   const counts: Record<string, number> = {};
-  for (const key of scumDistribution(tableSize(ev), cfg)) {
-    counts[key] = (counts[key] ?? 0) + 1;
+  const size = tableSize(ev);
+  if (modeOf(ev) === 'scum') {
+    for (const key of scumDistribution(size, cfg)) counts[key] = (counts[key] ?? 0) + 1;
+  } else {
+    const sc = scenarioOf(cfg.scenario);
+    for (const r of distribution(sc, size, cfg.optionalRoles ?? [])) {
+      counts[r.key] = (counts[r.key] ?? 0) + 1;
+    }
   }
   return { counts, auto: true };
 }
@@ -261,11 +312,11 @@ function rolesScreen(ev: EventRow, picked?: string) {
   const size = tableSize(ev);
   const total = Object.values(counts).reduce((a, n) => a + n, 0);
 
-  const sideTotal = (side: 'mafia' | 'shahr') => roleList()
+  const sideTotal = (side: 'mafia' | 'shahr') => roleList(ev)
     .filter(r => r.countsAs === side)
     .reduce((a, r) => a + (counts[r.key] ?? 0), 0);
 
-  const listed = roleList().filter(r => (counts[r.key] ?? 0) > 0 || r.key === picked);
+  const listed = roleList(ev).filter(r => (counts[r.key] ?? 0) > 0 || r.key === picked);
 
   const box = new ContainerBuilder().setAccentColor(C.panel)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
@@ -285,16 +336,16 @@ function rolesScreen(ev: EventRow, picked?: string) {
       '',
       ...listed.map(r =>
         `${SIDE_EMOJI[r.side]} ${isolate(r.fa)} — **${num(counts[r.key] ?? 0)}**`
-        + (canDisable(r.key) ? '' : '  🔒')
+        + (r.locked ? '  🔒' : '')
         + (r.key === picked ? '   ⬅️' : '')),
     ].join('\n')));
 
   box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
     new StringSelectMenuBuilder().setCustomId(enc('cfgrolepick', ev.id))
       .setPlaceholder(picked
-        ? `Naghsh — ${roleList().find(r => r.key === picked)?.fa ?? picked}`
+        ? `Naghsh — ${panelRole(ev, picked)?.fa ?? picked}`
         : 'Kodoom naghsh ro avaz koni?')
-      .addOptions(roleList().slice(0, 25).map(r => new StringSelectMenuOptionBuilder()
+      .addOptions(roleList(ev).slice(0, 25).map(r => new StringSelectMenuOptionBuilder()
         .setLabel(r.fa)
         .setValue(r.key)
         .setDescription(`${counts[r.key] ?? 0} ta · ${r.side === 'mafia' ? 'mafia' : r.side === 'gray' ? 'khakestari' : 'shahr'}`)
@@ -302,7 +353,7 @@ function rolesScreen(ev: EventRow, picked?: string) {
 
   if (picked) {
     // The Don cannot go to zero; he is the mafia's only night shot.
-    const floor = canDisable(picked) ? 0 : 1;
+    const floor = isLocked(ev, picked) ? 1 : 0;
     box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
       new StringSelectMenuBuilder().setCustomId(enc('cfgrolecount', ev.id, picked))
         .setPlaceholder(`Chand ta? — alan ${counts[picked] ?? 0}`)
@@ -536,10 +587,10 @@ export async function setupComponent(
   if (step === 'cfgrolecount' && i.isStringSelectMenu() && arg) {
     const n = Number(i.values[0]);
     if (!Number.isFinite(n) || n < 0 || n > 8) return true;
-    if (!canDisable(arg) && n === 0) {
+    if (isLocked(ev, arg) && n === 0) {
       // The floor is already 1 in the menu; this is for a replayed custom id.
       await i.reply({
-        content: `${isolate(scumRoleOf(arg)?.fa ?? arg)} hatmi e — nemishe sefr kard.`,
+        content: `${isolate(panelRole(ev, arg)?.fa ?? arg)} hatmi e — nemishe sefr kard.`,
         flags: MessageFlags.Ephemeral,
       });
       return true;

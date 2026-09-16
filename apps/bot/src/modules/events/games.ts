@@ -95,6 +95,91 @@ export function distribution(scenario: Scenario, count: number, enabled: string[
   return out;
 }
 
+/**
+ * Which side a role tallies on in the setup panel.
+ *
+ * A solo role counts for neither, and gets `undefined` rather than being
+ * quietly folded into the town — the Psycho on the town's line would tell God
+ * the table is balanced when it is not.
+ */
+export const countsAsOf = (r: RoleDef): 'mafia' | 'shahr' | undefined =>
+  r.side === 'mafia' ? 'mafia' : r.side === 'town' ? 'shahr' : undefined;
+
+/**
+ * The one role a scenario cannot be dealt without: the mafia's boss.
+ *
+ * Every scenario here opens with him at order 1, but this asks rather than
+ * assumes, so a scenario added later that orders its roles differently does not
+ * silently lose its only night shot.
+ */
+export const mandatoryOf = (s: Scenario): string =>
+  [...s.roles].sort((a, b) => a.order - b.order).find(r => r.side === 'mafia')?.key ?? '';
+
+/**
+ * The cast God typed out, when they typed one.
+ *
+ * The twin of `explicitCast` in scum/deal.ts, and deliberately the same rules,
+ * because the setup panel is one screen for both games and a number that means
+ * two different things depending on the mode is a trap.
+ *
+ * Returns null when nothing is set, which is how `distribution` above stays the
+ * default. Scenario roles only — a count left over from the other mode's
+ * catalogue is ignored rather than dealt as a role this game does not have.
+ */
+export function explicitDistribution(
+  scenario: Scenario, count: number, counts: Record<string, number>,
+): RoleDef[] | null {
+  const known = new Map(scenario.roles.map(r => [r.key, r]));
+  known.set(CITIZEN.key, CITIZEN);
+
+  const asked = Object.keys(counts).filter(k => (counts[k] ?? 0) > 0 && known.has(k));
+  if (!asked.length) return null;
+
+  const boss = mandatoryOf(scenario);
+  const tally = new Map<string, number>();
+  for (const k of asked) tally.set(k, counts[k] ?? 0);
+  if (boss && !(tally.get(boss) ?? 0)) tally.set(boss, 1);
+
+  let total = [...tally.values()].reduce((a, n) => a + n, 0);
+
+  // Short of the table, plain citizens make up the difference — the same as the
+  // automatic split does.
+  if (total < count) {
+    tally.set(CITIZEN.key, (tally.get(CITIZEN.key) ?? 0) + (count - total));
+    total = count;
+  }
+
+  /*
+   * Over the table: citizens first, then the *smallest* groups.
+   *
+   * Not the largest, and not the end of the list. Asking for three of something
+   * is a deliberate statement; a role sitting at one is the default nobody
+   * touched. Trimming the biggest group took the surplus straight back off
+   * whatever had just been raised, so setting three of a role on a full table
+   * handed back one and looked broken.
+   *
+   * The screen still says the table is over capacity and by how much. This only
+   * decides what happens if the game is started without fixing it.
+   */
+  let surplus = total - count;
+  while (surplus > 0) {
+    let victim: string | null = (tally.get(CITIZEN.key) ?? 0) > 0 ? CITIZEN.key : null;
+    if (!victim) {
+      for (const [k, n] of tally) {
+        if (k === boss || n <= 0) continue;
+        if (!victim || n < (tally.get(victim) ?? 0)) victim = k;
+      }
+    }
+    if (!victim || (tally.get(victim) ?? 0) <= 0) break;
+    tally.set(victim, (tally.get(victim) ?? 0) - 1);
+    surplus--;
+  }
+
+  const out: RoleDef[] = [];
+  for (const [k, n] of tally) for (let x = 0; x < n; x++) out.push(known.get(k)!);
+  return out;
+}
+
 export const sideCounts = (roles: RoleDef[]) => ({
   mafia: roles.filter(r => r.side === 'mafia').length,
   town: roles.filter(r => r.side === 'town').length,
