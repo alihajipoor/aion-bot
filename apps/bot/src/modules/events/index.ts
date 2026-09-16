@@ -6,7 +6,7 @@ import {
   MediaGalleryBuilder, MediaGalleryItemBuilder, AttachmentBuilder, SectionBuilder,
   type ButtonInteraction, type StringSelectMenuInteraction, type UserSelectMenuInteraction, type ModalSubmitInteraction,
   type Guild, type GuildMember, type TextChannel, type VoiceChannel,
-  type MessageCreateOptions,
+  type MessageCreateOptions, type Collection, type Message,
 } from 'discord.js';
 import { renderHeaderBanner } from '../../lib/banner.js';
 import { CATALOGUE, SCENARIOS, scenarioOf, distribution, type GameKey } from './games.js';
@@ -149,6 +149,54 @@ export async function interfacePanel(guild: Guild): Promise<MessageCreateOptions
  * not appear in `message.attachments` — that array is empty by design and is
  * not a sign the upload failed.
  */
+/**
+ * Gives every live event a control card, and puts back any that has gone.
+ *
+ * The card used to be sent exactly once, at creation, and never thought about
+ * again. If that one send failed — a hiccup, a permission, a rate limit — or if
+ * the message was later deleted by hand, the event stayed live forever with no
+ * way to start it, cancel it or open its console. `refreshCard` could not help:
+ * it fetches the stored id, catches the failure, and returns quietly, so the
+ * only symptom was an event listed in the news with no card behind it.
+ *
+ * Derived from the roster of live events in one direction, like the lockout and
+ * the sanctions: whatever is live gets a card, and the id is re-written when a
+ * new one is made.
+ *
+ * It returns the ids that exist *right now* rather than the ids in the column.
+ * That is what the sweep below needs — a card sent a moment ago whose
+ * `patchEvent` has not landed yet is still a card, and deleting it as an
+ * orphan is precisely how one goes missing.
+ */
+async function ensureControlCards(
+  ch: TextChannel, live: EventRow[], recent: Collection<string, Message>,
+): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const ev of live) {
+    // The recent window first — it is already in hand. Only a card older than
+    // that window costs a call, and only to prove it is still there.
+    if (ev.panelMessageId) {
+      const cached = recent.get(ev.panelMessageId);
+      if (cached) { ids.add(cached.id); continue; }
+      const found = await ch.messages.fetch(ev.panelMessageId)
+        .then(m => ({ ok: true, m }))
+        .catch((e: unknown) => ({ ok: (e as { code?: number }).code !== 10008, m: null }));
+      // 10008 is Unknown Message — the card really is gone. Anything else is a
+      // blip, and replacing a card that still exists on the strength of one
+      // failed fetch leaves two live cards for the same event.
+      if (found.ok) { if (found.m) ids.add(found.m.id); else ids.add(ev.panelMessageId); continue; }
+    }
+
+    const card = await ch.send(await controlCard(ev)).catch(() => null);
+    if (!card) { log.error(`event #${ev.id}: control card missing and could not be replaced`); continue; }
+    await patchEvent(ev.id, { panelMessageId: card.id });
+    ids.add(card.id);
+    // Loud on purpose. Healing it silently would hide whatever removed it.
+    log.warn(`event #${ev.id}: control card was missing — posted a new one`);
+  }
+  return ids;
+}
+
 export async function ensureEventPanel(guild: Guild): Promise<void> {
   const ch = interfaceChannel(guild);
   if (!ch) return;
@@ -156,8 +204,8 @@ export async function ensureEventPanel(guild: Guild): Promise<void> {
     const recent = await ch.messages.fetch({ limit: 30 });
     const mine = recent.filter(m => m.author.id === guild.client.user?.id && !m.reference && m.components.length);
     // Per-event control cards live in the same channel and are not the panel.
-    const cards = new Set((await liveEvents(guild.id).catch(() => []))
-      .map(e => e.panelMessageId).filter(Boolean) as string[]);
+    const live = await liveEvents(guild.id).catch(() => []);
+    const cards = await ensureControlCards(ch, live, recent);
     const panels = mine.filter(m => !cards.has(m.id));
 
     const payload = await interfacePanel(guild);
