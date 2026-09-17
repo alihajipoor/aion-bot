@@ -702,6 +702,30 @@ const selfLeft = (ev: EventRow, userId: string, action: NightAction): number =>
     : Math.max(0, action.selfUses - ((ev.state as DayState).selfUses?.[userId] ?? 0));
 
 /** Who this role may point at tonight, with its own limits applied. */
+/**
+ * The night menu for one role-holder, with their current choice marked.
+ *
+ * Built in one place because it is needed in two: when the prompt goes out, and
+ * again on every confirmation. The confirmation cards used to be text only,
+ * which made "ta sobh mitooni avazesh koni" a lie — `i.update` replaced the
+ * message that carried the menu with one that had no menu on it, so the sniper
+ * was told he could change his mind and handed nothing to change it with.
+ *
+ * The detective's branch already rebuilt its menu for exactly this reason. Now
+ * every branch does.
+ */
+const nightRow = (
+  ev: EventRow, actor: PlayerRow, action: NightAction,
+  targets: PlayerRow[], picked?: string | null,
+) => new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+  new StringSelectMenuBuilder().setCustomId(enc('night', ev.id, actor.role ?? ''))
+    .setPlaceholder(action.prompt.slice(0, 100))
+    .addOptions(targets.slice(0, 25).map(t =>
+      new StringSelectMenuOptionBuilder()
+        .setLabel(`${t.seat ?? '?'} · ${(t.userTag ?? t.userId).slice(0, 60)}`)
+        .setValue(t.userId)
+        .setDefault(t.userId === picked))));
+
 function legalTargets(ev: EventRow, actor: PlayerRow, roster: PlayerRow[], action: NightAction): PlayerRow[] {
   const alive = roster.filter(p => p.alive);
   const pool = action.targets === 'mafia' ? alive.filter(p => p.side === 'mafia') : alive;
@@ -756,13 +780,7 @@ async function promptNightActions(
             action.allowSelf && selfLeft(ev, p.userId, action) > 0 && action.selfUses !== undefined
               ? '-# Khodet ro faghat yek bar mitooni entekhab koni.' : null,
           ].filter(Boolean).join('\n')))
-        .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-          new StringSelectMenuBuilder().setCustomId(enc('night', ev.id, p.role ?? ''))
-            .setPlaceholder(action.prompt.slice(0, 100))
-            .addOptions(targets.slice(0, 25).map(t =>
-              new StringSelectMenuOptionBuilder()
-                .setLabel(`${t.seat ?? '?'} · ${(t.userTag ?? t.userId).slice(0, 60)}`)
-                .setValue(t.userId)))))],
+        .addActionRowComponents(nightRow(ev, p, action, targets))],
       flags: MessageFlags.IsComponentsV2,
     }).then(() => true).catch(() => false);
 
@@ -771,6 +789,41 @@ async function promptNightActions(
   }
 
   return { ok, failed };
+}
+
+/**
+ * Gets an inquiry's answer to the person who asked for it, whatever happened.
+ *
+ * The detective's whole night is this one sentence, and it used to live inside
+ * a `.catch(() => {})` on a single `i.update`. If that update lost the race
+ * with Discord's three-second window — which is exactly what was happening —
+ * the answer was gone: the use was spent, the pick was recorded, and the
+ * detective was simply never told anything.
+ *
+ * So: a fresh DM if editing the prompt failed, and if DMs are shut, God is
+ * given it to pass on by hand. Never nothing.
+ */
+async function deliverAnswer(
+  i: StringSelectMenuInteraction, ev: EventRow, answer: string, colour: number,
+): Promise<void> {
+  const card = new ContainerBuilder().setAccentColor(colour)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(answer))
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent('-# Faghat to in ro didi.'));
+
+  const direct = await i.user.send({ components: [card], flags: MessageFlags.IsComponentsV2 })
+    .then(() => true).catch(() => false);
+  if (direct) return;
+
+  log.warn(`event #${ev.id}: could not deliver an inquiry answer to ${i.user.tag}`);
+  const host = await i.guild?.members.fetch(ev.hostId).catch(() => null);
+  await host?.send({
+    components: [new ContainerBuilder().setAccentColor(colour)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## 🔍 Javab be dast-e sahebesh nareside\n<@${i.user.id}>\n${answer}`
+        + '\n-# DM-esh baste-st. Khodet behesh begoo.'))],
+    flags: MessageFlags.IsComponentsV2,
+  }).catch(() => {});
 }
 
 /** A role-holder answering their night prompt in DM. */
@@ -797,13 +850,33 @@ async function recordNightPick(i: StringSelectMenuInteraction, ev: EventRow): Pr
       patch.uses = { ...(st.uses ?? {}), [i.user.id]: (st.uses?.[i.user.id] ?? 0) + 1 };
     }
   }
-  if (target === i.user.id && action.selfUses !== undefined && already?.target !== i.user.id) {
-    patch.selfUses = { ...(st.selfUses ?? {}), [i.user.id]: (st.selfUses?.[i.user.id] ?? 0) + 1 };
+  /*
+   * The self-save is charged for where the night *ends up*, not for every time
+   * they touch it.
+   *
+   * It used to only ever count up. Now that the menu stays live — it did not
+   * before, which is the bug this sits next to — a doctor who picked himself,
+   * changed to somebody else and changed back would be charged twice for one
+   * save, and his single self-save would be gone before the night resolved.
+   * So moving away gives it back.
+   */
+  if (action.selfUses !== undefined) {
+    const was = already?.target === i.user.id;
+    const now = target === i.user.id;
+    if (was !== now) {
+      const have = st.selfUses?.[i.user.id] ?? 0;
+      patch.selfUses = { ...(st.selfUses ?? {}), [i.user.id]: Math.max(0, have + (now ? 1 : -1)) };
+    }
   }
 
   const picks = { ...(st.nightPicks ?? {}) };
   picks[i.user.id] = { role: me.role ?? '', target, at: Date.now(), variant: already?.variant };
   await mergeState(ev.id, { nightPicks: picks, ...patch });
+
+  // Re-read, then build the menu from that. A card drawn from the state this
+  // click assumed is the one that shows a choice the game did not record.
+  const fresh = (await getEvent(ev.id)) ?? ev;
+  const menu = nightRow(fresh, me, action, legalTargets(fresh, me, roster, action), target);
 
   // A gun is two decisions, not one.
   if (action.followUp) {
@@ -815,7 +888,10 @@ async function recordNightPick(i: StringSelectMenuInteraction, ev: EventRow): Pr
           new ButtonBuilder().setCustomId(enc('variant', ev.id, '0')).setLabel(action.followUp.options[0])
             .setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(enc('variant', ev.id, '1')).setLabel(action.followUp.options[1])
-            .setStyle(ButtonStyle.Danger)))],
+            .setStyle(ButtonStyle.Danger)))
+        // Handing the gun over is two decisions, and either of them can be
+        // taken back until morning — not just the second one.
+        .addActionRowComponents(menu)],
       flags: MessageFlags.IsComponentsV2,
     }).catch(() => {});
     return;
@@ -829,38 +905,34 @@ async function recordNightPick(i: StringSelectMenuInteraction, ev: EventRow): Pr
     // Saul learns the actual role; the detective learns only a side, and the
     // Godfather reads as a citizen to them — the point of the scenario.
     if (action.reveals === 'role') {
-      await i.update({
+      const answer = `## 🕵️ Naghshe <@${target}>\n**${roleOf(t?.role ?? null).fa}**`;
+      const seen = await i.update({
         components: [new ContainerBuilder().setAccentColor(C.mafia)
-          .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-            `## 🕵️ Naghshe <@${target}>\n**${roleOf(t?.role ?? null).fa}**`))
+          .addTextDisplayComponents(new TextDisplayBuilder().setContent(answer))
           .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
           .addTextDisplayComponents(new TextDisplayBuilder().setContent(
             '-# Faghat to in ro didi. In tavanayi tamoom shod.'))],
         flags: MessageFlags.IsComponentsV2,
-      }).catch(() => {});
+      }).then(() => true).catch(() => false);
+      if (!seen) await deliverAnswer(i, ev, answer, C.mafia);
       return;
     }
 
     const shown = t?.role === 'godfather' ? 'town' : t?.side;
-    await i.update({
+    const answer = `## 🔍 Natijeye estelam\n<@${target}> → **${shown === 'mafia' ? 'مافیا' : 'شهروند'}**`;
+    const delivered = await i.update({
       components: [new ContainerBuilder().setAccentColor(shown === 'mafia' ? C.mafia : C.town)
-        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-          `## 🔍 Natijeye estelam\n<@${target}> → **${shown === 'mafia' ? 'مافیا' : 'شهروند'}**`))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(answer))
         .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
         .addTextDisplayComponents(new TextDisplayBuilder().setContent(
           '-# Faghat to in ro didi. Ta sobh mitooni yeki dige ro estelam koni.'))
         // The menu is rebuilt rather than reused: they may change their mind
         // until the narrator calls morning, and the answer updates with it.
-        .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-          new StringSelectMenuBuilder().setCustomId(enc('night', ev.id, me.role ?? ''))
-            .setPlaceholder('Yeki dige ro estelam kon')
-            .addOptions(roster.filter(p => p.alive && p.userId !== i.user.id).slice(0, 25).map(t =>
-              new StringSelectMenuOptionBuilder()
-                .setLabel(`${t.seat ?? '?'} · ${(t.userTag ?? t.userId).slice(0, 60)}`)
-                .setValue(t.userId)
-                .setDefault(t.userId === target)))))],
+        // Shared with the prompt so the legal targets cannot drift apart.
+        .addActionRowComponents(menu)],
       flags: MessageFlags.IsComponentsV2,
-    }).catch(() => {});
+    }).then(() => true).catch(() => false);
+    if (!delivered) await deliverAnswer(i, ev, answer, shown === 'mafia' ? C.mafia : C.town);
     return;
   }
 
@@ -870,7 +942,8 @@ async function recordNightPick(i: StringSelectMenuInteraction, ev: EventRow): Pr
         `## ✅ Sabt shod\n${action.label} → <@${target}>`))
       .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        '-# Gardanande in ro mibine. Ta sobh mitooni avazesh koni.'))],
+        '-# Gardanande in ro mibine. Ta sobh mitooni avazesh koni.'))
+      .addActionRowComponents(menu)],
     flags: MessageFlags.IsComponentsV2,
   }).catch(() => {});
 }
@@ -891,13 +964,24 @@ async function recordVariant(i: ButtonInteraction, ev: EventRow, which: string):
     nightPicks: { ...st.nightPicks, [i.user.id]: { ...pick, variant: label } },
   });
 
+  const fresh = (await getEvent(ev.id)) ?? ev;
   await i.update({
     components: [new ContainerBuilder().setAccentColor(C.night)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         `## ✅ Sabt shod\n${action.label} → <@${pick.target}> · **${label}**`))
       .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        '-# Gardanande in ro mibine. Ta sobh mitooni avazesh koni.'))],
+        '-# Gardanande in ro mibine. Ta sobh mitooni avazesh koni.'))
+      // Both halves stay live until morning: the other gun, or another person
+      // entirely. Saying it can be changed and then showing nothing to change
+      // is how this went wrong in the first place.
+      .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(enc('variant', ev.id, '0')).setLabel(action.followUp.options[0])
+          .setStyle(label === action.followUp.options[0] ? ButtonStyle.Success : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(enc('variant', ev.id, '1')).setLabel(action.followUp.options[1])
+          .setStyle(label === action.followUp.options[1] ? ButtonStyle.Danger : ButtonStyle.Secondary)))
+      .addActionRowComponents(
+        nightRow(fresh, me, action, legalTargets(fresh, me, roster, action), pick.target))],
     flags: MessageFlags.IsComponentsV2,
   }).catch(() => {});
 }

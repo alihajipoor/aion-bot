@@ -719,6 +719,40 @@ const NIGHT_ASK: Record<RoleKey, { label: string; prompt: string }> = {
 };
 
 /**
+ * The night menu for one actor, with their current choice marked.
+ *
+ * In one place because it is needed in three: the prompt, the confirmation, and
+ * the "sitting this one out" card. The last two used to be text only, which
+ * made "ta sobh mitooni avazesh koni" a lie — the update replaced the message
+ * carrying the menu with one that had none, so the sniper was told he could
+ * change his mind and given nothing to change it with.
+ */
+function nightSelect(
+  ev: EventRow, me: PlayerRow, role: RoleKey, roster: PlayerRow[],
+  st: ScumState, nameOf: (id: string) => string, picked?: string | null,
+): StringSelectMenuBuilder {
+  const byId = new Map(roster.map(p => [p.userId, p]));
+  const ask = NIGHT_ASK[role];
+  const options = nightTargets(me, roster, st)
+    .slice(0, canSkipNight(role) ? 24 : 25)
+    .map(id => new StringSelectMenuOptionBuilder()
+      .setLabel(`${byId.get(id)?.seat ?? '?'} · ${(byId.get(id)?.userTag ?? nameOf(id)).slice(0, 60)}`)
+      .setValue(id)
+      .setDefault(id === picked));
+  if (canSkipNight(role)) {
+    options.push(new StringSelectMenuOptionBuilder()
+      .setLabel('Emshab hich kari nemikonam')
+      .setDescription('Chizi kharj nemishe')
+      .setEmoji('🚫')
+      .setValue(NIGHT_SKIP)
+      .setDefault(picked === NIGHT_SKIP));
+  }
+  return new StringSelectMenuBuilder().setCustomId(enc('night', ev.id))
+    .setPlaceholder(ask.prompt.slice(0, 100))
+    .addOptions(options);
+}
+
+/**
  * DMs every living role-holder their night choice.
  *
  * A DM is the only surface with no leak: no channel to mis-permission, no
@@ -750,23 +784,7 @@ async function promptNightActions(guild: Guild, ev: EventRow): Promise<{ ok: num
       a.left !== null ? `-# **${num(a.left)}** bar dige dari.` : null,
     ].filter(Boolean).join('\n');
 
-    const options = ids.slice(0, canSkipNight(a.role) ? 24 : 25).map(id => {
-      const t = byId.get(id)!;
-      return new StringSelectMenuOptionBuilder()
-        .setLabel(`${t.seat ?? '?'} · ${(t.userTag ?? nameOf(id)).slice(0, 60)}`)
-        .setValue(id);
-    });
-    if (canSkipNight(a.role)) {
-      options.push(new StringSelectMenuOptionBuilder()
-        .setLabel('Emshab hich kari nemikonam')
-        .setDescription('Chizi kharj nemishe')
-        .setEmoji('🚫')
-        .setValue(NIGHT_SKIP));
-    }
-
-    const select = new StringSelectMenuBuilder().setCustomId(enc('night', ev.id))
-      .setPlaceholder(ask.prompt.slice(0, 100))
-      .addOptions(options);
+    const select = nightSelect(ev, me, a.role, roster, st, nameOf);
 
     if (await dm(guild, a.userId, body, C.night, { select })) ok++;
     else { failed.push(a.userId); log.warn(`night DM failed for ${me.userTag} (${a.role})`); }
@@ -797,10 +815,14 @@ async function recordNightPick(i: StringSelectMenuInteraction, ev: EventRow): Pr
     // this after already picking someone takes that choice back.
     delete picks[i.user.id];
     await mergeState(ev.id, { nightPicks: picks });
+    const after = stateOf((await getEvent(ev.id)) ?? ev);
     await i.update({
       components: [new ContainerBuilder().setAccentColor(C.night)
         .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-          '## 🚫 Emshab kari nemikoni.\n-# Ta sobh nazaret ro avaz koni, hanooz mishe.'))],
+          '## 🚫 Emshab kari nemikoni.\n-# Ta sobh nazaret ro avaz koni, hanooz mishe.'))
+        // Which means the menu has to still be here to change it with.
+        .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          nightSelect(ev, me, def.key, roster, after, namer(i.guild, roster), NIGHT_SKIP)))],
       ...v2,
     }).catch(() => {});
     return;
@@ -811,13 +833,18 @@ async function recordNightPick(i: StringSelectMenuInteraction, ev: EventRow): Pr
   await mergeState(ev.id, { nightPicks: picks });
 
   const nameOf = namer(i.guild, roster);
+  // Re-read, then draw from that: a card built on what this click assumed is
+  // the one that shows a choice the game did not record.
+  const after = stateOf((await getEvent(ev.id)) ?? ev);
   await i.update({
     components: [new ContainerBuilder().setAccentColor(C.night)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         `## ✅ Sabt shod\n${NIGHT_ASK[def.key].label} → ${isolate(nameOf(target))}`))
       .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        '-# Ta sobh mitooni avazesh koni. Natije ro sobh mifahmi.'))],
+        '-# Ta sobh mitooni avazesh koni. Natije ro sobh mifahmi.'))
+      .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        nightSelect(ev, me, def.key, roster, after, nameOf, target)))],
     ...v2,
   }).catch(() => {});
 }
@@ -878,10 +905,28 @@ async function resolveTheNight(guild: Guild, ev: EventRow): Promise<NightResult>
   // answer and the Saghi is only known once the night is resolved.
   if (result.detective) {
     const a = result.detective;
-    await dm(guild, a.detective,
+    const told = await dm(guild, a.detective,
       `## 🔍 Javab-e estelam\n${isolate(nameOf(a.target))} → **${a.answer === 'mafia' ? 'مافیا' : 'شهر'}**`
       + '\n-# Faghat khodet in ro didi.',
       a.answer === 'mafia' ? C.mafia : C.shahr);
+    /*
+     * `dm` has always returned whether it worked, and this was the one caller
+     * that threw the answer away. Closed DMs are common here — the night prompt
+     * already reports who it could not reach for exactly that reason — so an
+     * inquiry that was made, spent and answered could vanish in silence, and
+     * the detective would just say he never got a reply.
+     *
+     * God is told privately instead, and passes it on. That is worse than a DM
+     * and far better than losing it.
+     */
+    if (!told) {
+      log.warn(`event #${ev.id}: could not DM the estelam answer to ${a.detective}`);
+      await dm(guild, ev.hostId,
+        `## 🔍 Javab-e estelam nareside\n<@${a.detective}> DM-esh baste-st.`
+        + `\n${isolate(nameOf(a.target))} → **${a.answer === 'mafia' ? 'مافیا' : 'شهر'}**`
+        + '\n-# Khodet behesh begoo.',
+        a.answer === 'mafia' ? C.mafia : C.shahr);
+    }
   }
 
   // The holder is offered the trigger at the start of the day, by

@@ -544,13 +544,34 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
   if (step === 'history') { await history(i); return; }
 
   const id = Number(idRaw);
+
+  /*
+   * Acknowledge before touching the database.
+   *
+   * Discord closes the window three seconds after the click. Every branch below
+   * reads the event first, and join is the one thirty people press at once when
+   * a game goes up — a round trip to Postgres before the first reply is a race,
+   * and the prize for losing it is "the application did not respond" and
+   * somebody pressing the button again.
+   *
+   * Only the branches that answer by editing the message. A modal must be the
+   * very first response to an interaction, so deferring one would break it —
+   * and `edit` opens its own ephemeral panel, which a deferUpdate would send to
+   * the wrong place.
+   */
+  const EDITS = new Set(['join', 'leave', 'announce', 'start', 'end', 'cancel']);
+  if (EDITS.has(step ?? '')) await i.deferUpdate().catch(() => {});
+
   const ev = await getEvent(id);
-  if (!ev) { await i.reply({ content: 'In event peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
+  if (!ev) {
+    const gone = { content: 'In event peyda nashod.', flags: MessageFlags.Ephemeral } as const;
+    await (i.deferred || i.replied ? i.followUp(gone) : i.reply(gone)).catch(() => {});
+    return;
+  }
   const guild = i.guild!;
 
   // Signup is for everyone; everything else is staff.
   if (step === 'join' || step === 'leave') {
-    await i.deferUpdate();
     if (ev.status !== 'announced') return;
     if (step === 'join') {
       const roster = await players(ev.id);
@@ -666,7 +687,9 @@ async function afterRosterEdit(
 }
 
 async function announce(i: ButtonInteraction, ev: EventRow): Promise<void> {
-  await i.deferUpdate();
+  // The router acknowledges these now. Still here for any other caller,
+  // and skipped rather than repeated — acknowledging twice throws.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
   await doAnnounce(i.guild!, ev);
 }
 
@@ -704,7 +727,9 @@ async function doAnnounce(guild: Guild, ev: EventRow): Promise<void> {
 }
 
 async function start(i: ButtonInteraction, ev: EventRow): Promise<void> {
-  await i.deferUpdate();
+  // The router acknowledges these now. Still here for any other caller,
+  // and skipped rather than repeated — acknowledging twice throws.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
   await doStart(i.guild!, ev);
 }
 
@@ -820,7 +845,9 @@ async function sweep(guild: Guild, ev: EventRow, reason: string): Promise<void> 
 }
 
 async function end(i: ButtonInteraction, ev: EventRow): Promise<void> {
-  await i.deferUpdate();
+  // The router acknowledges these now. Still here for any other caller,
+  // and skipped rather than repeated — acknowledging twice throws.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
   await doEnd(i.guild!, ev);
 }
 
@@ -879,7 +906,9 @@ async function doEnd(guild: Guild, ev: EventRow): Promise<void> {
 }
 
 async function cancel(i: ButtonInteraction, ev: EventRow): Promise<void> {
-  await i.deferUpdate();
+  // The router acknowledges these now. Still here for any other caller,
+  // and skipped rather than repeated — acknowledging twice throws.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
   await doCancel(i.guild!, ev);
 }
 

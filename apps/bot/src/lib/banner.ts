@@ -304,6 +304,27 @@ const HEAD_H = 330;
  * voice interface, the admin guide. Same ground as the leaderboards, so a
  * member meets one server rather than a set of unrelated cards.
  */
+/**
+ * Header banners already drawn, keyed by what they are drawn from.
+ *
+ * satori and resvg are synchronous. A render is roughly 200ms of blocked event
+ * loop on a fast laptop and a good deal more on the VPS, and during it the bot
+ * cannot answer anything at all — not a click, not a heartbeat.
+ *
+ * The staff panel's banner is built from five constants, so every one of those
+ * renders produced a byte-identical image. It ran on announce, start, end,
+ * cancel, every event created and every press of Tazegi. That is most of why
+ * interactions were losing the race against Discord's three-second window, and
+ * why a button sometimes had to be pressed twice.
+ *
+ * Keyed on the inputs, so anything that actually differs is still drawn. Only
+ * successes are kept — caching a null would make one bad render permanent —
+ * and the map is bounded, because a cache keyed on caller-supplied text with
+ * no ceiling is a memory leak with extra steps.
+ */
+const headerCache = new Map<string, Buffer>();
+const HEADER_CACHE_MAX = 24;
+
 export async function renderHeaderBanner(opts: {
   kicker: string;
   title: string;
@@ -311,6 +332,9 @@ export async function renderHeaderBanner(opts: {
   accent?: string;
   tags?: string[];
 }): Promise<Buffer | null> {
+  const key = JSON.stringify([opts.kicker, opts.title, opts.subtitle, opts.accent, opts.tags]);
+  const hit = headerCache.get(key);
+  if (hit) return hit;
   try {
     const accent = opts.accent ?? BRAND.blue;
     const tree = el('div', {
@@ -354,7 +378,14 @@ export async function renderHeaderBanner(opts: {
     ]);
 
     const svg = await satori(tree as never, { width: WIDTH, height: HEAD_H, fonts: await loadFonts() });
-    return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } }).render().asPng());
+    const png = Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } }).render().asPng());
+    // Oldest out first. Insertion order is Map's own, so the first key is it.
+    if (headerCache.size >= HEADER_CACHE_MAX) {
+      const oldest = headerCache.keys().next().value;
+      if (oldest !== undefined) headerCache.delete(oldest);
+    }
+    headerCache.set(key, png);
+    return png;
   } catch (e) {
     log.error('header banner render failed', e);
     return null;
