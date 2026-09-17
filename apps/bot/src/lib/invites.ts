@@ -48,6 +48,13 @@ export interface Window {
   from: Date;
   to: Date;
   minAccountAgeDays: number;
+  /**
+   * Override for who is out of the running. Defaults to `NOT_COMPETING`.
+   *
+   * Present so a caller can ask what the raw numbers look like — pass an empty
+   * set — without that being the accident-prone default.
+   */
+  excluded?: Set<string>;
 }
 
 const DAY = 86_400_000;
@@ -65,6 +72,14 @@ export interface Context {
   returning: Set<string>;
   verified: Set<string>;
   minAccountAgeDays: number;
+  /**
+   * Inviters who are not competing. Omitted means nobody is excluded.
+   *
+   * Applied at the very end, after every invitee has been classified, so that
+   * taking somebody out of the running cannot change anybody else's number.
+   * That property is the whole design: see the note on `classify`.
+   */
+  excluded?: Set<string>;
 }
 
 /**
@@ -105,8 +120,45 @@ export function classify(rows: JoinRow[], ctx: Context): Score[] {
     });
   }
 
-  return [...byInviter.values()].sort((a, b) => b.qualified - a.qualified);
+  /*
+   * Excluded inviters are dropped here, at the end, and nowhere earlier.
+   *
+   * It matters that this is last. `claimed` has already been filled in above,
+   * so a person invited by a member of staff still counts as spoken for, and a
+   * competitor cannot pick up credit for somebody who is already in the server.
+   * Filtering the rows on the way in would have reopened exactly that: staff
+   * invites you, you leave, I re-invite you and get paid for it.
+   *
+   * The consequence worth stating plainly is that removing somebody from the
+   * running leaves every remaining count exactly as it was. Only the ranking
+   * closes up.
+   */
+  const out = [...byInviter.values()]
+    .filter(s => !ctx.excluded?.has(s.inviterId));
+  return out.sort((a, b) => b.qualified - a.qualified);
 }
+
+/**
+ * Who is running the giveaway rather than entering it.
+ *
+ * Staff are not barred from inviting people — they should — but they asked not
+ * to be in the running for a prize they are handing out, and a leaderboard
+ * that ranks the people choosing the winners is a fair question waiting to be
+ * asked in public.
+ *
+ * Ids, not roles. A role is the wrong key for this: roles get handed out and
+ * taken back mid-giveaway, and somebody's prize eligibility must not turn on a
+ * permissions change made for an unrelated reason three weeks in. These two
+ * were named by the server owner on 2026-09-17, after the count had started.
+ *
+ * Applied in `scoreInvites`, which every surface goes through — the board, the
+ * personal breakdown, the ops report and the frozen result — so there is no
+ * screen left where they still appear.
+ */
+export const NOT_COMPETING = new Set([
+  '455110498132819976',   // Λ | Ali  (ali8180) — Dev
+  '1114694928824541194',  // Λ | TheFault (_.thefault)
+]);
 
 /**
  * Score every inviter over a window.
@@ -157,7 +209,11 @@ export async function scoreInvites(guildId: string, w: Window): Promise<Score[]>
     ));
   const verified = new Set(approvals.map(r => r.userId));
 
-  return classify(rows, { returning, verified, minAccountAgeDays: w.minAccountAgeDays });
+  return classify(rows, {
+    returning, verified,
+    minAccountAgeDays: w.minAccountAgeDays,
+    excluded: w.excluded ?? NOT_COMPETING,
+  });
 }
 
 export const REASON_TEXT: Record<Reason, string> = {

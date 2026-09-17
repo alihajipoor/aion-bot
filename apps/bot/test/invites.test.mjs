@@ -142,3 +142,71 @@ test('account age is read from the snowflake, not from a column', () => {
   const when = new Date('2026-01-01T00:00:00Z');
   assert.equal(accountCreatedAt(idAged(when, 0)).getTime(), when.getTime());
 });
+
+/* ── who is not in the running ──────────────────────────────────── */
+
+test('an excluded inviter does not appear at all', () => {
+  const u = good(50);
+  const scores = classify([join(u)], ctx({
+    verified: new Set([u]), excluded: new Set([ALI]),
+  }));
+  assert.deepEqual(scores, []);
+});
+
+test('excluding one inviter leaves every other count untouched', () => {
+  // The property that matters. Staff stepping out must not move anybody's
+  // number — only close up the ranking above them.
+  const BOB = '100000000000000002';
+  const mine = [good(60), good(61)];
+  const theirs = [good(62), good(63), good(64)];
+  const rows = [
+    ...mine.map(u => join(u)),
+    ...theirs.map(u => join(u, { inviterId: BOB })),
+  ];
+  const verified = new Set([...mine, ...theirs]);
+
+  const before = classify(rows, ctx({ verified }));
+  const after = classify(rows, ctx({ verified, excluded: new Set([ALI]) }));
+
+  assert.equal(before.length, 2);
+  assert.equal(after.length, 1);
+  assert.equal(after[0].inviterId, BOB);
+  const bobBefore = before.find(s => s.inviterId === BOB);
+  assert.equal(after[0].qualified, bobBefore.qualified);
+  assert.deepEqual(after[0].invitees, bobBefore.invitees);
+});
+
+test('someone an excluded inviter brought in stays spoken for', () => {
+  /*
+   * The farm this closes: staff invites you, you leave, a competitor re-invites
+   * you and gets paid for a member the server already had. Filtering excluded
+   * rows on the way in — rather than filtering inviters on the way out — would
+   * have opened it.
+   */
+  const BOB = '100000000000000002';
+  const u = good(70);
+  const rows = [
+    join(u, { joinedAt: new Date(NOW.getTime() - DAY) }),         // by ALI, excluded
+    join(u, { inviterId: BOB }),                                   // BOB re-invites
+  ];
+  const scores = classify(rows, ctx({ verified: new Set([u]), excluded: new Set([ALI]) }));
+  const bob = scores.find(s => s.inviterId === BOB);
+  assert.equal(bob.qualified, 0);
+  assert.equal(bob.invitees[0].reason, 'duplicate');
+});
+
+test('excluding nobody is the old behaviour exactly', () => {
+  const u = good(80);
+  const a = classify([join(u)], ctx({ verified: new Set([u]) }));
+  const b = classify([join(u)], ctx({ verified: new Set([u]), excluded: new Set() }));
+  assert.deepEqual(a, b);
+  assert.equal(a[0].qualified, 1);
+});
+
+test('the shipped list is exactly the two people who asked to be out', async () => {
+  const { NOT_COMPETING } = await import('../dist/lib/invites.js');
+  assert.deepEqual([...NOT_COMPETING].sort(), [
+    '1114694928824541194',   // TheFault
+    '455110498132819976',    // Ali
+  ].sort());
+});
