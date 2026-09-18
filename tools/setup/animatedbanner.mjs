@@ -150,7 +150,12 @@ console.log(`out/banner-animated.gif\nout/banner-still.png`);
 // upload, where the error names a byte count and not a cause.
 if (bytes.length > 10e6) console.error('! over 10 MB — Discord will refuse it. Drop BANNER_FRAMES.');
 
-if (!APPLY) { console.log('\nrender only — pass --apply to hang it'); process.exit(0); }
+const SPLASH = process.argv.includes('--splash');
+
+if (!APPLY) {
+  console.log(`\nrender only — pass --apply to hang it${SPLASH ? ' (banner + invite splash)' : ''}`);
+  process.exit(0);
+}
 
 const { Client, GatewayIntentBits } = await import('discord.js');
 await import('dotenv/config');
@@ -164,6 +169,58 @@ c.once('clientReady', async () => {
     }
     await g.setBanner(bytes, 'AION: house identity, animated');
     console.log('banner set');
+
+    if (!SPLASH) return;
+
+    const before = g.splash;
+
+    /*
+     * The invite splash, which is a different slot from the banner.
+     *
+     * Discord publishes ANIMATED_ICON and ANIMATED_BANNER as features and has
+     * no equivalent for the splash, so an animated one is probably not a thing.
+     * "Probably" is not good enough to report to somebody, and the failure mode
+     * is the quiet one: the upload can be accepted and silently flattened to
+     * the first frame, which looks like success from here.
+     *
+     * So the hash is what gets believed, not the absence of an error. A guild
+     * image that is actually animated comes back prefixed `a_`.
+     */
+    const tryGif = await g.setSplash(bytes, 'AION: house identity, animated')
+      .then(() => true)
+      .catch(e => { console.log(`animated splash refused: ${e.message}`); return false; });
+
+    let animated = false;
+    if (tryGif) {
+      const after = await c.guilds.fetch({ guild: g.id, force: true });
+      animated = String(after.splash).startsWith('a_');
+      console.log(animated
+        ? 'splash set — and it really is animated'
+        : 'splash accepted but flattened to a still frame');
+    }
+
+    if (!animated) {
+      // Fall back to a proper still, rendered at the splash's own size rather
+      // than leaving a 960-wide frame to be upscaled across a full-screen
+      // invite background.
+      const still = await renderServerArt(1920, 1080, TAGLINE);
+      if (!still) { console.error('! could not render the still splash'); return; }
+      await g.setSplash(still, 'AION: house identity');
+
+      /*
+       * Say whether anything actually moved.
+       *
+       * Discord names guild images by a hash of their content, so re-uploading
+       * the identical picture comes back with the identical hash. Reporting
+       * "splash set" either way reads as a change that did not happen — which
+       * is the same trap as believing the animated upload worked because it
+       * did not throw.
+       */
+      const end = await c.guilds.fetch({ guild: g.id, force: true });
+      console.log(end.splash === before
+        ? `splash unchanged — it was already this exact image (${before})`
+        : `splash set to the 1920x1080 still — same design, no motion (${before ?? 'none'} -> ${end.splash})`);
+    }
   } catch (e) { console.error(e); process.exitCode = 1; }
   finally { c.destroy(); }
 });
