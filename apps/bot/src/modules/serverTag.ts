@@ -65,35 +65,22 @@ async function wearers(guild: Guild): Promise<{ ids: string[]; tag: string | nul
 }
 
 /**
- * The announcement itself.
+ * The announcement itself. Two lines and two buttons.
  *
- * The tag is asked for once and worn everywhere, so the pitch is what it does
- * off this server rather than on it. The one-at-a-time rule is stated up front
- * on purpose: most people who will not switch are already wearing somebody
- * else's, and finding that out after digging through settings is the annoying
- * way to learn it.
+ * Everything that could be said about server tags — that only one can be worn
+ * at a time, that clicking one opens the server profile, that editing the tag
+ * makes everyone reapply — is true and none of it belongs in a channel every
+ * member reads. It lives behind the button instead, where the people who want
+ * it ask for it and nobody else pays for it.
  */
 export function tagCard(tag: string): {
   components: unknown[]; flags: number; allowedMentions: { parse: string[] };
 } {
   const box = new ContainerBuilder().setAccentColor(ACCENT)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `# 🏷️ تگ سرور اومد — \`${tag}\``))
-    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      `از این به بعد می‌تونی تگ سرور رو کنار اسمت داشته باشی — **همه‌جای دیسکورد**، نه فقط اینجا.`,
-      'هر کسی پروفایلت رو ببینه، نشان ما رو کنار اسمت می‌بینه.',
-      '',
-      '**یادت باشه:** هر کس فقط تگ **یک سرور** رو می‌تونه هم‌زمان داشته باشه.',
-      'اگه الان تگ سرور دیگه‌ای رو گذاشتی، با انتخاب این، جایگزین می‌شه.',
-      '',
-      'دکمه‌ی زیر رو بزن تا مرحله‌به‌مرحله بگم چطوری بذاریش.',
-    ].join('\n')))
-    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      '-# وقتی کسی روی تگت بزنه، پروفایل سرور باز می‌شه و می‌تونه مستقیم عضو بشه.'))
+      `# 🏷️ تگ سرور — \`${tag}\`\nبذارش کنار اسمت. همه‌جای دیسکورد دیده می‌شه.`))
     .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId(enc('how')).setLabel('چطوری بذارمش؟')
+      new ButtonBuilder().setCustomId(enc('how')).setLabel('چطوری؟')
         .setEmoji('⚙️').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(enc('who')).setLabel('کیا گذاشتن؟')
         .setEmoji('👥').setStyle(ButtonStyle.Secondary)));
@@ -107,10 +94,11 @@ export function tagCard(tag: string): {
 
 /**
  * The steps, taken from Discord's own help article rather than from memory.
+ * Menu names are the one thing that must not be approximated.
  *
- * Menu names are the one thing that must not be approximated — a person who
- * cannot find "Profiles" gives up rather than hunting, and instructions that
- * are nearly right read as the bot being broken.
+ * Steps only. No explaining what a tag is or what it costs you — the caveats
+ * were written and then cut, because the person pressing this button wants to
+ * be done, not informed.
  */
 const HOW = (serverName: string) => [
   `## ⚙️ گذاشتن تگ سرور`,
@@ -127,9 +115,6 @@ const HOW = (serverName: string) => [
   `\`3.\` بیا پایین تا **Server Tags**، بعد **${serverName}** رو انتخاب کن`,
   '',
   '**برداشتنش:** کنار تگ فعلی، ضربدر ❌ رو بزن.',
-  '',
-  '-# فقط تگ یک سرور رو می‌شه هم‌زمان داشت.',
-  '-# اگه ما بعداً تگ رو عوض کنیم، باید دوباره انتخابش کنی.',
 ].join('\n');
 
 export async function handleButton(i: ButtonInteraction): Promise<void> {
