@@ -169,11 +169,14 @@ test('the revealed round-one tally marks everyone who cleared the two-vote bar',
   assert.ok(lines.every(l => l.includes('⚠️')), 'both reached the bar');
 });
 
-test('a round-one name with a single vote is shown but not marked', () => {
-  const out = resolveDayVote({ a: 'd', b: 'd', c: 'b' }, 1);
+test('one name at the bar marks nobody — there is no runoff to mark for', () => {
+  // The ⚠️ means "goes to the second vote". Since the rule changed, a lone
+  // name on two votes goes nowhere, so marking it would promise a round that
+  // is not coming. Both names are still listed with their counts.
+  const out = resolveDayVote({ a: 'd', b: 'd', c: 'b' }, 1, 10);
   const lines = tallyLines(out, nameOf);
-  assert.equal(lines.filter(l => l.includes('⚠️')).length, 1);
-  assert.equal(lines.length, 2, 'the one-vote name is still shown');
+  assert.equal(lines.filter(l => l.includes('⚠️')).length, 0);
+  assert.equal(lines.length, 2, 'both names are still shown');
 });
 
 test('round two marks nobody — there is no bar, only a winner', () => {

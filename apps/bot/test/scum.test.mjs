@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SCUM_ROLES, roleOf, resolveNight, resolveDayVote, terroristTriggers, counts,
-  fireGun, canDisable,
+  fireGun, canDisable, majorityBar,
 } from '../dist/modules/events/scum/rules.js';
 import { publicFacts, nightStory, godRecap } from '../dist/modules/events/scum/narrate.js';
 import * as rules from '../dist/modules/events/scum/rules.js';
@@ -612,8 +612,15 @@ test('round one: one vote is not enough', () => {
   assert.deepEqual(res.nominees, []);
 });
 
-test('round one: exactly two votes is enough — the bar is inclusive', () => {
-  assert.deepEqual(resolveDayVote({ a: 'x', b: 'x' }, 1).nominees, ['x']);
+test('round one: two votes is the bar, but one name is not a runoff', () => {
+  // This used to assert ['x']. The rule changed: reaching two votes is what
+  // puts a name up, and two *names* are what make a second vote a vote. One
+  // name alone, under the majority bar, ends the day instead.
+  assert.deepEqual(resolveDayVote({ a: 'x', b: 'x' }, 1, 10).nominees, []);
+  // With somebody to run against, the bar is still inclusive at two.
+  assert.deepEqual(
+    resolveDayVote({ a: 'x', b: 'x', c: 'y', d: 'y' }, 1, 10).nominees.sort(),
+    ['x', 'y']);
 });
 
 test('round one: nobody voted, nobody is nominated', () => {
@@ -839,4 +846,82 @@ test('checking an ordinary player twice changes nothing', () => {
     [act('de', 'v')],
   );
   assert.equal(res.detective.answer, 'shahr');
+});
+
+/* ── the first vote can end the day on its own ──────────────────── */
+
+const bal = (pairs) => Object.fromEntries(pairs);
+const many = (target, n, from = 0) =>
+  Array.from({ length: n }, (_, k) => [`v${from + k}`, target]);
+
+test('more than half the living room eliminates outright', () => {
+  // 6 of 10 — the example from the rules.
+  const out = resolveDayVote(bal([...many('X', 6), ...many('Y', 2, 6), ...many('Z', 2, 8)]), 1, 10);
+  assert.equal(out.outright, true);
+  assert.equal(out.eliminated, 'X');
+  assert.deepEqual(out.nominees, []);          // no defence, no runoff
+});
+
+test('exactly half does not carry', () => {
+  // 5 of 10 is half, not more than half. Y and Z also clear the two-vote bar,
+  // so this is a runoff rather than a night.
+  const out = resolveDayVote(bal([...many('X', 5), ...many('Y', 3, 5), ...many('Z', 2, 8)]), 1, 10);
+  assert.equal(out.outright, false);
+  assert.equal(out.eliminated, null);
+  assert.deepEqual(out.nominees.sort(), ['X', 'Y', 'Z']);
+});
+
+test('an odd room carries on the smaller number', () => {
+  // 5 of 9 is over half; the bar is floor(9/2)+1.
+  assert.equal(majorityBar(9), 5);
+  assert.equal(majorityBar(10), 6);
+  assert.equal(majorityBar(11), 6);
+  const out = resolveDayVote(bal([...many('X', 5), ...many('Y', 4, 5)]), 1, 9);
+  assert.equal(out.outright, true);
+  assert.equal(out.eliminated, 'X');
+});
+
+test('two or more names at the bar go to the second vote', () => {
+  const out = resolveDayVote(bal([...many('X', 3), ...many('Y', 2, 3), ...many('Z', 1, 5)]), 1, 10);
+  assert.equal(out.outright, false);
+  assert.equal(out.eliminated, null);
+  assert.deepEqual(out.nominees.sort(), ['X', 'Y']);
+});
+
+test('one name alone under the bar means night, not a runoff', () => {
+  // The case that decided the rule: 10 living, one person on 2, rest single.
+  const out = resolveDayVote(bal([...many('X', 2), ['a', 'Y'], ['b', 'Z'], ['c', 'W']]), 1, 10);
+  assert.equal(out.outright, false);
+  assert.equal(out.eliminated, null);
+  assert.deepEqual(out.nominees, []);
+});
+
+test('one name on a big plurality still means night', () => {
+  // 4 of 10 is the most votes and not half of them.
+  const out = resolveDayVote(bal([...many('X', 4), ['a', 'Y'], ['b', 'Z']]), 1, 10);
+  assert.equal(out.outright, false);
+  assert.deepEqual(out.nominees, []);
+});
+
+test('nobody voting is a night, not an elimination', () => {
+  const out = resolveDayVote({}, 1, 10);
+  assert.equal(out.outright, false);
+  assert.equal(out.eliminated, null);
+  assert.deepEqual(out.nominees, []);
+});
+
+test('without a living count the first round can never eliminate', () => {
+  // Defensive: a caller that forgets to pass it must not hand out a death.
+  const out = resolveDayVote(bal(many('X', 9)), 1);
+  assert.equal(out.outright, false);
+  assert.equal(out.eliminated, null);
+});
+
+test('the second round is unchanged', () => {
+  const win = resolveDayVote(bal([...many('X', 3), ...many('Y', 1, 3)]), 2, 10);
+  assert.equal(win.eliminated, 'X');
+  assert.equal(win.outright, false);
+  const tie = resolveDayVote(bal([...many('X', 2), ...many('Y', 2, 2)]), 2, 10);
+  assert.equal(tie.eliminated, null);
+  assert.equal(tie.tied, true);
 });

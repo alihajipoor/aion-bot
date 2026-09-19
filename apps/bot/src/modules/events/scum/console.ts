@@ -71,7 +71,16 @@ export interface ScumPick { role: string; target: string; at: number }
  */
 export type ScumPending =
   | { kind: 'terrorist'; actor: string }
-  | { kind: 'veto'; actor: string; target: string };
+  | { kind: 'veto'; actor: string; target: string }
+  /**
+   * The vote has picked somebody and God has not signed it off yet.
+   *
+   * Nobody dies on a count alone. The room's arithmetic is right far more
+   * often than not, but a narrator watching the table knows things the tally
+   * does not — a misclick, a deal, a rule bent by agreement — and the one
+   * action in this game that cannot be undone should not be automatic.
+   */
+  | { kind: 'confirm'; target: string; round: 1 | 2 };
 
 /** Per-role limits God sets at setup; absent means the role's own default. */
 export interface ScumLimits {
@@ -338,6 +347,7 @@ export function nightActors(
 export function pendingBlock(state: ScumState): string | null {
   const p = state.pending;
   if (!p) return null;
+  if (p.kind === 'confirm') return null;   // it has its own card and buttons
   return p.kind === 'terrorist'
     ? 'Terrorist hanooz entekhab nakarde ki ro ba khodesh bebare. Sabr kon ya rad kon.'
     : 'Shahrdar hanooz nagofte ray ro cancel mikone ya na. Sabr kon ya rad kon.';
@@ -629,6 +639,35 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
   if (block) {
     box.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(`### ⏸ Montazer\n${block}`));
+  }
+
+  /*
+   * The signature. Nothing else on this console matters while it is up, so it
+   * sits above the phase buttons rather than below them, and it carries the
+   * whole decision: take it, take somebody else, or take nobody.
+   */
+  if (st.pending?.kind === 'confirm') {
+    const t = st.pending.target;
+    box.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+        `### ⚖️ Taid kon — ray ${st.pending.round === 1 ? 'aval' : 'dovom'}`,
+        `Ray roo **${isolate(nameOf(t))}** oftade.`,
+        '-# Ta taid nakoni hich kas hazf nemishe.',
+      ].join('\n')))
+      .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(enc('elimok', ev.id)).setLabel('Taid — hazf beshe')
+          .setEmoji('✅').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(enc('elimnone', ev.id)).setLabel('Hich kas hazf nashe')
+          .setEmoji('🚫').setStyle(ButtonStyle.Secondary),
+      ))
+      .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder().setCustomId(enc('elimpick', ev.id))
+          .setPlaceholder('Ya ye nafare dige ro entekhab kon')
+          .addOptions(roster.filter(p => p.alive).slice(0, 25).map(p =>
+            new StringSelectMenuOptionBuilder()
+              .setLabel(`${p.seat ?? '?'} · ${(p.userTag ?? nameOf(p.userId)).slice(0, 60)}`)
+              .setValue(p.userId)
+              .setDefault(p.userId === t)))));
   }
 
   box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -1118,7 +1157,8 @@ async function endVote(
   const round = st.voteRound ?? 1;
   const roster = await players(ev.id);
   const nameOf = namer(guild, roster);
-  const outcome = resolveDayVote(st.votes ?? {}, round);
+  const living = roster.filter(p => p.alive).length;
+  const outcome = resolveDayVote(st.votes ?? {}, round, living);
   const b = ballotFor(round, roster, st.nominees ?? [], st.silenced ?? null);
   const options = roster.filter(p => b.options.includes(p.userId));
 
@@ -1132,20 +1172,41 @@ async function endVote(
   if (ch && msgId) await ch.messages.edit(msgId, card).catch(() => {});
 
   if (round === 1) {
+    /*
+     * Carried outright: more than half the room on one name.
+     *
+     * The day is over — no defence for them, no second vote for anybody. It
+     * still goes to God for a signature, like every other vote elimination.
+     */
+    if (outcome.outright && outcome.eliminated) {
+      await mergeState(ev.id, {
+        phase: 'day', nominees: [], defence: { order: [], at: -1 },
+        pending: { kind: 'confirm', target: outcome.eliminated, round: 1 },
+      });
+      const fresh = (await getEvent(ev.id))!;
+      await applyTextRules(guild, fresh, 'day');
+      const share = outcome.tally[0]?.votes ?? 0;
+      await say(ch, `## ⚖️ Ray-e aval tamoom shod\n<@${outcome.eliminated}> — **${num(share)}** ray az **${num(living)}** nafar.`
+        + '\n-# Bishtar az nesf. Ray-e dovom nadarim. Ye lahze sabr konid.', C.day);
+      await i?.update(await scumConsole(fresh,
+        `${nameOf(outcome.eliminated)} ba ${share}/${living} ray oftad — taid kon ya avaz kon.`));
+      return;
+    }
+
     await mergeState(ev.id, {
-      phase: 'defence',
+      phase: outcome.nominees.length ? 'defence' : 'day',
       nominees: outcome.nominees,
       defence: { order: outcome.nominees, at: -1 },
     });
     const fresh = (await getEvent(ev.id))!;
-    await applyTextRules(guild, fresh, 'defense');
+    await applyTextRules(guild, fresh, outcome.nominees.length ? 'defense' : 'day');
     await say(ch, outcome.nominees.length
       ? `## 🗣️ Roo miz\n${outcome.nominees.map((id, k) => `\`${k + 1}\` <@${id}>`).join('\n')}`
         + '\n-# Be tartib defa mikonan. Gardanande nobat ro rad mikone.'
-      : '## 😐 Hich kas 2 ray nayavord\nEmrooz kesi roo miz nemire. Shab mishe.', C.day);
+      : '## 😐 Ray-giri be jayi nareside\nHich kas hazf nemishe. Shab mishe.', C.day);
     await i?.update(await scumConsole(fresh, outcome.nominees.length
       ? `${outcome.nominees.length} nafar raftan roo miz.`
-      : 'Kesi be 2 ray nareside — Shab bezan.'));
+      : 'Na kesi bala-ye nesf, na do nafar roo miz — Shab bezan.'));
     return;
   }
 
@@ -1163,13 +1224,98 @@ async function endVote(
     return;
   }
 
+  // Round two points at somebody, so it goes to God like round one does.
+  await mergeState(ev.id, {
+    pending: { kind: 'confirm', target: outcome.eliminated, round: 2 },
+  });
+  await say(ch, `## ⚖️ Ray tamoom shod\nBishtarin ray: <@${outcome.eliminated}>`
+    + '\n-# Ye lahze sabr konid — hanooz ghati nashode.', C.day);
+  await i?.update(await scumConsole((await getEvent(ev.id))!,
+    `${nameOf(outcome.eliminated)} bishtarin ray ro avord — taid kon ya avaz kon.`));
+}
+
+/**
+ * God signs the vote off, on the name the room chose or on another one.
+ *
+ * Changing the target is not an override of the rules so much as an admission
+ * that a tally is evidence and not a verdict — a misclick, a deal struck out
+ * loud, a player who asked to be voted out. The narrator was watching; the
+ * count was not.
+ */
+async function signOffVote(
+  i: ButtonInteraction | StringSelectMenuInteraction, ev: EventRow, instead: string | null,
+): Promise<void> {
+  const st = stateOf(ev);
+  if (st.pending?.kind !== 'confirm') {
+    await i.reply({ content: 'Chizi baraye taid nist.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const target = instead ?? st.pending.target;
+  const roster = await players(ev.id);
+  const victim = roster.find(p => p.userId === target);
+  if (!victim?.alive) {
+    await i.reply({ content: 'Oon nafar zende nist.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  /*
+   * Picking a different name re-arms the card rather than killing on the spot.
+   *
+   * A select menu fires on the first click, and the first click is often the
+   * wrong row. Nothing irreversible should happen on it — so choosing somebody
+   * moves the pending target, and the Taid button is still what ends a life.
+   */
+  if (instead && instead !== st.pending.target) {
+    await mergeState(ev.id, { pending: { ...st.pending, target: instead } });
+    const fresh = (await getEvent(ev.id))!;
+    await i.update(await scumConsole(fresh,
+      `Hadaf avaz shod be ${namer(i.guild, roster)(instead)} — hanooz taid nashode.`));
+    return;
+  }
+
+  await carryOutVote(i, ev, i.guild!, target);
+}
+
+/** God calls the vote off: it happened, and it takes nobody. */
+async function cancelVoteKill(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  const st = stateOf(ev);
+  if (st.pending?.kind !== 'confirm') {
+    await i.reply({ content: 'Chizi baraye taid nist.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+  await mergeState(ev.id, {
+    pending: null, phase: 'day', nominees: [], defence: { order: [], at: -1 },
+  });
+  const fresh = (await getEvent(ev.id))!;
+  await applyTextRules(i.guild!, fresh, 'day');
+  await say(chatOf(fresh, i.guild!),
+    '## 🚫 Ray laghv shod\nHich kas hazf nemishe. Rooz tamoom shod.', C.day);
+  await i.update(await scumConsole(fresh, 'Ray laghv shod — kesi hazf nashod. Shab bezan.'));
+}
+
+/**
+ * What happens once God has signed off on who the vote took.
+ *
+ * Everything downstream of the signature is unchanged and deliberately shared
+ * by both rounds: the Shahrdar still gets their veto, the Terrorist still goes
+ * off, the role still stays hidden. A day ended by an outright majority is
+ * still a day ended by the city's vote, so the powers that answer a vote
+ * answer this one too.
+ */
+async function carryOutVote(
+  i: ButtonInteraction | StringSelectMenuInteraction | null,
+  ev: EventRow, guild: Guild, target: string,
+): Promise<void> {
+  const roster = await players(ev.id);
+  const nameOf = namer(guild, roster);
+  const st = stateOf(ev);
+
   const veto = vetoCandidate(roster, st);
-  if (veto) {
-    await mergeState(ev.id, { pending: { kind: 'veto', actor: veto, target: outcome.eliminated } });
-    await say(ch, `## ⚖️ Ray tamoom shod\nBishtarin ray: <@${outcome.eliminated}>`
-      + '\n-# Ye lahze sabr konid — hanooz ghati nashode.', C.day);
+  if (veto && veto !== target) {
+    await mergeState(ev.id, { pending: { kind: 'veto', actor: veto, target } });
     const sent = await dm(guild, veto,
-      `## 🏛 Shahrdar\nShahr ray dad be ${isolate(nameOf(outcome.eliminated))}.`
+      `## 🏛 Shahrdar\nShahr ray dad be ${isolate(nameOf(target))}.`
       + '\nMitooni bezari bere, ya veto koni va **ye nafar dige** ro jash bezari biroon.'
       + '\n-# Veto kardan yani hatman yeki mire — kesi az bazi kam nashodan dar kar nist.',
       C.day, { buttons: [
@@ -1184,10 +1330,10 @@ async function endVote(
     return;
   }
 
-  // The console-bound version when God pressed the button, and the standalone
-  // one the veto path already needed when there is nobody to answer.
-  if (i) await applyElimination(i, ev, outcome.eliminated);
-  else await finishEliminationOutsideConsole(guild, ev, outcome.eliminated);
+  await mergeState(ev.id, { pending: null });
+  const fresh = (await getEvent(ev.id))!;
+  if (i) await applyElimination(i, fresh, target);
+  else await finishEliminationOutsideConsole(guild, fresh, target);
 }
 
 /**
@@ -1198,7 +1344,7 @@ async function endVote(
  * itself would make that rule meaningless.
  */
 async function applyElimination(
-  i: ButtonInteraction, ev: EventRow, target: string,
+  i: ButtonInteraction | StringSelectMenuInteraction, ev: EventRow, target: string,
 ): Promise<void> {
   const roster = await players(ev.id);
   const victim = roster.find(p => p.userId === target);
@@ -1402,9 +1548,14 @@ async function changePhase(i: ButtonInteraction, ev: EventRow, to: 'day' | 'nigh
 
   if (to === 'night') {
     const night = (st.day ?? 1) || 1;
+    // An unsigned vote does not survive the night. God pressing Shab over the
+    // confirmation card is a decision — the day ends and it takes nobody — so
+    // the pending signature is dropped rather than left to reappear at dawn.
+    const abandoned = st.pending?.kind === 'confirm' ? st.pending.target : null;
     await mergeState(ev.id, {
       phase: 'night', night, nightPicks: {}, silenced: null,
       voteOpen: false, votes: {}, nominees: [], defence: { order: [], at: -1 },
+      ...(abandoned ? { pending: null } : {}),
     });
     const fresh = (await getEvent(ev.id))!;
     const touched = await applyVoice(i.guild!, fresh, true);
@@ -1414,6 +1565,7 @@ async function changePhase(i: ButtonInteraction, ev: EventRow, to: 'day' | 'nigh
     const sent = await promptNightActions(i.guild!, fresh);
     await i.update(await scumConsole((await getEvent(ev.id))!,
       `Shab ${night} shod — ${touched} nafar mute shodan. ${sent.ok} naghsh DM shod.`
+      + (abandoned ? `\n> Ray-e taid-nashode roo <@${abandoned}> laghv shod.` : '')
       + (sent.failed.length ? `\n> **DM baste:** ${sent.failed.map(f => `<@${f}>`).join(' ')} — dasti azashoon bepors.` : '')));
     return;
   }
@@ -1475,6 +1627,9 @@ export async function scumComponent(
   if (step === 'defence' && i.isButton()) { await advanceDefence(i, ev); return; }
   if (step === 'win' && i.isButton()) { await declareWin(i, ev, arg === 'mafia' ? 'mafia' : 'shahr'); return; }
   if (step === 'clear' && i.isButton()) { await clearPending(i, ev); return; }
+  if (step === 'elimok' && i.isButton()) { await signOffVote(i, ev, null); return; }
+  if (step === 'elimnone' && i.isButton()) { await cancelVoteKill(i, ev); return; }
+  if (step === 'elimpick' && i.isStringSelectMenu()) { await signOffVote(i, ev, i.values[0]!); return; }
 
   if (step === 'act' && i.isButton()) {
     const kind = arg === 'revive' ? 'revive' : 'kill';

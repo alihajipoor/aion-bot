@@ -395,15 +395,32 @@ export interface VoteOutcome {
   round: 1 | 2;
   /** Highest first; ties broken by id, so a replay reads the same. */
   tally: VoteTally[];
-  /** Round one: everyone who reached the two-vote bar. Empty in round two. */
+  /** Everyone who reached the two-vote bar, when a runoff is actually on. */
   nominees: string[];
-  /** Round two: the single highest. null in round one, and null on a tie. */
+  /** Who the vote points at. Null when it points at nobody. */
   eliminated: string | null;
   /** Round two, top count shared. A tie eliminates nobody and night falls. */
   tied: boolean;
+  /**
+   * Round one carried by more than half the living room.
+   *
+   * It settles the day on its own: no defence, no second vote. Separate from
+   * `eliminated` because the two rounds reach the same field by different
+   * roads and the console has to tell them apart.
+   */
+  outright: boolean;
 }
 
 const NOMINATION_BAR = 2;
+
+/**
+ * How many votes carry the room outright: more than half, not half.
+ *
+ * Five of ten is exactly half and does not carry — which is the whole point of
+ * the rule, so it is a floor-plus-one rather than a rounded percentage. Ten
+ * living needs six; nine needs five; eleven needs six.
+ */
+export const majorityBar = (living: number): number => Math.floor(living / 2) + 1;
 
 /**
  * Count a vote.
@@ -412,7 +429,9 @@ const NOMINATION_BAR = 2;
  * already the truth. Counts stay hidden until God ends the phase; that is the
  * console's business, not this function's.
  */
-export function resolveDayVote(votes: Record<string, string>, round: 1 | 2): VoteOutcome {
+export function resolveDayVote(
+  votes: Record<string, string>, round: 1 | 2, living = 0,
+): VoteOutcome {
   const counted = new Map<string, number>();
   for (const target of Object.values(votes)) {
     if (!target) continue;
@@ -424,12 +443,35 @@ export function resolveDayVote(votes: Record<string, string>, round: 1 | 2): Vot
     .sort((a, b) => b.votes - a.votes || a.target.localeCompare(b.target));
 
   if (round === 1) {
+    const top = tally[0];
+
+    /*
+     * More than half the living room on one name ends the day there.
+     *
+     * No defence and no second vote: the room has already said more than a
+     * runoff could. Only one person can ever reach this, because the box holds
+     * one slip per voter.
+     */
+    if (living > 0 && top && top.votes >= majorityBar(living)) {
+      return { round, tally, nominees: [], eliminated: top.target, tied: false, outright: true };
+    }
+
+    /*
+     * Otherwise a runoff, but only if there is something to run.
+     *
+     * Reaching two votes is what puts a name up; two *names* are what make the
+     * second vote a vote. One name alone under the majority bar is a room that
+     * did not agree on anything, so the day ends and night falls — nobody is
+     * eliminated on a plurality here.
+     */
+    const reached = tally.filter(t => t.votes >= NOMINATION_BAR).map(t => t.target);
     return {
       round,
       tally,
-      nominees: tally.filter(t => t.votes >= NOMINATION_BAR).map(t => t.target),
+      nominees: reached.length >= 2 ? reached : [],
       eliminated: null,
       tied: false,
+      outright: false,
     };
   }
 
@@ -443,6 +485,7 @@ export function resolveDayVote(votes: Record<string, string>, round: 1 | 2): Vot
     nominees: [],
     eliminated: top === undefined || tied ? null : top.target,
     tied,
+    outright: false,
   };
 }
 
