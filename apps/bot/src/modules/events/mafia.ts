@@ -254,12 +254,24 @@ export async function startMafia(guild: Guild, ev: EventRow): Promise<void> {
     type: ChannelType.GuildText,
     parent: cat ?? undefined,
     topic: `Otagh e mafia — event #${ev.id}`,
+    /*
+     * ViewChannel is not enough on its own.
+     *
+     * ReadMessageHistory is a separate permission, and a member overwrite that
+     * grants the first without the second produces a channel you can open and
+     * cannot read: "You do not have permission to view the message history".
+     * It bit the narrator mid-game, in a room whose whole purpose is the
+     * conversation already in it.
+     */
     permissionOverwrites: [
       { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-      { id: guild.members.me!.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-      { id: ev.hostId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+      { id: guild.members.me!.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory] },
+      { id: ev.hostId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory] },
       ...mafiaIds.map(id => ({
-        id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+        id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory],
       })),
     ],
     reason: `AION mafia #${ev.id}`,
