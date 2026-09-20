@@ -20,7 +20,9 @@ import {
   MessageFlags, ContainerBuilder, TextDisplayBuilder, SeparatorBuilder,
   SeparatorSpacingSize, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder, UserSelectMenuBuilder, ChannelType, PermissionFlagsBits,
+  ModalBuilder, TextInputBuilder, TextInputStyle,
   type ButtonInteraction, type StringSelectMenuInteraction, type UserSelectMenuInteraction,
+  type ModalSubmitInteraction,
   type MessageComponentInteraction, type Guild, type GuildMember, type TextChannel,
 } from 'discord.js';
 import { isolate, num } from '../../../lib/text.js';
@@ -63,6 +65,18 @@ export type ScumPhase = 'setup' | 'day' | 'vote1' | 'defence' | 'vote2' | 'night
 
 /** One player's night pick, keyed by who made it. */
 export interface ScumPick { role: string; target: string; at: number }
+
+/** One warning God handed out, with the reason he gave for it. */
+export interface ScumWarn { reason: string; by: string; at: number }
+
+/**
+ * Warnings that end a player's game.
+ *
+ * Two, and they are out. Deliberately small: a warning people can collect is a
+ * scolding, and what this is for is a game that has to keep moving — talking
+ * over the narrator, arguing past a closed vote, hinting at a role.
+ */
+export const WARN_LIMIT = 2;
 
 /**
  * Something the day cannot move past.
@@ -119,6 +133,8 @@ export interface ScumState {
   pending?: ScumPending | null;
   config?: ScumLimits;
   mvpId?: string;
+  /** Warnings per player, oldest first. Two and their game is over. */
+  warns?: Record<string, ScumWarn[]>;
   /**
    * God has muted the room by hand.
    *
@@ -240,6 +256,15 @@ export function swapPlayerInState(
     nominees: st.nominees?.map(id => sub(id) as string),
     mvpId: st.mvpId === from ? to : st.mvpId,
   };
+
+  /*
+   * Warnings deliberately do not move.
+   *
+   * Everything else here belongs to the chair; a warning belongs to the person
+   * who earned it. Handing a substitute somebody else's strike would put them
+   * one mistake from being thrown out of a game they just walked into, and
+   * carrying it is not a kindness to the player who left either.
+   */
 
   // Night picks are keyed by actor and also point at a target.
   if (st.nightPicks) {
@@ -493,7 +518,9 @@ export function voterLines(
 const chatOf = (ev: EventRow, guild: Guild): TextChannel | undefined =>
   ev.textChannelId ? guild.channels.cache.get(ev.textChannelId) as TextChannel | undefined : undefined;
 
-const canRun = (i: MessageComponentInteraction, ev: EventRow): boolean => {
+const canRun = (
+  i: MessageComponentInteraction | ModalSubmitInteraction, ev: EventRow,
+): boolean => {
   const m = i.member as GuildMember | null;
   if (i.user.id === ev.hostId) return true;
   if (!m) return false;
@@ -744,7 +771,9 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
         const left = usesLeft(st, p);
         const gun = (st.gunHolders ?? []).some(g => g.userId === p.userId) ? ' 🔫' : '';
         const mute = st.silenced === p.userId ? ' 🤐' : '';
+        const warns = (st.warns?.[p.userId] ?? []).length;
         return `${p.alive ? '🟢' : '⚫'} \`${String(p.seat ?? 0).padStart(2, ' ')}\` <@${p.userId}> — ${isolate(faOf(p.role))}`
+          + (warns ? ` ${'⚠️'.repeat(Math.min(warns, WARN_LIMIT))}` : '')
           + (left !== null ? ` -# (${num(left)})` : '') + gun + mute;
       }),
       ...(note ? ['', `> ${note}`] : []),
@@ -864,6 +893,9 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
       .setEmoji(st.forceMute ? '🔊' : '🔇')
       .setStyle(st.forceMute ? ButtonStyle.Success : ButtonStyle.Secondary)
       .setDisabled(!ev.voiceChannelId),
+    new ButtonBuilder().setCustomId(enc('warn', ev.id)).setLabel('Ekhtar')
+      .setEmoji('⚠️').setStyle(ButtonStyle.Secondary)
+      .setDisabled(!roster.some(p => p.alive)),
   ));
 
   if (phase !== 'setup') {
@@ -1413,6 +1445,140 @@ async function endVote(
     + '\n-# Ye lahze sabr konid — hanooz ghati nashode.', C.day);
   await i?.update(await scumConsole((await getEvent(ev.id))!,
     `${nameOf(outcome.eliminated)} bishtarin ray ro avord — taid kon ya avaz kon.`));
+}
+
+/**
+ * Modal submissions in this namespace.
+ *
+ * Its own entry point because a modal submit is not a component interaction —
+ * `scumComponent` never sees one, and until now nothing in Scum opened a modal
+ * so nothing routed them. A submit with no route is silent: the narrator types
+ * a reason, presses submit, and the dialog simply hangs.
+ */
+export async function scumModal(i: ModalSubmitInteraction): Promise<void> {
+  const [step, idRaw, arg] = dec(i.customId);
+  const ev = await getEvent(Number(idRaw));
+  if (!ev) { await i.reply({ content: 'Event peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
+  if (!canRun(i, ev)) {
+    await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+  if (step === 'warnsave' && arg) { await warnSave(i, ev, arg); return; }
+  await i.reply({ content: 'In dokme dige kar nemikone.', flags: MessageFlags.Ephemeral });
+}
+
+/* ══ warnings ══════════════════════════════════════════════════════ */
+
+/** Step one: who is being warned. */
+async function warnPrompt(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  const roster = await players(ev.id);
+  const nameOf = namer(i.guild, roster);
+  const st = stateOf(ev);
+  const living = roster.filter(p => p.alive);
+  if (!living.length) {
+    await i.reply({ content: 'Kesi zende nist.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+  await i.reply({
+    components: [new ContainerBuilder().setAccentColor(C.day)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## ⚠️ Ekhtar\n${num(WARN_LIMIT)} ekhtar ya'ni az baazi mire biroon.`))
+      .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder().setCustomId(enc('warnwho', ev.id))
+          .setPlaceholder('Ki ekhtar begire?')
+          .addOptions(living.slice(0, 25).map(p => {
+            const had = (st.warns?.[p.userId] ?? []).length;
+            return new StringSelectMenuOptionBuilder()
+              .setLabel(`${p.seat ?? '?'} · ${(p.userTag ?? nameOf(p.userId)).slice(0, 60)}`)
+              .setDescription(had ? `${had}/${WARN_LIMIT} ekhtar — badi akharish e` : 'hanooz ekhtari nadare')
+              .setValue(p.userId);
+          }))))],
+    ...v2eph,
+  });
+}
+
+/**
+ * Step two: the reason, in a modal.
+ *
+ * A reason is required rather than optional. It is announced to the whole
+ * table, and "warned, no reason given" is how a narrator loses the room — the
+ * point of saying it out loud is that everybody can see the rule being applied
+ * rather than a player being picked on.
+ */
+async function warnReason(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
+  const who = i.values[0]!;
+  await i.showModal(new ModalBuilder()
+    .setCustomId(enc('warnsave', ev.id, who))
+    .setTitle('Dalil-e ekhtar')
+    .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(
+      new TextInputBuilder().setCustomId('reason').setLabel('Chera?')
+        .setPlaceholder('masalan: rooye harf-e gardanande harf zad')
+        .setStyle(TextInputStyle.Short).setMaxLength(160).setRequired(true))));
+}
+
+/**
+ * Records the warning, says it out loud, and ends the game for the second one.
+ *
+ * Announced in the game channel every time. A warning nobody heard corrects
+ * nothing, and the table has to be able to count them as well as God — the
+ * second one takes a player out, and that must never be a surprise.
+ */
+async function warnSave(i: ModalSubmitInteraction, ev: EventRow, who: string): Promise<void> {
+  const guild = i.guild!;
+  const roster = await players(ev.id);
+  const target = roster.find(p => p.userId === who);
+  const nameOf = namer(guild, roster);
+  if (!target?.alive) {
+    await i.reply({ content: 'Oon nafar zende nist.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const reason = i.fields.getTextInputValue('reason').trim().slice(0, 160);
+  const st = stateOf(ev);
+  const had = st.warns?.[who] ?? [];
+  const now = [...had, { reason, by: i.user.id, at: Date.now() }];
+  await mergeState(ev.id, { warns: { ...(st.warns ?? {}), [who]: now } });
+
+  const ch = chatOf(ev, guild);
+  const out = now.length >= WARN_LIMIT;
+
+  if (!out) {
+    await say(ch, [
+      `## ⚠️ Ekhtar — ${num(now.length)}/${num(WARN_LIMIT)}`,
+      `<@${who}>`,
+      `**Dalil:** ${reason}`,
+      `-# Ba ${num(WARN_LIMIT)}-omin ekhtar az baazi mire biroon.`,
+    ].join('\n'), C.day);
+    await i.reply({
+      content: `⚠️ ${nameOf(who)} — ekhtar ${now.length}/${WARN_LIMIT} sabt shod.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  /*
+   * The second one ends their game.
+   *
+   * Killed the same way a vote kills — the role stays hidden, because the only
+   * death in this game that shows a card is the Kalantar's gun. The Terrorist
+   * does not go off: he answers a vote and nothing else, and a warning is not
+   * the town's decision.
+   */
+  await killPlayer(ev.id, who);
+  await applyVoice(guild, ev, stateOf(ev).phase === 'night');
+  await say(ch, [
+    `## ⛔ ${num(WARN_LIMIT)} ekhtar — az baazi hazf shod`,
+    `<@${who}>`,
+    `**Dalil-e akhar:** ${reason}`,
+    '',
+    ...had.map((w, k) => `-# ekhtar ${num(k + 1)}: ${w.reason}`),
+    '-# Naghshesh lo nemire.',
+  ].join('\n'), C.mafia);
+
+  await i.reply({
+    content: `⛔ ${nameOf(who)} ba ${WARN_LIMIT} ekhtar hazf shod.`,
+    flags: MessageFlags.Ephemeral,
+  });
 }
 
 /* ══ substitution ══════════════════════════════════════════════════ */
@@ -1973,6 +2139,8 @@ export async function scumComponent(
   if (step === 'defence' && i.isButton()) { await advanceDefence(i, ev); return; }
   if (step === 'win' && i.isButton()) { await declareWin(i, ev, arg === 'mafia' ? 'mafia' : 'shahr'); return; }
   if (step === 'clear' && i.isButton()) { await clearPending(i, ev); return; }
+  if (step === 'warn' && i.isButton()) { await warnPrompt(i, ev); return; }
+  if (step === 'warnwho' && i.isStringSelectMenu()) { await warnReason(i, ev); return; }
   if (step === 'swap' && i.isButton()) { await swapPrompt(i, ev); return; }
   if (step === 'swapold' && i.isStringSelectMenu()) { await swapPickNew(i, ev, i.values[0]!); return; }
   if (step === 'swapnew' && i.isUserSelectMenu() && arg) { await swapDo(i, ev, arg, i.values[0]!); return; }

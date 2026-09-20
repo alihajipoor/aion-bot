@@ -27,7 +27,7 @@ import { startMafia, endMafia, mafiaComponent, mafiaModal, setEventFinisher,
   // Aliased: wizard.ts exports its own configOf, which reads a Draft.
   configOf as mafiaConfigOf } from './mafia.js';
 import {
-  SCUM_ID, isScum, startScum, endScum, scumComponent, setScumFinisher,
+  SCUM_ID, isScum, startScum, endScum, scumComponent, scumModal, setScumFinisher,
   SCUM_DEAL_ID, scumDealComponent, dealScum,
   SCUM_ROLES, distribution as scumDistribution,
 } from './scum/index.js';
@@ -1061,6 +1061,7 @@ export function installEvents(client: AionClient): void {
       if (i.isModalSubmit() && i.customId.startsWith(`${SOALI_ID}|`)) { await soaliModal(i); return; }
       if (i.isButton() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaComponent(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaComponent(i); return; }
+      if (i.isModalSubmit() && i.customId.startsWith(`${SCUM_ID}|`)) { await scumModal(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${MAFIA_ID}|`)) { await mafiaModal(i); return; }
       if (i.isButton() && i.customId.startsWith(`${SCUM_ID}|`)) { await scumComponent(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${SCUM_ID}|`)) { await scumComponent(i); return; }

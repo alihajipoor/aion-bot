@@ -16,6 +16,7 @@
  *
  *   SCUM_ID                      custom-id prefix — route `sc|…` here
  *   scumComponent(i)             every button and select in that namespace
+ *   scumModal(i)                 modal submits — a different interaction kind
  *   scumConsole(ev, note?)       God's ephemeral panel, for the panel button
  *   startScum(guild, ev)         seed state on an already-dealt roster
  *   endScum(guild, ev)           teardown: release the voice holds
@@ -26,6 +27,7 @@
 export {
   SCUM_ID,
   scumComponent,
+  scumModal,
   scumConsole,
   startScum,
   endScum,
