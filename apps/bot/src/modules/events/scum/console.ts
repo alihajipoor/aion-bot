@@ -25,7 +25,7 @@ import {
   type ModalSubmitInteraction,
   type MessageComponentInteraction, type Guild, type GuildMember, type TextChannel,
 } from 'discord.js';
-import { isolate, num } from '../../../lib/text.js';
+import { isolate, num, asciiFold } from '../../../lib/text.js';
 import { hasRole } from '../../../lib/roles.js';
 import { logger } from '../../../lib/log.js';
 import {
@@ -1485,14 +1485,27 @@ export async function scumModal(i: ModalSubmitInteraction): Promise<void> {
  * The shortlist a substitute is nearly always drawn from: somebody in the room,
  * listening, who can take a chair without being explained the game first.
  */
-async function voiceCandidates(
+function voiceCandidates(
   guild: Guild | null, ev: EventRow, roster: readonly PlayerRow[],
-): Promise<GuildMember[]> {
-  if (!guild || !ev.voiceChannelId) return [];
-  const vc = guild.channels.cache.get(ev.voiceChannelId);
-  if (!vc?.isVoiceBased()) return [];
+): GuildMember[] {
+  if (!guild) return [];
   const playing = new Set(roster.map(p => p.userId));
-  return [...vc.members.values()].filter(m => !m.user.bot && !playing.has(m.id));
+  const out = new Map<string, GuildMember>();
+
+  // The game's own room first, then the hall people wait in. Both are places
+  // somebody has to have walked into, which is the whole point.
+  const rooms = [
+    ev.voiceChannelId ? guild.channels.cache.get(ev.voiceChannelId) : undefined,
+    [...guild.channels.cache.values()].find(c =>
+      c.isVoiceBased() && /event[-\s]?hall/i.test(asciiFold(c.name))),
+  ];
+  for (const room of rooms) {
+    if (!room?.isVoiceBased()) continue;
+    for (const m of room.members.values()) {
+      if (!m.user.bot && !playing.has(m.id)) out.set(m.id, m);
+    }
+  }
+  return [...out.values()];
 }
 
 /* ══ warnings ══════════════════════════════════════════════════════ */
@@ -1659,33 +1672,30 @@ async function swapPickNew(
    * playing get their own list above it. That is who a substitute nearly always
    * is. The picker stays underneath for everybody else, and it searches.
    */
-  const inVoice = await voiceCandidates(i.guild, ev, roster);
-  const rows: ActionRowBuilder<StringSelectMenuBuilder | UserSelectMenuBuilder>[] = [];
-  if (inVoice.length) {
-    rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-      new StringSelectMenuBuilder().setCustomId(enc('swapnew', ev.id, outgoing))
-        .setPlaceholder(`Too voice hastan (${num(inVoice.length)})`)
-        .addOptions(inVoice.slice(0, 25).map(m => new StringSelectMenuOptionBuilder()
-          .setLabel(m.displayName.slice(0, 60))
-          .setDescription(m.user.username.slice(0, 90))
-          .setValue(m.id)))) as ActionRowBuilder<StringSelectMenuBuilder | UserSelectMenuBuilder>);
-  }
-  rows.push(new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
-    new UserSelectMenuBuilder().setCustomId(enc('swapnew', ev.id, outgoing))
-      .setPlaceholder('Ya esmesh ro benevis o search kon')) as ActionRowBuilder<StringSelectMenuBuilder | UserSelectMenuBuilder>);
+  const here = voiceCandidates(i.guild, ev, roster);
 
-  await i.update({
-    components: [new ContainerBuilder().setAccentColor(C.day)
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        `## 🔁 Jaygozini\n**${isolate(nameOf(outgoing))}** dare mire.\nHala bego ki jash mishine.`))
-      .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        inVoice.length
-          ? '-# Naghsh, sandali va zende/morde hamoon mimoone — faghat adamesh avaz mishe.'
-          : '-# Hich kas too voice nist ke too baazi nabashe — esmesh ro benevis.'))
-      .addActionRowComponents(...rows)],
-    ...v2eph,
-  });
+  const box = new ContainerBuilder().setAccentColor(C.day)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      `## 🔁 Jaygozini\n**${isolate(nameOf(outgoing))}** dare mire.\nHala bego ki jash mishine.`))
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+  if (!here.length) {
+    box.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      '### 😐 Kesi nist ke betoone jaygozin beshe\n'
+      + 'Har ki mikhad biad, aval bayad biad too voice — baad in dokme ro bezan.'));
+  } else {
+    box.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      '-# Naghsh, sandali va zende/morde hamoon mimoone — faghat adamesh avaz mishe.'))
+      .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder().setCustomId(enc('swapnew', ev.id, outgoing))
+          .setPlaceholder(`Ki jash mishine? (${num(here.length)} nafar)`)
+          .addOptions(here.slice(0, 25).map(m => new StringSelectMenuOptionBuilder()
+            .setLabel(m.displayName.slice(0, 60))
+            .setDescription(m.user.username.slice(0, 90))
+            .setValue(m.id)))));
+  }
+
+  await i.update({ components: [box], ...v2eph });
 }
 
 /**
@@ -2250,7 +2260,7 @@ export async function scumComponent(
    * in this game, because the ordinary use is handing a stranded seat back to
    * the human who was sitting in it.
    */
-  if (step === 'addpick' && i.isUserSelectMenu()) {
+  if (step === 'addpick' && (i.isUserSelectMenu() || i.isStringSelectMenu())) {
     const who = i.values[0]!;
     const roster = await players(ev.id);
     // The roles this game actually dealt. Offering the full catalogue would let
@@ -2315,11 +2325,33 @@ export async function scumComponent(
   }
 
   if (step === 'addp' && i.isButton()) {
+    /*
+     * Only people who are actually here.
+     *
+     * This used to be Discord's user picker, which opens every member of the
+     * server — two hundred and sixty names, almost none of whom are playing
+     * tonight, and any one of them a mis-tap away from being dealt into a live
+     * game. Whoever is in the game's room or the hall is the real candidate
+     * list, and it cannot contain somebody who is not there.
+     */
+    const roster = await players(ev.id);
+    const here = voiceCandidates(i.guild, ev, roster);
+    if (!here.length) {
+      await i.reply({
+        content: 'Kesi too voice nist ke too baazi nabashe. Aval biad too voice.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
     await i.reply({
       content: 'Ki ro ezafe konam?',
-      components: [new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
-        new UserSelectMenuBuilder().setCustomId(enc('addpick', ev.id))
-          .setPlaceholder('Bazikon'))],
+      components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder().setCustomId(enc('addpick', ev.id))
+          .setPlaceholder(`${here.length} nafar too voice`)
+          .addOptions(here.slice(0, 25).map(m => new StringSelectMenuOptionBuilder()
+            .setLabel(m.displayName.slice(0, 60))
+            .setDescription(m.user.username.slice(0, 90))
+            .setValue(m.id))))],
       flags: MessageFlags.Ephemeral,
     });
     return;

@@ -2,9 +2,9 @@ import {
   ChannelType, Events, MessageFlags, PermissionFlagsBits,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize,
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder,
-  TextInputStyle, UserSelectMenuBuilder, MediaGalleryBuilder,
+  TextInputStyle, UserSelectMenuBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MediaGalleryBuilder,
   MediaGalleryItemBuilder, AttachmentBuilder,
-  type ButtonInteraction, type ModalSubmitInteraction, type UserSelectMenuInteraction,
+  type ButtonInteraction, type ModalSubmitInteraction, type UserSelectMenuInteraction, type StringSelectMenuInteraction,
   type Guild, type GuildMember, type VoiceChannel, type VoiceState, type MessageCreateOptions,
 } from 'discord.js';
 import { eq } from 'drizzle-orm';
@@ -295,15 +295,36 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
       await i.reply({ content: !hidden ? 'Room makhfi shod 👻' : 'Room peyda shod 👀', flags: MessageFlags.Ephemeral });
       return;
     }
-    case 'kick':
+    case 'kick': {
+      /*
+       * Only the people actually in the room.
+       *
+       * This was Discord's user picker, which lists every member of the server
+       * — so the menu for throwing somebody out of a room of four offered two
+       * hundred and sixty names, none of the other 256 of whom could be thrown
+       * out of anything. The occupants are the only valid answers, so they are
+       * the only ones offered.
+       */
+      const inside = [...channel.members.values()]
+        .filter(m => !m.user.bot && m.id !== member.id);
+      if (!inside.length) {
+        await i.reply({ content: 'Kasi joz khodet too room nist.', flags: MessageFlags.Ephemeral });
+        return;
+      }
       await i.reply({
         components: [new ContainerBuilder().setAccentColor(0xed4245)
           .addTextDisplayComponents(new TextDisplayBuilder().setContent('Ki ro bendazam biroon?'))
-          .addActionRowComponents(new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
-            new UserSelectMenuBuilder().setCustomId(enc('kickdo')).setPlaceholder('Entekhab kon')))],
+          .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+            new StringSelectMenuBuilder().setCustomId(enc('kickdo'))
+              .setPlaceholder(`${inside.length} nafar too room`)
+              .addOptions(inside.slice(0, 25).map(m => new StringSelectMenuOptionBuilder()
+                .setLabel(m.displayName.slice(0, 60))
+                .setDescription(m.user.username.slice(0, 90))
+                .setValue(m.id)))))],
         flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
       });
       return;
+    }
   }
 }
 
@@ -340,7 +361,9 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
   }
 }
 
-export async function handleUserSelect(i: UserSelectMenuInteraction): Promise<void> {
+export async function handleUserSelect(
+  i: UserSelectMenuInteraction | StringSelectMenuInteraction,
+): Promise<void> {
   const [action] = dec(i.customId);
   if (action !== 'kickdo') return;
   const channel = resolveRoom(i.guild!, i.user.id, i.channelId);

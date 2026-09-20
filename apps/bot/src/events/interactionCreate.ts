@@ -38,6 +38,7 @@ const handler: EventHandler = {
       if (i.isButton() && i.customId.startsWith(`${TV}|`))        { await tvButton(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${TV}|`))   { await tvModal(i); return; }
       if (i.isUserSelectMenu() && i.customId.startsWith(`${TV}|`)) { await tvSelect(i); return; }
+      if (i.isStringSelectMenu() && i.customId.startsWith(`${TV}|`)) { await tvSelect(i); return; }
       if (i.isButton() && i.customId.startsWith(`${VF}|`))        { await vfButton(i); return; }
       if (i.isStringSelectMenu() && i.customId.startsWith(`${VF}|`)) { await vfSelect(i); return; }
       if (i.isModalSubmit() && i.customId.startsWith(`${VF}|`))   { await vfModal(i); return; }
