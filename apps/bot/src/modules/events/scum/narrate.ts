@@ -143,7 +143,8 @@ export function godRecap(
     const who = `${entry.role ? isolate(fa(entry.role)) : '?'} ${isolate(nameOf(entry.actor))}`;
     const at = entry.target ? ` → ${isolate(nameOf(entry.target))}` : '';
     const why = entry.outcome === 'ok' ? '✅'
-      : entry.outcome === 'drunk' ? '🍷 mast bood, kar nakard'
+      : entry.outcome === 'drunk' ? '🍷 mast bood, tir khata raft'
+      : entry.outcome === 'drunk-self' ? '🍷💀 mast bood — tir khordesh be khodesh'
       : entry.outcome === 'spent' ? '🚫 chizi barash namoonde bood'
       : entry.outcome === 'bad-target' ? '⚠️ entekhab-e ghalat'
       : entry.outcome === 'saved' ? '🛡 zad vali doctor resid'

@@ -151,6 +151,14 @@ export type Outcome =
   | 'ok'
   /** Saghi took the ability out for the night. */
   | 'drunk'
+  /**
+   * The drunk Sniper, killed by his own shot.
+   *
+   * Separate from 'drunk' because it is not the same event: the Don drunk
+   * wastes a bullet, the Sniper drunk wastes a bullet and himself, and a
+   * narrator reading one line must not have to remember which.
+   */
+  | 'drunk-self'
   /** A shot that fired and found nothing: the doctor was there. */
   | 'saved'
   /** A shot that fired at Rooyintan, sober. */
@@ -297,7 +305,7 @@ export function resolveNight(state: NightState, actions: NightAction[]): NightRe
     log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'ok' });
   }
 
-  // 4. Shots: Don, then Sniper.
+  // 4. Shots: Sniper, then Don.
   const deaths: string[] = [];
   const shoot = (a: Act) => {
     if (a.def.limits.total !== null) {
@@ -310,6 +318,21 @@ export function resolveNight(state: NightState, actions: NightAction[]): NightRe
     // poured a drink costs the shooter the round, not merely the night.
     // Checked after the bullet is counted, because the firing is what happens.
     if (drunk.has(a.id)) {
+      /*
+       * Drunk, the Sniper shoots himself; the Don merely misses.
+       *
+       * Both spend the bullet — the firing is what happens, and it is counted
+       * above before this runs. What differs is where it lands, and only the
+       * Sniper pays with his life for being poured a drink.
+       *
+       * A save still saves him. The doctor covered that person tonight, and a
+       * self-inflicted death is the one he is standing in front of.
+       */
+      if (a.role === 'sniper' && !saved.has(a.id)) {
+        if (!deaths.includes(a.id)) deaths.push(a.id);
+        log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'drunk-self' });
+        return;
+      }
       log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'drunk' });
       return;
     }
@@ -324,8 +347,8 @@ export function resolveNight(state: NightState, actions: NightAction[]): NightRe
     if (!deaths.includes(a.target)) deaths.push(a.target);
     log.push({ actor: a.id, role: a.role, target: a.target, outcome: 'ok' });
   };
-  for (const a of of('don')) shoot(a);
   for (const a of of('sniper')) shoot(a);
+  for (const a of of('don')) shoot(a);
 
   // 5. Detective. A side, never a role.
   let detective: DetectiveAnswer | null = null;

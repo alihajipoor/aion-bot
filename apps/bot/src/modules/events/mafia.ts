@@ -19,7 +19,12 @@ import {
 } from './games.js';
 import { hasRole } from '../../lib/roles.js';
 import { postMafiaHistory } from '../mafiaHistory.js';
-import { SETUP_ID, setupButton, setupComponent, setTextRuleApplier } from './setupPanel.js';
+import {
+  SETUP_ID, setupButton, setupComponent, setTextRuleApplier, setLimitApplier,
+} from './setupPanel.js';
+// Counter maths only — no cycle: scum/console imports mafia.ts for text rules,
+// and these two are pure functions that touch neither.
+import { rebalanceUses, roleForBudget } from './scum/console.js';
 
 const log = logger('mafia');
 /**
@@ -144,6 +149,23 @@ export async function applyTextRules(
 // The settings panel re-applies the live phase's rule the moment God changes
 // it. It cannot import this function back without a cycle, so it is handed in.
 setTextRuleApplier(applyTextRules);
+
+/*
+ * A budget change has to reach the counters the game is already running on.
+ *
+ * Lives here rather than in scum/ because setupPanel is shared by both modes
+ * and mafia.ts is already the file that hands it its appliers. The Persian
+ * mode keeps no per-player counter of this kind, so there is nothing to move
+ * for it and the helper simply finds no rows.
+ */
+setLimitApplier(async (ev, field, before, after) => {
+  const role = roleForBudget(field);
+  if (!role) return;
+  const roster = await players(ev.id);
+  const next = rebalanceUses(
+    (ev.state as { uses?: Record<string, number> }).uses, roster, role, before, after);
+  if (next) await mergeState(ev.id, { uses: next });
+});
 
 /**
  * Strips reactions a phase does not allow.

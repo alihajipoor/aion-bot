@@ -116,6 +116,22 @@ type TextRuleApplier = (guild: Guild, ev: EventRow, phase: Phase) => Promise<unk
 let applyText: TextRuleApplier | null = null;
 export const setTextRuleApplier = (fn: TextRuleApplier): void => { applyText = fn; };
 
+/**
+ * The same problem for a counter as for a text rule: "applies immediately" has
+ * to be true after the game has started, not only before it.
+ *
+ * The counters are seeded once, when the game starts, and from then on the
+ * stored remainder is what the console reads — so setting the Sniper to one
+ * bullet mid-game changed a number nothing looked at, and the console went on
+ * saying two. God set it, watched it not happen, and reasonably concluded the
+ * setting was broken.
+ */
+type LimitApplier = (
+  ev: EventRow, field: BudgetField, before: number, after: number,
+) => Promise<void>;
+let applyLimit: LimitApplier | null = null;
+export const setLimitApplier = (fn: LimitApplier): void => { applyLimit = fn; };
+
 /** Re-applies a phase's rule if the game is standing in that phase right now. */
 async function reapply(guild: Guild | null, ev: EventRow, phase: Phase): Promise<void> {
   if (!guild || !applyText) return;
@@ -651,7 +667,12 @@ export async function setupComponent(
         arg === 'sniperBullets' ? { sniperBullets: n }
         : arg === 'shahrdarVetoes' ? { shahrdarVetoes: n }
         : { kalantarGuns: n };
-      await i.update(screen(await write(ev, patch), 'budget'));
+      // Read before writing: the live counter moves by the difference, so the
+      // old number is needed and is gone a line later.
+      const before = panelConfig(ev)[arg];
+      const after = await write(ev, patch);
+      await applyLimit?.(after, arg, Number(before), n).catch(() => {});
+      await i.update(screen((await getEvent(ev.id)) ?? after, 'budget'));
       return true;
     }
     return unknown(i, ev);

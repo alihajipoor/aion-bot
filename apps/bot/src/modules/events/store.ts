@@ -82,6 +82,27 @@ export async function assignRole(
     .where(and(eq(eventPlayers.eventId, eventId), eq(eventPlayers.userId, userId)));
 }
 
+/**
+ * Hands one player's seat to somebody else.
+ *
+ * The row is rewritten in place rather than deleted and rebuilt, so the role,
+ * the side, the seat number and whether they are still alive all carry over
+ * untouched. A remove-then-add would drop every one of them on the floor and
+ * hand the newcomer a seat at the end of the table with no card in it.
+ *
+ * Returns false when the outgoing player is not on this roster, so the caller
+ * can say so rather than silently doing nothing.
+ */
+export async function replacePlayer(
+  eventId: number, oldUserId: string, newUserId: string, newTag: string,
+): Promise<boolean> {
+  const res = await getDb().update(eventPlayers)
+    .set({ userId: newUserId, userTag: newTag })
+    .where(and(eq(eventPlayers.eventId, eventId), eq(eventPlayers.userId, oldUserId)))
+    .returning({ id: eventPlayers.id });
+  return res.length > 0;
+}
+
 export async function killPlayer(eventId: number, userId: string): Promise<void> {
   await getDb().update(eventPlayers).set({ alive: false, diedAt: new Date() })
     .where(and(eq(eventPlayers.eventId, eventId), eq(eventPlayers.userId, userId)));

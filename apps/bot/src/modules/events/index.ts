@@ -736,23 +736,31 @@ async function start(i: ButtonInteraction, ev: EventRow): Promise<void> {
 async function doStart(guild: Guild, ev: EventRow): Promise<void> {
   const roster = await players(ev.id);
 
-  // Reuse the permanent room when it is free; only make one when it is not.
+  /*
+   * Every game gets its own room, always.
+   *
+   * This used to reuse EVENT HALL whenever it was free and only build a room
+   * when it was not — which meant that almost always the game ran in the hall,
+   * nothing was created, and so at the end there was nothing to delete and
+   * nowhere to move anyone back to. The hall is the place people return to when
+   * the game is over; it cannot also be the place the game happens.
+   *
+   * The hall stays as a fallback for the one case worth surviving: if Discord
+   * refuses to make the channel, a game in the hall beats a game with no voice.
+   */
   const hall = hallChannel(guild);
-  const busy = (await liveEvents(guild.id)).some(e => e.id !== ev.id && e.status === 'running' && e.voiceChannelId === hall?.id);
-
   const owned: string[] = [];
-  let voiceId = hall?.id ?? null;
   let textId = chatChannel(guild)?.id ?? null;
 
-  if (!hall || busy) {
-    const cat = quidditchCat(guild);
-    const vc = await guild.channels.create({
-      name: `🎲 ─ ${ev.title}`.slice(0, 100),
-      type: ChannelType.GuildVoice, parent: cat?.id,
-      reason: `AION event #${ev.id}`,
-    }).catch(() => null);
-    if (vc) { voiceId = vc.id; owned.push(vc.id); }
-  }
+  const cat = quidditchCat(guild);
+  const vc = await guild.channels.create({
+    name: `🎲 ─ ${ev.title}`.slice(0, 100),
+    type: ChannelType.GuildVoice, parent: cat?.id,
+    reason: `AION event #${ev.id}`,
+  }).catch((e: Error) => { log.warn(`event voice channel failed: ${e.message}`); return null; });
+
+  let voiceId = vc?.id ?? hall?.id ?? null;
+  if (vc) owned.push(vc.id);
 
   await patchEvent(ev.id, {
     status: 'running', startedAt: new Date(),

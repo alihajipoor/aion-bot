@@ -29,11 +29,12 @@ import { logger } from '../../../lib/log.js';
 import {
   getEvent, mergeState, players, killPlayer, revivePlayer,
   type EventRow, type PlayerRow,
-  addPlayer, assignRole,
+  addPlayer, assignRole, replacePlayer,
 } from '../store.js';
 import { applyTextRules, configOf, gameHeld } from '../mafia.js';
 // setupPanel imports games/store/scum-rules and never this file, so no cycle.
 import { setupButton } from '../setupPanel.js';
+import { resealEventAccess } from '../lockout.js';
 import type { Phase } from '../games.js';
 import {
   SCUM_ROLES, roleOf, resolveNight, resolveDayVote, terroristTriggers, fireGun,
@@ -164,6 +165,110 @@ export function limitFor(role: RoleKey, cfg: ScumLimits = {}): number | null {
     : role === 'kalantar' ? cfg.kalantarGuns
     : undefined;
   return set === undefined ? fallback : Math.max(0, set);
+}
+
+/**
+ * Moves a live counter when God changes the budget behind it.
+ *
+ * By the difference, not to the new total: a Sniper who has already fired one
+ * of two and is cut to one bullet has none left, not one. Spent is spent. And
+ * it never hands back more than the new ceiling.
+ *
+ * Before the game starts there is nothing to move — `seedUses` has not run, and
+ * it will read the new config when it does.
+ */
+export function rebalanceUses(
+  uses: Record<string, number> | undefined,
+  roster: readonly Seat[],
+  role: RoleKey,
+  before: number,
+  after: number,
+): Record<string, number> | null {
+  if (!uses || before === after || !Number.isFinite(before) || !Number.isFinite(after)) return null;
+  const next = { ...uses };
+  let touched = false;
+  for (const p of roster) {
+    if (p.role !== role) continue;
+    const left = next[p.userId];
+    if (left === undefined) continue;
+    next[p.userId] = Math.max(0, Math.min(after, left + (after - before)));
+    touched = true;
+  }
+  return touched ? next : null;
+}
+
+/** Which role a budget field counts for. */
+export const roleForBudget = (field: string): RoleKey | null =>
+  field === 'sniperBullets' ? 'sniper'
+  : field === 'shahrdarVetoes' ? 'shahrdar'
+  : field === 'kalantarGuns' ? 'kalantar'
+  : null;
+
+/**
+ * Rewrites every trace of one player id as another, across the whole state.
+ *
+ * A substitution is not a new signup: the seat, the role and everything the
+ * game already knows about that chair has to follow the person sitting in it.
+ * The pieces are scattered — counters, tonight's picks, a gun in someone's
+ * hand, who is silenced, who the Detective asked, who Natasha may not repeat,
+ * votes cast, names on the block, whoever is mid-defence, a pending veto, the
+ * MVP — and missing one is how a substitute ends up with no bullets, or a dead
+ * man keeps a vote.
+ *
+ * Written as one pass over the known keys rather than a blind JSON find and
+ * replace, because a user id is a plain number in a string and blind
+ * replacement would also rewrite a message id that happened to contain it.
+ */
+export function swapPlayerInState(
+  st: ScumState, from: string, to: string,
+): Partial<ScumState> {
+  const sub = (id: string | null | undefined) => (id === from ? to : id);
+  const keys = <T>(m: Record<string, T> | undefined): Record<string, T> | undefined => {
+    if (!m || !(from in m)) return m;
+    const out: Record<string, T> = {};
+    for (const [k, v] of Object.entries(m)) out[k === from ? to : k] = v;
+    return out;
+  };
+
+  const patch: Partial<ScumState> = {
+    uses: keys(st.uses),
+    gunSince: keys(st.gunSince),
+    lastSilenceTarget: sub(st.lastSilenceTarget) ?? null,
+    lastAsked: sub(st.lastAsked) ?? null,
+    silenced: sub(st.silenced) ?? null,
+    nominees: st.nominees?.map(id => sub(id) as string),
+    mvpId: st.mvpId === from ? to : st.mvpId,
+  };
+
+  // Night picks are keyed by actor and also point at a target.
+  if (st.nightPicks) {
+    const picks: Record<string, ScumPick> = {};
+    for (const [k, v] of Object.entries(st.nightPicks)) {
+      picks[k === from ? to : k] = { ...v, target: sub(v.target) as string };
+    }
+    patch.nightPicks = picks;
+  }
+  // Votes are keyed by voter and their value is who they voted for.
+  if (st.votes) {
+    const votes: Record<string, string> = {};
+    for (const [k, v] of Object.entries(st.votes)) votes[k === from ? to : k] = sub(v) as string;
+    patch.votes = votes;
+  }
+  if (st.gunHolders) {
+    patch.gunHolders = st.gunHolders.map(g => ({ ...g, userId: sub(g.userId) as string }));
+  }
+  if (st.defence) {
+    patch.defence = { ...st.defence, order: st.defence.order.map(id => sub(id) as string) };
+  }
+  if (st.pending) {
+    const p = st.pending;
+    patch.pending = p.kind === 'confirm'
+      ? { ...p, target: sub(p.target) as string }
+      : p.kind === 'veto'
+        ? { ...p, actor: sub(p.actor) as string, target: sub(p.target) as string }
+        : { ...p, actor: sub(p.actor) as string };
+  }
+  return patch;
 }
 
 /** The opening counter map for a dealt roster. */
@@ -725,6 +830,8 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
         .setEmoji('🟢').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(enc('addp', ev.id)).setLabel('Ezafe kon')
         .setEmoji('➕').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(enc('swap', ev.id)).setLabel('Jaygozin')
+        .setEmoji('🔁').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(enc('mvp', ev.id)).setLabel('MVP')
         .setEmoji('⭐').setStyle(ButtonStyle.Secondary),
     ));
@@ -799,6 +906,36 @@ function nightSelect(
  * have DMs closed, so God is told exactly who could not be reached and asks
  * them out loud instead.
  */
+/**
+ * Asks one actor for their night choice, out of band.
+ *
+ * `promptNightActions` goes round the whole table at dusk; this is for the
+ * person who was not at the table when dusk happened — a substitute taking
+ * over a role that acts. Same menu, same rules, so a chair handed over at
+ * midnight still gets its power that night rather than the next one.
+ */
+async function promptOneActor(guild: Guild, ev: EventRow, userId: string): Promise<boolean> {
+  const roster = await players(ev.id);
+  const st = stateOf(ev);
+  const me = roster.find(p => p.userId === userId);
+  const a = nightActors(roster, st).find(x => x.userId === userId);
+  if (!me || !a) return false;
+
+  const nameOf = namer(guild, roster);
+  const ask = NIGHT_ASK[a.role];
+  const body = [
+    `## 🌙 Shab ${num(st.night ?? 1)} — ${ask.label}`,
+    ask.prompt,
+    '',
+    `-# Naghshet: **${isolate(SCUM_ROLES[a.role].fa)}** · ta sobh mitooni nazaret ro avaz koni.`,
+    a.left !== null ? `-# **${num(a.left)}** bar dige dari.` : null,
+  ].filter(Boolean).join('\n');
+
+  const picked = st.nightPicks?.[userId]?.target ?? null;
+  return dm(guild, userId, body, C.night,
+    { select: nightSelect(ev, me, a.role, roster, st, nameOf, picked) });
+}
+
 async function promptNightActions(guild: Guild, ev: EventRow): Promise<{ ok: number; failed: string[] }> {
   const roster = await players(ev.id);
   const st = stateOf(ev);
@@ -1234,6 +1371,141 @@ async function endVote(
     `${nameOf(outcome.eliminated)} bishtarin ray ro avord — taid kon ya avaz kon.`));
 }
 
+/* ══ substitution ══════════════════════════════════════════════════ */
+
+/**
+ * Somebody has to leave and somebody else will take their chair.
+ *
+ * Two steps on purpose. One combined screen would mean choosing the newcomer
+ * before naming who they replace, and a mis-set pair here hands a stranger a
+ * live role in a running game.
+ */
+async function swapPrompt(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  const roster = await players(ev.id);
+  const nameOf = namer(i.guild, roster);
+  if (!roster.length) {
+    await i.reply({ content: 'Kesi too baazi nist.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+  await i.reply({
+    components: [new ContainerBuilder().setAccentColor(C.day)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        '## 🔁 Jaygozini\nAval bego ki dare mire.'))
+      .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder().setCustomId(enc('swapold', ev.id))
+          .setPlaceholder('Ki dare mire?')
+          .addOptions(roster.slice(0, 25).map(p => new StringSelectMenuOptionBuilder()
+            .setLabel(`${p.seat ?? '?'} · ${(p.userTag ?? nameOf(p.userId)).slice(0, 60)}`)
+            .setDescription(p.alive ? 'zende' : 'hazf shode')
+            .setValue(p.userId)))))],
+    ...v2eph,
+  });
+}
+
+/** Step two: who is taking the chair. */
+async function swapPickNew(
+  i: StringSelectMenuInteraction, ev: EventRow, outgoing: string,
+): Promise<void> {
+  const roster = await players(ev.id);
+  const nameOf = namer(i.guild, roster);
+  await i.update({
+    components: [new ContainerBuilder().setAccentColor(C.day)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## 🔁 Jaygozini\n**${isolate(nameOf(outgoing))}** dare mire.\nHala bego ki jash mishine.`))
+      .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        '-# Naghsh, sandali va zende/morde hamoon mimoone — faghat adamesh avaz mishe.'))
+      .addActionRowComponents(new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
+        new UserSelectMenuBuilder().setCustomId(enc('swapnew', ev.id, outgoing))
+          .setPlaceholder('Ki jash mishine?')))],
+    ...v2eph,
+  });
+}
+
+/**
+ * Makes the swap, everywhere it has to happen.
+ *
+ * The database row keeps the card and the chair; `swapPlayerInState` carries
+ * the rest of the game's memory of that person; and the mafia room's door has
+ * to be re-cut by hand, because a permission overwrite is attached to an id
+ * and knows nothing about substitutions.
+ */
+async function swapDo(
+  i: UserSelectMenuInteraction, ev: EventRow, outgoing: string, incoming: string,
+): Promise<void> {
+  const guild = i.guild!;
+  const roster = await players(ev.id);
+  const seat = roster.find(p => p.userId === outgoing);
+  if (!seat) { await i.update({ content: 'Oon nafar too baazi nist.', components: [], ...v2eph }); return; }
+  if (roster.some(p => p.userId === incoming)) {
+    await i.update({
+      components: [new ContainerBuilder().setAccentColor(C.mafia)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          '## ⚠️ In nafar khodesh too baazi-ye\nYe nafare dige entekhab kon.'))],
+      ...v2eph,
+    });
+    return;
+  }
+
+  const member = await guild.members.fetch(incoming).catch(() => null);
+  if (!member) { await i.update({ content: 'Oon user peyda nashod.', components: [], ...v2eph }); return; }
+
+  const ok = await replacePlayer(ev.id, outgoing, incoming, member.user.tag);
+  if (!ok) { await i.update({ content: 'Nashod avaz konam.', components: [], ...v2eph }); return; }
+  await mergeState(ev.id, swapPlayerInState(stateOf(ev), outgoing, incoming));
+
+  // The mafia room is cut per id. Take the old one off and let the new one in,
+  // but only for a seat that is actually on that team.
+  const def = roleOf(seat.role);
+  const room = [...guild.channels.cache.values()]
+    .find(c => c.isTextBased() && new RegExp(`scum-${ev.id}$`).test(c.name ?? ''));
+  if (room && !room.isDMBased() && 'permissionOverwrites' in room) {
+    await room.permissionOverwrites.delete(outgoing, 'AION: left the game').catch(() => {});
+    if (def?.side === 'mafia') {
+      await room.permissionOverwrites.edit(incoming, {
+        ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
+      }, { reason: 'AION: took over a mafia seat' }).catch(() => {});
+    }
+  }
+
+  const fresh = (await getEvent(ev.id))!;
+  // The roster changed, so who may read the console changed with it.
+  await resealEventAccess(guild, fresh, `AION scum #${ev.id} substitution`);
+
+  const sent = def ? await dm(guild, incoming,
+    `## ${def.side === 'mafia' ? '🔴' : def.side === 'gray' ? '⚪' : '🟢'} ${isolate(def.fa)}`
+    + `\nJaye ye nafare dige oomadi — sandali **${num(seat.seat ?? 0)}**.`
+    + (NIGHT_ASK[def.key]?.prompt ? `\n${NIGHT_ASK[def.key].prompt}` : '')
+    + (def.side === 'mafia' && room ? `\n-# Otagh-e mafia: <#${room.id}>` : '\n-# Be hich kas naghshet ro nagoo.'),
+    def.side === 'mafia' ? C.mafia : C.shahr) : false;
+
+  /*
+   * If it is already night, the prompts went out before this person existed.
+   *
+   * Taking over a chair means taking over its power tonight, not from tomorrow
+   * — so anyone stepping into a role that acts gets asked straight away. The
+   * outgoing player's pick, if they made one, already moved across with the
+   * state, so this is a chance to change it rather than a second action.
+   */
+  let asked = false;
+  if (stateOf(fresh).phase === 'night' && def?.night) {
+    asked = await promptOneActor(guild, fresh, incoming);
+  }
+
+  await i.update({
+    components: [new ContainerBuilder().setAccentColor(C.day)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## ✅ Avaz shod\n<@${outgoing}> → <@${incoming}>`
+        + (asked ? '\n-# Shab-e; prompt-e naghshesh ferestade shod.' : '')
+        + `\n-# Naghsh, sandali va vaziatesh dast nakhorde.`
+        + (sent ? '' : '\n⚠️ DM-esh baste-st — naghshesh ro dasti behesh begoo.')))],
+    ...v2eph,
+  });
+
+  await say(chatOf(fresh, guild),
+    `## 🔁 Jaygozini\n<@${incoming}> jaye <@${outgoing}> oomad — sandali ${num(seat.seat ?? 0)}.`, C.day);
+}
+
 /**
  * God signs the vote off, on the name the room chose or on another one.
  *
@@ -1627,6 +1899,9 @@ export async function scumComponent(
   if (step === 'defence' && i.isButton()) { await advanceDefence(i, ev); return; }
   if (step === 'win' && i.isButton()) { await declareWin(i, ev, arg === 'mafia' ? 'mafia' : 'shahr'); return; }
   if (step === 'clear' && i.isButton()) { await clearPending(i, ev); return; }
+  if (step === 'swap' && i.isButton()) { await swapPrompt(i, ev); return; }
+  if (step === 'swapold' && i.isStringSelectMenu()) { await swapPickNew(i, ev, i.values[0]!); return; }
+  if (step === 'swapnew' && i.isUserSelectMenu() && arg) { await swapDo(i, ev, arg, i.values[0]!); return; }
   if (step === 'elimok' && i.isButton()) { await signOffVote(i, ev, null); return; }
   if (step === 'elimnone' && i.isButton()) { await cancelVoteKill(i, ev); return; }
   if (step === 'elimpick' && i.isStringSelectMenu()) { await signOffVote(i, ev, i.values[0]!); return; }

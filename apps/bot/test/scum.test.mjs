@@ -186,13 +186,13 @@ test('one shot per night: a Sniper who changes his mind still fires once', () =>
   assert.equal(res.uses.sn, 1, 'and only one bullet is gone');
 });
 
-test('the Don and the Sniper on different targets both kill, Don first', () => {
+test('the Don and the Sniper on different targets both kill, Sniper first', () => {
   const res = resolveNight(
     { players: [P('dn', 'don'), P('sn', 'sniper', 2), P('a', 'shahrvand'), P('b', 'mafia_sade')] },
-    // Submitted Sniper-first on purpose: resolution order is not arrival order.
-    [act('sn', 'b'), act('dn', 'a')],
+    // Submitted Don-first on purpose: resolution order is not arrival order.
+    [act('dn', 'a'), act('sn', 'b')],
   );
-  assert.deepEqual(res.deaths, ['a', 'b']);
+  assert.deepEqual(res.deaths, ['b', 'a'], 'the Sniper resolves first');
 });
 
 test('two shooters on one target produce one death, not two', () => {
@@ -215,34 +215,59 @@ test('doctor save vs two shooters: the save blocks every shot, not just the firs
   assert.equal(res.uses.sn, 1, 'the bullet still left the barrel');
 });
 
-test('a drunk Sniper still fires — the shot goes wide and the bullet is gone', () => {
+test('a drunk Sniper shoots himself', () => {
+  // The rule that separates him from the Don: drunk, the Don misses, the
+  // Sniper's own bullet finds him.
   const res = resolveNight(
     { players: [P('sa', 'saghi'), P('sn', 'sniper', 2), P('v', 'shahrvand')] },
     [act('sa', 'sn'), act('sn', 'v')],
   );
-  assert.deepEqual(res.deaths, [], 'nobody falls');
-  assert.equal(outcome(res, 'sn'), 'drunk');
-  // A drink costs the shooter the round, not just the night.
+  assert.deepEqual(res.deaths, ['sn'], 'the shooter falls, not the target');
+  assert.equal(outcome(res, 'sn'), 'drunk-self');
+  // A drink costs the shooter the round as well as his life.
   assert.equal(res.uses.sn, 1, 'the bullet is spent anyway');
 });
 
-test('a drunk shot still misses a target the doctor never touched', () => {
-  // Nothing saved them and they are not Rooyintan — the shot simply went wide.
+test('a drunk Sniper the doctor covered survives his own shot', () => {
+  const res = resolveNight(
+    {
+      players: [
+        P('sa', 'saghi'), P('dr', 'doctor'), P('sn', 'sniper', 1), P('v', 'shahrvand'),
+      ],
+    },
+    [act('sa', 'sn'), act('dr', 'sn'), act('sn', 'v')],
+  );
+  assert.deepEqual(res.deaths, [], 'the doctor was standing in front of him');
+  assert.equal(res.uses.sn, 0, 'and that was their last one');
+});
+
+test('the drunk Sniper takes nobody with him', () => {
   const res = resolveNight(
     { players: [P('sa', 'saghi'), P('sn', 'sniper', 1), P('v', 'shahrvand')] },
     [act('sa', 'sn'), act('sn', 'v')],
   );
-  assert.deepEqual(res.deaths, []);
-  assert.equal(res.uses.sn, 0, 'and that was their last one');
+  assert.ok(!res.deaths.includes('v'), 'the man he aimed at is untouched');
 });
 
-test('a drunk Don shoots nobody', () => {
+test('a drunk Don shoots nobody — including himself', () => {
+  // The Sniper's rule is the Sniper's alone.
   const res = resolveNight(
     { players: [P('sa', 'saghi'), P('dn', 'don'), P('v', 'shahrvand')] },
     [act('sa', 'dn'), act('dn', 'v')],
   );
   assert.deepEqual(res.deaths, []);
   assert.equal(outcome(res, 'dn'), 'drunk');
+});
+
+test('shots resolve Sniper first, then Don', () => {
+  const res = resolveNight(
+    { players: [P('sn', 'sniper', 1), P('dn', 'don'), P('v', 'shahrvand'), P('m', 'mafia_sade')] },
+    [act('dn', 'v'), act('sn', 'm')],
+  );
+  // Both bullets land; the order is what the log and the recap read back.
+  const shots = res.log.filter(l => l.role === 'sniper' || l.role === 'don').map(l => l.role);
+  assert.deepEqual(shots, ['sniper', 'don']);
+  assert.deepEqual(res.deaths.sort(), ['m', 'v']);
 });
 
 /* ── night: Rooyintan ──────────────────────────────────────────── */
@@ -590,11 +615,12 @@ test('a full night resolves every role at once', () => {
       act('na', 'de'),   // Natasha silences the Detective
     ],
   );
-  assert.deepEqual(res.deaths, ['v']);
+  // The Don's target falls, and the drunk Sniper falls to his own bullet.
+  assert.deepEqual(res.deaths.sort(), ['sn', 'v']);
   assert.equal(res.silenced, 'de');
   assert.equal(res.detective.answer, 'shahr');
   assert.deepEqual(res.gunHolders, [], 'the man holding the gun is the man who died');
-  // The Sniper was drunk, fired anyway, and hit nothing — one of two bullets gone.
+  // Drunk, fired anyway — one of two bullets gone, and him with it.
   assert.equal(res.uses.sn, 1);
   assert.equal(res.uses.ka, 0);
 });

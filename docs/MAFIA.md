@@ -99,7 +99,7 @@ Order is not cosmetic — a different order produces different survivors.
 1. **Saghi** resolves first. Their target's ability does nothing tonight.
 2. **Kalantar** hands over the gun (no effect until it is fired).
 3. **Doctor** marks a save.
-4. **Shots** resolve: Don, then Sniper.
+4. **Shots** resolve: Sniper, then Don.
 5. **Detective** result is computed.
 6. **Natasha** silence is applied.
 
