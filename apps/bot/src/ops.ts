@@ -21,6 +21,8 @@ import { openGiveaway, scoreInvites, unattributedJoins } from './lib/giveaway.js
 import { REASON_TEXT, type Reason } from './lib/invites.js';
 import { postAnnouncement, awardPodium, refreshAnnouncement, refreshBoard } from './modules/giveawayPoster.js';
 import { recentGames, setGameMvp } from './lib/mafiaStats.js';
+import { liveEvents, players, replacePlayer, mergeState, getEvent } from './modules/events/store.js';
+import { swapPlayerInState, stateOf } from './modules/events/scum/console.js';
 import { refreshScoreboard } from './modules/mafiaScoreboard.js';
 
 const argv = process.argv.slice(2);
@@ -261,10 +263,90 @@ async function mafiaMvp(): Promise<void> {
   console.log('scoreboard refreshed');
 }
 
+/**
+ * Hand one player's seat to somebody else, from outside Discord.
+ *
+ * The console has a button for this. This exists because the button failed in
+ * the middle of a live game and there was no second way in — the database and
+ * the bot's own API both bind to localhost on the VPS, so a laptop cannot
+ * reach either. An operator task is the only door left, and a game in progress
+ * cannot wait for a bug to be found.
+ *
+ *   --old <user id>  --new <user id>  [--event <id>]
+ *
+ * With no --event it finds the single running event and refuses if there is
+ * more than one, because guessing which game to edit is how the wrong table
+ * gets rewritten.
+ */
+async function mafiaSwap(): Promise<void> {
+  const oldId = flag('old');
+  const newId = flag('new');
+  if (!oldId || !newId) { console.error('need --old <id> and --new <id>'); process.exitCode = 1; return; }
+
+  let eventId = Number(flag('event') ?? NaN);
+  if (!Number.isFinite(eventId)) {
+    const live = (await liveEvents(config.guildId)).filter(e => e.status === 'running');
+    if (live.length !== 1) {
+      console.error(`expected exactly one running event, found ${live.length}` +
+        (live.length ? `: ${live.map(e => `#${e.id}`).join(', ')} — pass --event` : ''));
+      process.exitCode = 1; return;
+    }
+    eventId = live[0]!.id;
+  }
+
+  const ev = await getEvent(eventId);
+  if (!ev) { console.error(`event ${eventId} not found`); process.exitCode = 1; return; }
+
+  const roster = await players(eventId);
+  const seat = roster.find(p => p.userId === oldId);
+  if (!seat) {
+    console.error(`${oldId} is not on event ${eventId}. Roster:`);
+    for (const p of roster) console.error(`  ${p.userId}  seat ${p.seat ?? '?'}  ${p.role ?? '(no role)'}  ${p.userTag}`);
+    process.exitCode = 1; return;
+  }
+  if (roster.some(p => p.userId === newId)) {
+    console.error(`${newId} is already on this roster`); process.exitCode = 1; return;
+  }
+
+  console.log(`event #${eventId}`);
+  console.log(`  out: ${oldId}  seat ${seat.seat ?? '?'}  role ${seat.role ?? '(none)'}  ${seat.userTag}`);
+  console.log(`  in : ${newId}`);
+
+  const ok = await replacePlayer(eventId, oldId, newId, newId);
+  if (!ok) { console.error('the row did not move'); process.exitCode = 1; return; }
+  await mergeState(eventId, swapPlayerInState(stateOf(ev), oldId, newId));
+
+  // Re-cut the mafia room and tell the newcomer what they are holding.
+  await withGuild(async g => {
+    const room = [...g.channels.cache.values()].find(c =>
+      /(?:scum|mafia)-\d+$/.test(c.name ?? '') && c.name?.endsWith(`-${eventId}`));
+    if (room && 'permissionOverwrites' in room) {
+      await room.permissionOverwrites.delete(oldId, 'AION: left the game').catch(() => {});
+      const onTeam = seat.side === 'mafia';
+      if (onTeam) {
+        await room.permissionOverwrites.edit(newId, {
+          ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
+        }, { reason: 'AION: took over a mafia seat' }).catch(() => {});
+      }
+      console.log(`  room ${room.name}: ${onTeam ? 'granted' : 'not on the mafia team, no grant'}`);
+    }
+    const m = await g.members.fetch(newId).catch(() => null);
+    const told = m ? await m.send(
+      `Jaye ye nafare dige oomadi — sandali ${seat.seat ?? '?'}.\n`
+      + `Naghshet: **${seat.role ?? '?'}**. Be hich kas nagoo.`).then(() => true).catch(() => false) : false;
+    console.log(`  dm to the newcomer: ${told ? 'sent' : 'FAILED — tell them by hand'}`);
+  });
+
+  const after = await players(eventId);
+  console.log('\nroster now:');
+  for (const p of after) console.log(`  seat ${String(p.seat ?? '?').padStart(2)}  ${p.alive ? 'alive' : 'out  '}  ${p.userId}  ${p.role ?? ''}`);
+}
+
 const tasks: Record<string, () => Promise<void>> = {
   'giveaway-review': review,
   'mafia-games': mafiaGames,
   'mafia-mvp': mafiaMvp,
+  'mafia-swap': mafiaSwap,
   'giveaway-refresh': refresh,
   'giveaway-floors': setFloors,
   'giveaway-joins': joins,

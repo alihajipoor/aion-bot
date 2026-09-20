@@ -153,7 +153,7 @@ export interface Seat {
   alive: boolean;
 }
 
-const stateOf = (ev: EventRow): ScumState => ev.state as ScumState;
+export const stateOf = (ev: EventRow): ScumState => ev.state as ScumState;
 
 /** True when this event is running Scum rather than the Persian scenario. */
 export const isScum = (ev: EventRow): boolean => stateOf(ev).mode === 'scum';
