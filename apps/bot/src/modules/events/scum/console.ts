@@ -1480,7 +1480,11 @@ async function swapDo(
   const guild = i.guild!;
   const roster = await players(ev.id);
   const seat = roster.find(p => p.userId === outgoing);
-  if (!seat) { await i.update({ content: 'Oon nafar too baazi nist.', components: [], ...v2eph }); return; }
+  // A Components V2 message carries no `content` — Discord rejects the whole
+  // edit — so even the failures have to be containers.
+  if (!seat) { await i.update({ components: [new ContainerBuilder().setAccentColor(C.mafia)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        '## ⚠️ Oon nafar too baazi nist.'))], ...v2eph }); return; }
   if (roster.some(p => p.userId === incoming)) {
     await i.update({
       components: [new ContainerBuilder().setAccentColor(C.mafia)
@@ -1492,10 +1496,14 @@ async function swapDo(
   }
 
   const member = await guild.members.fetch(incoming).catch(() => null);
-  if (!member) { await i.update({ content: 'Oon user peyda nashod.', components: [], ...v2eph }); return; }
+  if (!member) { await i.update({ components: [new ContainerBuilder().setAccentColor(C.mafia)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        '## ⚠️ Oon user peyda nashod.'))], ...v2eph }); return; }
 
   const ok = await replacePlayer(ev.id, outgoing, incoming, member.user.tag);
-  if (!ok) { await i.update({ content: 'Nashod avaz konam.', components: [], ...v2eph }); return; }
+  if (!ok) { await i.update({ components: [new ContainerBuilder().setAccentColor(C.mafia)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        '## ⚠️ Nashod avazesh konam. Dobare emtehan kon.'))], ...v2eph }); return; }
   await mergeState(ev.id, swapPlayerInState(stateOf(ev), outgoing, incoming));
 
   // The mafia room is cut per id. Take the old one off and let the new one in,
@@ -1576,17 +1584,21 @@ async function signOffVote(
   }
 
   /*
-   * Picking a different name re-arms the card rather than killing on the spot.
+   * A select never ends a life. Only the Taid button does.
    *
-   * A select menu fires on the first click, and the first click is often the
-   * wrong row. Nothing irreversible should happen on it — so choosing somebody
-   * moves the pending target, and the Taid button is still what ends a life.
+   * This used to read `instead !== st.pending.target`, which meant re-tapping
+   * the row already highlighted — the current target, rendered with setDefault
+   * — fell straight through and killed on one click. A select fires on the
+   * first click and the first click is often the wrong row, so nothing
+   * irreversible may hang off one.
    */
-  if (instead && instead !== st.pending.target) {
+  if (instead !== null) {
     await mergeState(ev.id, { pending: { ...st.pending, target: instead } });
     const fresh = (await getEvent(ev.id))!;
-    await i.update(await scumConsole(fresh,
-      `Hadaf avaz shod be ${namer(i.guild, roster)(instead)} — hanooz taid nashode.`));
+    const who = namer(i.guild, roster)(instead);
+    await i.update(await scumConsole(fresh, instead === st.pending.target
+      ? `Hadaf hanoozam ${who} e — baraye hazf "Taid" ro bezan.`
+      : `Hadaf avaz shod be ${who} — hanooz taid nashode.`));
     return;
   }
 
@@ -1627,8 +1639,16 @@ async function carryOutVote(
   const nameOf = namer(guild, roster);
   const st = stateOf(ev);
 
+  /*
+   * The Shahrdar is offered the veto even when the name is his own.
+   *
+   * A `veto !== target` guard went in here during the refactor and quietly took
+   * away the one case the power most obviously exists for: the town voting out
+   * the Shahrdar, who spends his veto and puts somebody else out instead. He
+   * still holds it, so he is still asked.
+   */
   const veto = vetoCandidate(roster, st);
-  if (veto && veto !== target) {
+  if (veto) {
     await mergeState(ev.id, { pending: { kind: 'veto', actor: veto, target } });
     const sent = await dm(guild, veto,
       `## 🏛 Shahrdar\nShahr ray dad be ${isolate(nameOf(target))}.`

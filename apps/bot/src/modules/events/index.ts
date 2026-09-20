@@ -414,7 +414,10 @@ async function refreshSignup(guild: Guild, ev: EventRow): Promise<void> {
   if (!ev.announceChannelId || !ev.announceMessageId) return;
   const ch = guild.channels.cache.get(ev.announceChannelId) as TextChannel | undefined;
   const msg = await ch?.messages.fetch(ev.announceMessageId).catch(() => null);
-  if (msg) await msg.edit(await signupCard(ev, guild)).catch(() => {});
+  // Same third argument as the announcement, so the card keeps the shape people
+  // were pinged to. Editing never re-pings, so this costs nobody a second ding.
+  const ping = ev.game === 'mafia' ? mafiaRole(guild) : undefined;
+  if (msg) await msg.edit(await signupCard(ev, guild, ping?.id)).catch(() => {});
 }
 
 /* ── interactions ──────────────────────────────────────────────── */
@@ -778,6 +781,26 @@ async function doStart(guild: Guild, ev: EventRow): Promise<void> {
     return;
   }
 
+  try {
+    await beginEvent(guild, ev);
+  } catch (e) {
+    /*
+     * Put the claim back if the start did not finish.
+     *
+     * The claim has to happen first or the duplicate press deals a second set
+     * of cards — but that means a throw halfway through leaves a `running`
+     * event with no channels and no roles, and the control card then shows
+     * only Payan. Shoroo is gone and there is nothing to press. Returning it to
+     * `announced` makes the failure retryable, which is what it was before the
+     * claim existed.
+     */
+    log.error(`event #${ev.id}: start failed, releasing the claim`, e);
+    await patchEvent(ev.id, { status: 'announced', startedAt: null }).catch(() => {});
+    throw e;
+  }
+}
+
+async function beginEvent(guild: Guild, ev: EventRow): Promise<void> {
   const roster = await players(ev.id);
 
   /*
