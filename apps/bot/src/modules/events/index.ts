@@ -57,6 +57,16 @@ const chatChannel  = (g: Guild) => byName(g, /event-chat/i) as TextChannel | und
 // space in it never matched and every teardown fell through to "any other voice
 // channel in this category" — which is Stream Voice. Accept either separator.
 const hallChannel  = (g: Guild) => byName(g, /event[-\s]?hall/i, ChannelType.GuildVoice) as VoiceChannel | undefined;
+
+/**
+ * The role that wants to hear about a mafia game.
+ *
+ * Found by name rather than by a stored id so renaming it in the client does
+ * not silently stop the pings — the failure mode of a hard-coded id here is a
+ * ping nobody notices is missing.
+ */
+const mafiaRole = (g: Guild) =>
+  [...g.roles.cache.values()].find(r => /ᴍᴀꜰɪᴀ│|mafia.?player/i.test(asciiFold(r.name)));
 const quidditchCat = (g: Guild) =>
   [...g.channels.cache.values()].find(c => c.type === ChannelType.GuildCategory && /quidditch/i.test(asciiFold(c.name)));
 
@@ -348,7 +358,7 @@ async function castLines(ev: EventRow): Promise<string[]> {
 }
 
 
-async function signupCard(ev: EventRow, guild?: Guild) {
+async function signupCard(ev: EventRow, guild?: Guild, pingRoleId?: string) {
   const roster = await players(ev.id).catch(() => []);
   const cast = await castLines(ev).catch(() => []);
 
@@ -388,6 +398,9 @@ async function signupCard(ev: EventRow, guild?: Guild) {
           `⚠️ ${immune.map(p => `<@${p.userId}>`).join(' ')} **Administrator** daran —`,
           '-# Discord ejaze nemide bot jelosheshoon ro begire. Console va otagh-e mafia ro mibinan.',
         ] : []),
+        // The ping sits at the end of the card rather than the top: the people
+        // it wakes should land on the details, not above them.
+        ...(pingRoleId ? ['', `<@&${pingRoleId}>`] : []),
       ].join('\n')))
       .addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(enc('join', ev.id)).setLabel('Sabt-nam').setEmoji('✅')
@@ -697,7 +710,24 @@ async function doAnnounce(guild: Guild, ev: EventRow): Promise<void> {
   const news = newsChannel(guild);
   if (!news) throw new Error('EVENT-NEWS channel not found');
 
-  const msg = await news.send(await signupCard(ev, guild));
+  /*
+   * A mafia game pings the people who play mafia.
+   *
+   * The mention has to live inside the card: a Components V2 message carries no
+   * `content`, so there is nowhere else to put it. Discord still pings from a
+   * text display, provided allowedMentions says the role is allowed — and it
+   * has to say so explicitly, because the role is not marked mentionable and
+   * the bot is relying on its own MentionEveryone permission.
+   *
+   * Only on the announcement. refreshSignup edits this same message all
+   * evening as people sign up, and an edit does not re-ping, which is the
+   * behaviour wanted rather than a happy accident.
+   */
+  const ping = ev.game === 'mafia' ? mafiaRole(guild) : undefined;
+  const msg = await news.send({
+    ...await signupCard(ev, guild, ping?.id),
+    allowedMentions: ping ? { roles: [ping.id] } : { parse: [] },
+  });
 
   // A native scheduled event buys reminders and the server's event tab for
   // free; reimplementing either would be strictly worse.
