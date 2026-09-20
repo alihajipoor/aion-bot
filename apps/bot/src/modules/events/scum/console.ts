@@ -1467,6 +1467,22 @@ export async function scumModal(i: ModalSubmitInteraction): Promise<void> {
   await i.reply({ content: 'In dokme dige kar nemikone.', flags: MessageFlags.Ephemeral });
 }
 
+/**
+ * Members sitting in the game's voice channel who are not already playing.
+ *
+ * The shortlist a substitute is nearly always drawn from: somebody in the room,
+ * listening, who can take a chair without being explained the game first.
+ */
+async function voiceCandidates(
+  guild: Guild | null, ev: EventRow, roster: readonly PlayerRow[],
+): Promise<GuildMember[]> {
+  if (!guild || !ev.voiceChannelId) return [];
+  const vc = guild.channels.cache.get(ev.voiceChannelId);
+  if (!vc?.isVoiceBased()) return [];
+  const playing = new Set(roster.map(p => p.userId));
+  return [...vc.members.values()].filter(m => !m.user.bot && !playing.has(m.id));
+}
+
 /* ══ warnings ══════════════════════════════════════════════════════ */
 
 /** Step one: who is being warned. */
@@ -1618,16 +1634,44 @@ async function swapPickNew(
 ): Promise<void> {
   const roster = await players(ev.id);
   const nameOf = namer(i.guild, roster);
+
+  /*
+   * Two ways to name the newcomer, because one of them failed in a live game.
+   *
+   * Discord's user picker does not hold every member of a big server — it shows
+   * whatever the client has cached and fetches the rest only when you type. The
+   * narrator opened it, did not see the man sitting next to him in voice, and
+   * reasonably concluded the list was stale.
+   *
+   * So the people actually in the game's voice channel who are not already
+   * playing get their own list above it. That is who a substitute nearly always
+   * is. The picker stays underneath for everybody else, and it searches.
+   */
+  const inVoice = await voiceCandidates(i.guild, ev, roster);
+  const rows: ActionRowBuilder<StringSelectMenuBuilder | UserSelectMenuBuilder>[] = [];
+  if (inVoice.length) {
+    rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder().setCustomId(enc('swapnew', ev.id, outgoing))
+        .setPlaceholder(`Too voice hastan (${num(inVoice.length)})`)
+        .addOptions(inVoice.slice(0, 25).map(m => new StringSelectMenuOptionBuilder()
+          .setLabel(m.displayName.slice(0, 60))
+          .setDescription(m.user.username.slice(0, 90))
+          .setValue(m.id)))) as ActionRowBuilder<StringSelectMenuBuilder | UserSelectMenuBuilder>);
+  }
+  rows.push(new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
+    new UserSelectMenuBuilder().setCustomId(enc('swapnew', ev.id, outgoing))
+      .setPlaceholder('Ya esmesh ro benevis o search kon')) as ActionRowBuilder<StringSelectMenuBuilder | UserSelectMenuBuilder>);
+
   await i.update({
     components: [new ContainerBuilder().setAccentColor(C.day)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         `## 🔁 Jaygozini\n**${isolate(nameOf(outgoing))}** dare mire.\nHala bego ki jash mishine.`))
       .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        '-# Naghsh, sandali va zende/morde hamoon mimoone — faghat adamesh avaz mishe.'))
-      .addActionRowComponents(new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
-        new UserSelectMenuBuilder().setCustomId(enc('swapnew', ev.id, outgoing))
-          .setPlaceholder('Ki jash mishine?')))],
+        inVoice.length
+          ? '-# Naghsh, sandali va zende/morde hamoon mimoone — faghat adamesh avaz mishe.'
+          : '-# Hich kas too voice nist ke too baazi nabashe — esmesh ro benevis.'))
+      .addActionRowComponents(...rows)],
     ...v2eph,
   });
 }
@@ -1641,7 +1685,8 @@ async function swapPickNew(
  * and knows nothing about substitutions.
  */
 async function swapDo(
-  i: UserSelectMenuInteraction, ev: EventRow, outgoing: string, incoming: string,
+  i: UserSelectMenuInteraction | StringSelectMenuInteraction,
+  ev: EventRow, outgoing: string, incoming: string,
 ): Promise<void> {
   const guild = i.guild!;
   const roster = await players(ev.id);
@@ -2143,7 +2188,9 @@ export async function scumComponent(
   if (step === 'warnwho' && i.isStringSelectMenu()) { await warnReason(i, ev); return; }
   if (step === 'swap' && i.isButton()) { await swapPrompt(i, ev); return; }
   if (step === 'swapold' && i.isStringSelectMenu()) { await swapPickNew(i, ev, i.values[0]!); return; }
-  if (step === 'swapnew' && i.isUserSelectMenu() && arg) { await swapDo(i, ev, arg, i.values[0]!); return; }
+  if (step === 'swapnew' && (i.isUserSelectMenu() || i.isStringSelectMenu()) && arg) {
+    await swapDo(i, ev, arg, i.values[0]!); return;
+  }
   if (step === 'elimok' && i.isButton()) { await signOffVote(i, ev, null); return; }
   if (step === 'elimnone' && i.isButton()) { await cancelVoteKill(i, ev); return; }
   if (step === 'elimpick' && i.isStringSelectMenu()) { await signOffVote(i, ev, i.values[0]!); return; }
