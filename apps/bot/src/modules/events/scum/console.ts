@@ -39,6 +39,7 @@ import type { Phase } from '../games.js';
 import {
   SCUM_ROLES, roleOf, resolveNight, resolveDayVote, terroristTriggers, fireGun,
   counts, type Gun, type NightAction, type NightResult, type RoleKey, type VoteOutcome,
+  type ScumRole,
 } from './rules.js';
 import { sendNightReport } from './report.js';
 import { postMafiaHistory } from '../../mafiaHistory.js';
@@ -602,7 +603,45 @@ async function applyVoice(guild: Guild, ev: EventRow, night: boolean): Promise<n
  * this does is mark the event as Scum and lay down the counters God configured,
  * so the first night has something to spend.
  */
-export async function startScum(_guild: Guild, ev: EventRow): Promise<void> {
+/**
+ * The cast list the table is allowed to see: which roles are in, how many of
+ * each, and not one word about who holds them.
+ *
+ * Built from the dealt roster rather than from the setup numbers, because what
+ * matters is what was actually handed out — trimming for table size can differ
+ * from what God typed, and a list that disagrees with the game is worse than
+ * none. Counts only: the moment a name appears next to a role the game is over.
+ */
+export function castList(roster: readonly Seat[]): string {
+  const tally = new Map<RoleKey, number>();
+  for (const p of roster) {
+    const def = roleOf(p.role);
+    if (def) tally.set(def.key, (tally.get(def.key) ?? 0) + 1);
+  }
+  if (!tally.size) return '';
+
+  const side = (s: ScumRole['side']) => [...tally.entries()]
+    .filter(([k]) => SCUM_ROLES[k].side === s)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([k, n]) => `${isolate(SCUM_ROLES[k].fa)}${n > 1 ? ` ×${num(n)}` : ''}`);
+
+  const mafia = side('mafia');
+  const shahr = side('shahr');
+  const gray = side('gray');
+  const total = [...tally.values()].reduce((a, n) => a + n, 0);
+
+  return [
+    `## 🎭 Naghsh-haye in baazi  ·  ${num(total)} nafar`,
+    '',
+    ...(mafia.length ? [`🔴 **Mafia** — ${mafia.join(' · ')}`] : []),
+    ...(shahr.length ? [`🟢 **Shahr** — ${shahr.join(' · ')}`] : []),
+    ...(gray.length ? [`⚪ **Khakestari** — ${gray.join(' · ')}`] : []),
+    '',
+    '-# Faghat mishe did chi too baazi hast — ki kodoome, maloom nist.',
+  ].join('\n');
+}
+
+export async function startScum(guild: Guild, ev: EventRow): Promise<void> {
   const roster = await players(ev.id);
   const undealt = roster.filter(p => !roleOf(p.role));
   if (undealt.length) {
@@ -626,6 +665,11 @@ export async function startScum(_guild: Guild, ev: EventRow): Promise<void> {
     voteOpen: false,
     pending: null,
   });
+  // The table sees what it is playing against. Posted after the state is laid
+  // down so a failure here cannot leave a game half-started.
+  const list = castList(roster);
+  if (list) await say(chatOf((await getEvent(ev.id))!, guild), list, C.day);
+
   log.info(`scum #${ev.id} ready: ${roster.length} seats`);
 }
 
@@ -1819,6 +1863,16 @@ async function changePhase(i: ButtonInteraction, ev: EventRow, to: 'day' | 'nigh
   }
 
   if (to === 'night') {
+    /*
+     * Acknowledge before the DMs.
+     *
+     * Night starts by messaging every role-holder in turn, which is seconds of
+     * work against Discord's three-second window — so the button reported "the
+     * application did not respond" while the night started perfectly well
+     * behind it. That is the worst kind of failure: it teaches the narrator to
+     * press again, and pressing again is what dealt two games.
+     */
+    await i.deferUpdate();
     const night = (st.day ?? 1) || 1;
     // An unsigned vote does not survive the night. God pressing Shab over the
     // confirmation card is a decision — the day ends and it takes nobody — so
@@ -1835,7 +1889,7 @@ async function changePhase(i: ButtonInteraction, ev: EventRow, to: 'day' | 'nigh
     await say(chatOf(fresh, i.guild!),
       `## 🌙 Shab ${num(night)}\nHame saket — mic-ha baste shod. Cheshm-ha baste.`, C.night);
     const sent = await promptNightActions(i.guild!, fresh);
-    await i.update(await scumConsole((await getEvent(ev.id))!,
+    await i.editReply(await scumConsole((await getEvent(ev.id))!,
       `Shab ${night} shod — ${touched} nafar mute shodan. ${sent.ok} naghsh DM shod.`
       + (abandoned ? `\n> Ray-e taid-nashode roo <@${abandoned}> laghv shod.` : '')
       + (sent.failed.length ? `\n> **DM baste:** ${sent.failed.map(f => `<@${f}>`).join(' ')} — dasti azashoon bepors.` : '')));

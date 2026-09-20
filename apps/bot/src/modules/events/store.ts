@@ -46,6 +46,32 @@ export async function patchEvent(id: number, patch: Partial<EventRow>): Promise<
   await getDb().update(events).set(patch).where(eq(events.id, id));
 }
 
+/**
+ * Claims an event for starting, once and only once.
+ *
+ * A narrator pressed Shoroo, thought nothing had happened, pressed it again,
+ * and the bot ran the whole of doStart twice: two voice channels, two mafia
+ * rooms, and two different role cards DMed to every player. The game was
+ * unrecoverable.
+ *
+ * Nothing in JavaScript can prevent that, because both presses are already in
+ * flight before either has written anything. The database can: this moves the
+ * status from announced to running in a single statement that only matches a
+ * row still sitting at announced, and reports whether it was the one that did
+ * it. The second press matches nothing and is told the game is already going.
+ *
+ * It has to be the *first* thing start does — before a channel is made, before
+ * a card is dealt — or the duplicate work happens anyway and only the bookkeeping
+ * is protected.
+ */
+export async function claimStart(id: number): Promise<boolean> {
+  const res = await getDb().update(events)
+    .set({ status: 'running', startedAt: new Date() })
+    .where(and(eq(events.id, id), inArray(events.status, ['draft', 'announced'])))
+    .returning({ id: events.id });
+  return res.length > 0;
+}
+
 /** Merges into state rather than replacing, so two writers cannot clobber. */
 export async function mergeState(id: number, patch: Record<string, unknown>): Promise<void> {
   await getDb().update(events)

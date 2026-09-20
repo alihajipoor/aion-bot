@@ -19,7 +19,7 @@ import { logger } from '../../lib/log.js';
 import { emitLog } from '../../lib/logbus.js';
 import {
   createEvent, getEvent, liveEvents, patchEvent, players, addPlayer, removePlayer,
-  mergeState, recentEvents, removeEvent, LIVE as LIVE_STATUSES,
+  mergeState, recentEvents, removeEvent, claimStart, LIVE as LIVE_STATUSES,
   type EventRow, type PastEvent,
 } from './store.js';
 import { startMafia, endMafia, mafiaComponent, mafiaModal, setEventFinisher,
@@ -734,6 +734,20 @@ async function start(i: ButtonInteraction, ev: EventRow): Promise<void> {
 }
 
 async function doStart(guild: Guild, ev: EventRow): Promise<void> {
+  /*
+   * Claim it before anything else exists.
+   *
+   * Two presses of Shoroo once ran this whole function twice — two voice
+   * channels, two mafia rooms, and two different role cards DMed to everybody.
+   * Both presses were in flight before either had written a thing, so no check
+   * in this process could have caught it; only a single conditional statement
+   * in the database can, and only if it happens first.
+   */
+  if (!await claimStart(ev.id)) {
+    log.warn(`event #${ev.id}: start ignored — already started`);
+    return;
+  }
+
   const roster = await players(ev.id);
 
   /*
@@ -762,8 +776,9 @@ async function doStart(guild: Guild, ev: EventRow): Promise<void> {
   let voiceId = vc?.id ?? hall?.id ?? null;
   if (vc) owned.push(vc.id);
 
+  // status and startedAt belong to the claim above; writing them again here
+  // would let a second caller that lost the race still stamp the row.
   await patchEvent(ev.id, {
-    status: 'running', startedAt: new Date(),
     voiceChannelId: voiceId, textChannelId: textId, ownedChannelIds: owned,
   });
 

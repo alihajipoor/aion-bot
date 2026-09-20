@@ -14,6 +14,7 @@ import {
   fireGun, canDisable, majorityBar,
 } from '../dist/modules/events/scum/rules.js';
 import { publicFacts, nightStory, godRecap } from '../dist/modules/events/scum/narrate.js';
+import { castList } from '../dist/modules/events/scum/console.js';
 import * as rules from '../dist/modules/events/scum/rules.js';
 
 /* ── fixtures ──────────────────────────────────────────────────── */
@@ -950,4 +951,35 @@ test('the second round is unchanged', () => {
   const tie = resolveDayVote(bal([...many('X', 2), ...many('Y', 2, 2)]), 2, 10);
   assert.equal(tie.eliminated, null);
   assert.equal(tie.tied, true);
+});
+
+/* ── the public cast list ───────────────────────────────────────── */
+
+test('the cast list counts roles and names nobody', () => {
+  const roster = [
+    { userId: 'u1', role: 'don', alive: true },
+    { userId: 'u2', role: 'mafia_sade', alive: true },
+    { userId: 'u3', role: 'mafia_sade', alive: true },
+    { userId: 'u4', role: 'doctor', alive: true },
+    { userId: 'u5', role: 'natasha', alive: true },
+    { userId: 'u6', role: 'shahrvand', alive: true },
+  ];
+  const out = castList(roster);
+  for (const id of roster.map(p => p.userId)) {
+    assert.ok(!out.includes(id), `${id} must not appear`);
+  }
+  // num() puts an ALM between the × and the digit — that is the bidi fix, not
+  // a typo — so match around it rather than on a literal '×2'.
+  assert.match(out, /×[\u061c\u200e\u200f]*2/, 'duplicates are counted, not repeated');
+  assert.equal((out.match(/مافیا ساده/g) ?? []).length, 1, 'and listed once');
+  assert.ok(/Mafia/.test(out) && /Shahr/.test(out) && /Khakestari/.test(out));
+});
+
+test('the cast list reads the dealt roster, not the setup numbers', () => {
+  // Trimming for table size can differ from what God typed; the list has to
+  // match the cards actually handed out.
+  assert.equal(castList([]), '');
+  const one = castList([{ userId: 'x', role: 'don', alive: true }]);
+  assert.ok(one.includes('Mafia'));
+  assert.ok(!one.includes('Shahr —'));
 });
