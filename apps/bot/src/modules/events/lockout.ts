@@ -1,6 +1,7 @@
 import { PermissionFlagsBits, type Guild, type TextChannel } from 'discord.js';
 import { mergeState, players, type EventRow } from './store.js';
 import { logger } from '../../lib/log.js';
+import { eachLimit } from '../../lib/parallel.js';
 
 const log = logger('lockout');
 
@@ -67,17 +68,22 @@ export async function resealEventAccess(
   const want = new Set(live ? roster.map(p => p.userId).filter(id => id !== ev.hostId) : []);
   const had = new Set(((ev.state as LockState)?.lockedIds) ?? []);
 
+  /*
+   * Concurrently, because this runs on every single signup.
+   *
+   * One overwrite per player per channel, awaited in a row, put a Discord round
+   * trip between each of them — so the last person to press Sabt-nam waited on
+   * everyone who had pressed it before. The writes are independent; only the
+   * bookkeeping below depends on all of them finishing.
+   */
   for (const channel of channels) {
-    for (const id of want) {
-      if (had.has(id)) continue;                       // already shut out
-      await channel.permissionOverwrites.edit(id, { ViewChannel: false }, { reason })
-        .catch(e => log.warn(`could not lock ${id} out of ${channel.name}: ${(e as Error).message}`));
-    }
-    for (const id of had) {
-      if (want.has(id)) continue;                      // still playing
-      await channel.permissionOverwrites.delete(id, reason)
-        .catch(e => log.warn(`could not restore ${id} on ${channel.name}: ${(e as Error).message}`));
-    }
+    await eachLimit([...want].filter(id => !had.has(id)), 8, async id => {
+      await channel.permissionOverwrites.edit(id, { ViewChannel: false }, { reason });
+    }).then(r => { if (r.failed) log.warn(`could not lock ${r.failed} out of ${channel.name}`); });
+
+    await eachLimit([...had].filter(id => !want.has(id)), 8, async id => {
+      await channel.permissionOverwrites.delete(id, reason);
+    }).then(r => { if (r.failed) log.warn(`could not restore ${r.failed} on ${channel.name}`); });
   }
 
   const added = [...want].filter(id => !had.has(id)).length;

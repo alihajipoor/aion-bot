@@ -28,6 +28,7 @@ import {
 import { isolate, num, asciiFold } from '../../../lib/text.js';
 import { hasRole } from '../../../lib/roles.js';
 import { logger } from '../../../lib/log.js';
+import { eachLimit } from '../../../lib/parallel.js';
 import {
   getEvent, mergeState, players, killPlayer, revivePlayer,
   type EventRow, type PlayerRow,
@@ -601,35 +602,39 @@ const textPhaseOf = (phase: ScumPhase): Phase =>
  */
 async function applyVoice(guild: Guild, ev: EventRow, night: boolean): Promise<number> {
   /*
-   * The name tags ride along here.
+   * The name tags ride along here, but they do not go first.
    *
-   * Every death and every phase change already comes through this function, so
-   * hooking it once covers the lot — a vote, a night kill, a gun, a second
-   * warning — instead of fourteen call sites of which somebody would forget
-   * one. It runs before the voice check on purpose: a name is guild-wide and
-   * has to be right whether or not there is a channel to mute anyone in.
+   * Every death and every phase change comes through this function, so hooking
+   * it once covers the lot instead of fourteen call sites. But renaming eleven
+   * people is eleven round trips, and awaiting that before the mutes meant the
+   * room stayed loud for several seconds after God pressed Shab. The two jobs
+   * have nothing to say to each other, so they run side by side and the mutes
+   * no longer queue behind cosmetics.
    */
-  await resealNicknames(guild, ev, `AION scum #${ev.id}`).catch(() => {});
+  const names = resealNicknames(guild, ev, `AION scum #${ev.id}`).catch(() => null);
 
-  if (!ev.voiceChannelId) return 0;
+  if (!ev.voiceChannelId) { await names; return 0; }
   const channel = guild.channels.cache.get(ev.voiceChannelId);
-  if (!channel?.isVoiceBased()) return 0;
+  if (!channel?.isVoiceBased()) { await names; return 0; }
   const byId = new Map((await players(ev.id)).map(p => [p.userId, p]));
 
-  let touched = 0;
+  // Hand-mute wins over the phase: God asked for quiet and the clock does not
+  // get a vote.
+  const force = stateOf(ev).forceMute === true;
+  const todo: { m: GuildMember; mute: boolean }[] = [];
   for (const m of channel.members.values()) {
     const p = byId.get(m.id);
     if (!p) continue;                        // spectators are not the game's business
     gameHeld.add(m.id);
-    // Hand-mute wins over the phase: God asked for quiet and the clock does not
-    // get a vote.
-    const shouldMute = stateOf(ev).forceMute === true || night || !p.alive;
-    if (m.voice.serverMute !== shouldMute) {
-      await m.voice.setMute(shouldMute, 'AION scum').catch(() => {});
-      touched++;
-    }
+    const shouldMute = force || night || !p.alive;
+    if (m.voice.serverMute !== shouldMute) todo.push({ m, mute: shouldMute });
   }
-  return touched;
+
+  const { done } = await eachLimit(todo, 8, async ({ m, mute }) => {
+    await m.voice.setMute(mute, 'AION scum');
+  });
+  await names;
+  return done;
 }
 
 /* ══ start / end ═══════════════════════════════════════════════════ */
@@ -1034,10 +1039,18 @@ async function promptNightActions(guild: Guild, ev: EventRow): Promise<{ ok: num
   let ok = 0;
   const failed: string[] = [];
 
-  for (const a of nightActors(roster, st)) {
+  /*
+   * Everyone at once, not one after another.
+   *
+   * These are six or seven DMs down six or seven different routes, and sending
+   * them in a row meant the last role-holder waited on all the ones before
+   * them — the narrator says "night" and the Sniper's prompt arrives two
+   * seconds after the Doctor's, for no reason at all.
+   */
+  await eachLimit(nightActors(roster, st), 8, async a => {
     const me = byId.get(a.userId)!;
     const ids = nightTargets(me, roster, st);
-    if (!ids.length) continue;
+    if (!ids.length) return;
     const ask = NIGHT_ASK[a.role];
 
     const body = [
@@ -1052,7 +1065,7 @@ async function promptNightActions(guild: Guild, ev: EventRow): Promise<{ ok: num
 
     if (await dm(guild, a.userId, body, C.night, { select })) ok++;
     else { failed.push(a.userId); log.warn(`night DM failed for ${me.userTag} (${a.role})`); }
-  }
+  });
   return { ok, failed };
 }
 

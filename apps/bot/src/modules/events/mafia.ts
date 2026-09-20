@@ -26,6 +26,7 @@ import {
 // and these two are pure functions that touch neither.
 import { rebalanceUses, roleForBudget } from './scum/console.js';
 import { resealNicknames } from './nicknames.js';
+import { eachLimit } from '../../lib/parallel.js';
 
 const log = logger('mafia');
 /**
@@ -208,35 +209,39 @@ export function installMafiaReactionGuard(client: { on: (e: string, f: (...a: un
  * rest of the game, which is the rule a human narrator cannot enforce.
  */
 async function applyVoice(guild: Guild, ev: EventRow, phase: 'night' | 'day'): Promise<number> {
-  // Same hook as Scum: every death and phase change passes here, and a name is
-  // guild-wide so it must be right with or without a voice channel.
-  await resealNicknames(guild, ev, `AION mafia #${ev.id}`).catch(() => {});
+  // Same hook as Scum, and for the same reason it does not go first: renaming
+  // the table is a dozen round trips and the room should not stay loud through
+  // them. The two jobs are independent, so they run side by side.
+  const names = resealNicknames(guild, ev, `AION mafia #${ev.id}`).catch(() => null);
 
-  if (!ev.voiceChannelId) return 0;
+  if (!ev.voiceChannelId) { await names; return 0; }
   const roster = await players(ev.id);
   const byId = new Map(roster.map(p => [p.userId, p]));
   const channel = guild.channels.cache.get(ev.voiceChannelId);
-  if (!channel?.isVoiceBased()) return 0;
+  if (!channel?.isVoiceBased()) { await names; return 0; }
 
-  let touched = 0;
+  const cfg = configOf(ev);
+  // A hand-mute outranks the phase: God asked for quiet and the clock does not
+  // get a vote. Sticky, or the next phase change would quietly undo it and the
+  // room would start talking again on its own.
+  const forced = (ev.state as { forceMute?: boolean }).forceMute === true;
+
+  const todo: { m: GuildMember; mute: boolean }[] = [];
   for (const state of channel.members.values()) {
     const p = byId.get(state.id);
     if (!p) continue;                       // spectators are not the game's business
-    const cfg = configOf(ev);
-    // A hand-mute outranks the phase: God asked for quiet and the clock does
-    // not get a vote. Sticky, or the next phase change would quietly undo it
-    // and the room would start talking again on its own.
-    const forced = (ev.state as { forceMute?: boolean }).forceMute === true;
     const shouldMute = forced
       || (phase === 'night' && cfg.autoMuteNight)
       || (!p.alive && cfg.deadStayMuted);
     gameHeld.add(state.id);
-    if (state.voice.serverMute !== shouldMute) {
-      await state.voice.setMute(shouldMute, `AION mafia ${phase}`).catch(() => {});
-      touched++;
-    }
+    if (state.voice.serverMute !== shouldMute) todo.push({ m: state, mute: shouldMute });
   }
-  return touched;
+
+  const { done } = await eachLimit(todo, 8, async ({ m, mute }) => {
+    await m.voice.setMute(mute, `AION mafia ${phase}`);
+  });
+  await names;
+  return done;
 }
 
 async function releaseVoice(guild: Guild, ev: EventRow): Promise<void> {

@@ -1,6 +1,7 @@
 import type { Guild, GuildMember } from 'discord.js';
 import { mergeState, players, type EventRow } from './store.js';
 import { logger } from '../../lib/log.js';
+import { eachLimit } from '../../lib/parallel.js';
 
 const log = logger('nicknames');
 
@@ -63,10 +64,10 @@ export async function resealNicknames(
   const unseen = roster.filter(p => !(p.userId in stored));
   if (unseen.length) {
     const next: Record<string, string | null> = { ...stored };
-    for (const p of unseen) {
+    await eachLimit(unseen, 8, async p => {
       const m = guild.members.cache.get(p.userId) ?? await guild.members.fetch(p.userId).catch(() => null);
       if (m) next[p.userId] = m.nickname;
-    }
+    });
     await mergeState(ev.id, { nicks: next }).catch(() => {});
     Object.assign(stored, next);
   }
@@ -79,34 +80,33 @@ export async function resealNicknames(
    * even if the loop below then fails partway.
    */
   const playing = new Set(roster.map(p => p.userId));
-  for (const [userId, original] of Object.entries(stored)) {
-    if (playing.has(userId)) continue;
-    // Guild-wide, so it works whether or not they are still in voice — or in
-    // the channel at all, which is the case that made this worth writing down.
+  const giveBack = Object.entries(stored).filter(([id]) => !playing.has(id));
+  // Guild-wide, so it works whether or not they are still in voice — or in the
+  // channel at all, which is the case that made this worth writing down.
+  const back = await eachLimit(giveBack, 8, async ([userId, original]) => {
     const m = guild.members.cache.get(userId) ?? await guild.members.fetch(userId).catch(() => null);
     if (m && canRename(m) && m.nickname !== original) {
-      await m.setNickname(original, `${reason} — restoring`)
-        .then(() => { restored++; })
-        .catch(e => log.warn(`could not restore ${m.user.tag}: ${(e as Error).message}`));
+      await m.setNickname(original, `${reason} — restoring`);
+      restored++;
     }
-    delete stored[userId];
-  }
+  });
+  if (back.failed) log.warn(`event #${ev.id}: ${back.failed} name(s) would not restore`);
+  for (const [userId] of giveBack) delete stored[userId];
   if (!live && Object.keys(stored).length === 0) {
     await mergeState(ev.id, { nicks: {} }).catch(() => {});
   }
 
-  for (const p of roster) {
+  await eachLimit(roster, 8, async p => {
     const m = guild.members.cache.get(p.userId) ?? await guild.members.fetch(p.userId).catch(() => null);
-    if (!m) continue;
-    if (!canRename(m)) { refused.push(p.userId); continue; }
+    if (!m) return;
+    if (!canRename(m)) { refused.push(p.userId); return; }
 
     const base = stored[p.userId] ?? m.user.displayName ?? m.user.username;
     const want = tagged(base ?? m.user.username, p.alive ? ALIVE : DEAD);
-    if (m.nickname === want) continue;
-    await m.setNickname(want, reason)
-      .then(() => { taggedCount++; })
-      .catch(e => log.warn(`could not rename ${m.user.tag}: ${(e as Error).message}`));
-  }
+    if (m.nickname === want) return;         // already right: no call at all
+    await m.setNickname(want, reason);
+    taggedCount++;
+  });
 
   if (taggedCount || restored) {
     log.info(`event #${ev.id}: renamed ${taggedCount}, restored ${restored}`);
