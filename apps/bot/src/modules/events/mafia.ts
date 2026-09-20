@@ -25,6 +25,7 @@ import {
 // Counter maths only — no cycle: scum/console imports mafia.ts for text rules,
 // and these two are pure functions that touch neither.
 import { rebalanceUses, roleForBudget } from './scum/console.js';
+import { resealNicknames } from './nicknames.js';
 
 const log = logger('mafia');
 /**
@@ -207,6 +208,10 @@ export function installMafiaReactionGuard(client: { on: (e: string, f: (...a: un
  * rest of the game, which is the rule a human narrator cannot enforce.
  */
 async function applyVoice(guild: Guild, ev: EventRow, phase: 'night' | 'day'): Promise<number> {
+  // Same hook as Scum: every death and phase change passes here, and a name is
+  // guild-wide so it must be right with or without a voice channel.
+  await resealNicknames(guild, ev, `AION mafia #${ev.id}`).catch(() => {});
+
   if (!ev.voiceChannelId) return 0;
   const roster = await players(ev.id);
   const byId = new Map(roster.map(p => [p.userId, p]));

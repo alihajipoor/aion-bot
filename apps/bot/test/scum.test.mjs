@@ -983,3 +983,21 @@ test('the cast list reads the dealt roster, not the setup numbers', () => {
   assert.ok(one.includes('Mafia'));
   assert.ok(!one.includes('Shahr —'));
 });
+
+/* ── the (Alive)/(Dead) name tags ───────────────────────────────── */
+
+test('a tagged name never exceeds Discord’s 32-character limit', async () => {
+  const { __tagged } = await import('../dist/modules/events/nicknames.js');
+  const long = 'Λ | 𝗗α𝗿𝗞𝗕𝗹𝗼𝗼𝗗 the extremely verbose';
+  for (const suffix of ['(Alive)', '(Dead)']) {
+    const out = __tagged(long, suffix);
+    assert.ok(out.length <= 32, `${out.length} chars: ${out}`);
+    assert.ok(out.endsWith(suffix), 'the tag survives, the name is what gives way');
+  }
+});
+
+test('a short name is tagged without being cut', async () => {
+  const { __tagged } = await import('../dist/modules/events/nicknames.js');
+  assert.equal(__tagged('Nima', '(Alive)'), 'Nima (Alive)');
+  assert.equal(__tagged('Nima', '(Dead)'), 'Nima (Dead)');
+});

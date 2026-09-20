@@ -37,6 +37,7 @@ import { applyTextRules, configOf, gameHeld } from '../mafia.js';
 // setupPanel imports games/store/scum-rules and never this file, so no cycle.
 import { setupButton } from '../setupPanel.js';
 import { resealEventAccess } from '../lockout.js';
+import { resealNicknames } from '../nicknames.js';
 import type { Phase } from '../games.js';
 import {
   SCUM_ROLES, roleOf, resolveNight, resolveDayVote, terroristTriggers, fireGun,
@@ -599,6 +600,17 @@ const textPhaseOf = (phase: ScumPhase): Phase =>
  * members — the scoped-mute invariant would happily unmute the night.
  */
 async function applyVoice(guild: Guild, ev: EventRow, night: boolean): Promise<number> {
+  /*
+   * The name tags ride along here.
+   *
+   * Every death and every phase change already comes through this function, so
+   * hooking it once covers the lot — a vote, a night kill, a gun, a second
+   * warning — instead of fourteen call sites of which somebody would forget
+   * one. It runs before the voice check on purpose: a name is guild-wide and
+   * has to be right whether or not there is a channel to mute anyone in.
+   */
+  await resealNicknames(guild, ev, `AION scum #${ev.id}`).catch(() => {});
+
   if (!ev.voiceChannelId) return 0;
   const channel = guild.channels.cache.get(ev.voiceChannelId);
   if (!channel?.isVoiceBased()) return 0;

@@ -32,6 +32,7 @@ import {
   SCUM_ROLES, distribution as scumDistribution,
 } from './scum/index.js';
 import { resealEventAccess } from './lockout.js';
+import { resealNicknames } from './nicknames.js';
 import { startEsmFamil, endEsmFamil, esmComponent, esmModal, esmSelect, ESM_ID } from './esmfamil.js';
 import { startSoali, endSoali, soaliComponent, soaliModal, SOALI_ID } from './soali.js';
 import type { AionClient } from '../../client.js';
@@ -838,6 +839,19 @@ async function beginEvent(guild: Guild, ev: EventRow): Promise<void> {
   // Roles are dealt just after this, so the console must be shut to players now.
   await resealEventAccess(guild, (await getEvent(ev.id))!, `AION event #${ev.id} started`);
 
+  /*
+   * Tag the players (Alive) as the game opens.
+   *
+   * Mafia only: the tag means something in a game with deaths and nothing in a
+   * quiz. It records every original nickname first, which is what doEnd reads
+   * back from — so the names survive a restart, and survive somebody leaving
+   * the room halfway through.
+   */
+  if (ev.game === 'mafia') {
+    await resealNicknames(guild, (await getEvent(ev.id))!, `AION event #${ev.id} started`)
+      .catch(e => log.warn('nickname tagging failed', e));
+  }
+
   // Pull in anyone who signed up and is already sitting in another room.
   if (voiceId) {
     for (const p of roster) {
@@ -944,6 +958,19 @@ async function doEnd(guild: Guild, ev: EventRow): Promise<void> {
   // Same function, opposite direction: the event is no longer live, so it wants
   // nobody locked and every overwrite it wrote comes off.
   await resealEventAccess(guild, fresh, `AION event #${ev.id} ended`);
+
+  /*
+   * And the names come back.
+   *
+   * Read from the event rather than from who is still in the room: a player
+   * who left voice, or the server's sight, halfway through is exactly the one
+   * who would otherwise stay called "(Dead)" indefinitely.
+   */
+  const names = await resealNicknames(guild, fresh, `AION event #${ev.id} ended`)
+    .catch(e => { log.warn('nickname restore failed', e); return null; });
+  if (names?.refused.length) {
+    log.warn(`event #${ev.id}: ${names.refused.length} nickname(s) the bot cannot change`);
+  }
 
   // Recap goes where the announcement went, so the thread of the evening reads
   // in one place.
