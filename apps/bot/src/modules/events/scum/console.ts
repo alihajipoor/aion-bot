@@ -42,7 +42,7 @@ import { resealNicknames } from '../nicknames.js';
 import type { Phase } from '../games.js';
 import {
   SCUM_ROLES, roleOf, resolveNight, resolveDayVote, terroristTriggers, fireGun,
-  counts, type Gun, type NightAction, type NightResult, type RoleKey, type VoteOutcome,
+  counts, majorityBar, type Gun, type NightAction, type NightResult, type RoleKey, type VoteOutcome,
   type ScumRole,
 } from './rules.js';
 import { sendNightReport } from './report.js';
@@ -1268,13 +1268,25 @@ async function resolveTheNight(guild: Guild, ev: EventRow): Promise<NightResult>
 function voteCard(
   ev: EventRow, round: 1 | 2, options: PlayerRow[], progress: { cast: number; total: number },
   revealed: string[] | null,
+  /*
+   * How many are alive — not how many may vote.
+   *
+   * A silenced player casts no slip but still counts toward the half the
+   * majority is measured against, so `progress.total` is the wrong number to
+   * print here: on a silenced day it would advertise a lower bar than the rule
+   * actually enforces, and somebody would be eliminated on a count the card
+   * had told the room was not enough.
+   */
+  living = progress.total,
 ) {
   const box = new ContainerBuilder().setAccentColor(revealed ? C.mafia : C.day)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       revealed
         ? `## 🗳️ Ray-e ${round === 1 ? 'aval' : 'dovom'} — baste shod`
         : round === 1
-          ? '## 🗳️ Ray-e aval\nHame-ye zende-ha ray midan. Har kasi **2 ray** be bala biare mire roo miz.'
+          ? '## 🗳️ Ray-e aval\nHame-ye zende-ha ray midan.'
+            + `\n-# Ye nafar bishtar az nesf (**${num(majorityBar(living))}** az **${num(living)}**) biare, hamoonja hazf mishe.`
+            + '\n-# Vagarna **do nafar ya bishtar** ke be 2 ray beresan miran roo miz. Yek nafar tanha bashe, shab mishe.'
           : '## ⚖️ Ray-e dovom\nFaghat kasaani ke roo miz-an. Mosavi beshe, hich kas hazf nemishe.'))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
@@ -1319,7 +1331,8 @@ async function openVote(i: ButtonInteraction, ev: EventRow, round: 1 | 2): Promi
   // lands in that gap is exactly the one that gets argued about later.
   await applyTextRules(i.guild!, fresh, 'vote');
 
-  const msg = await ch.send(voteCard(fresh, round, options, { cast: 0, total: b.voters.length }, null));
+  const alive = roster.filter(p => p.alive).length;
+  const msg = await ch.send(voteCard(fresh, round, options, { cast: 0, total: b.voters.length }, null, alive));
   await mergeState(ev.id, { voteMessageId: msg.id });
   scheduleAutoClose(i.guild!, ev.id, round);
   await answer(i, await scumConsole((await getEvent(ev.id))!,
@@ -1405,7 +1418,9 @@ async function castVote(i: StringSelectMenuInteraction, ev: EventRow): Promise<v
 
   const fresh = (await getEvent(ev.id))!;
   const options = roster.filter(p => b.options.includes(p.userId));
-  await i.message.edit(voteCard(fresh, round, options, voteProgress(votes, b.voters), null)).catch(() => {});
+  await i.message.edit(voteCard(
+    fresh, round, options, voteProgress(votes, b.voters), null,
+    roster.filter(p => p.alive).length)).catch(() => {});
 }
 
 /**
