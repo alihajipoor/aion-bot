@@ -554,6 +554,43 @@ const terrorSelect = (id: number, living: PlayerRow[]): StringSelectMenuBuilder 
 const v2 = { flags: MessageFlags.IsComponentsV2 as number, allowedMentions: { parse: [] as never[] } };
 const v2eph = { flags: (MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral) as number };
 
+/*
+ * Two ways to answer, each correct whether or not we have already spoken.
+ *
+ * Discord closes the window three seconds after a click. The way to beat it is
+ * to acknowledge first and work afterwards — but a handler that has
+ * acknowledged can no longer `reply` or `update`, it has to `editReply` or
+ * `followUp`. Every heavy handler here mixes the two: `update` for the console
+ * it just changed, `reply` for "you cannot do that". Without these helpers,
+ * deferring early means rewriting both paths in every one of them and getting
+ * one wrong.
+ */
+type Answerable =
+  | ButtonInteraction | StringSelectMenuInteraction | UserSelectMenuInteraction
+  | ModalSubmitInteraction;
+
+/** Replace the message the control lives on. */
+const answer = async (i: Answerable, payload: object): Promise<void> => {
+  // A modal submit has no message to update, only a reply to make or edit.
+  if (i.deferred || i.replied) await i.editReply(payload as never);
+  else if ('update' in i) await i.update(payload as never);
+  else await i.reply(payload as never);
+};
+
+/** The same, for the paths that may have no interaction at all — a timer. */
+const answerMaybe = async (i: Answerable | null | undefined, payload: object): Promise<void> => {
+  if (i) await answer(i, payload);
+};
+
+/** A separate ephemeral note — a refusal, or a screen of its own. */
+const note = async (i: Answerable, payload: object | string): Promise<void> => {
+  const body = typeof payload === 'string'
+    ? { content: payload, flags: MessageFlags.Ephemeral }
+    : payload;
+  if (i.deferred || i.replied) await i.followUp(body as never);
+  else await i.reply(body as never);
+};
+
 const say = async (ch: TextChannel | undefined, body: string, colour: number): Promise<void> => {
   if (!ch) return;
   await ch.send({
@@ -1257,14 +1294,18 @@ function voteCard(
 }
 
 async function openVote(i: ButtonInteraction, ev: EventRow, round: 1 | 2): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const ch = chatOf(ev, i.guild!);
-  if (!ch) { await i.reply({ content: 'Channel-e chat peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
+  if (!ch) { await note(i, { content: 'Channel-e chat peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
 
   const roster = await players(ev.id);
   const st = stateOf(ev);
   const nominees = st.nominees ?? [];
   if (round === 2 && !nominees.length) {
-    await i.reply({ content: 'Aval ray-e aval ro beband ta maloom she ki mire roo miz.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'Aval ray-e aval ro beband ta maloom she ki mire roo miz.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -1281,7 +1322,7 @@ async function openVote(i: ButtonInteraction, ev: EventRow, round: 1 | 2): Promi
   const msg = await ch.send(voteCard(fresh, round, options, { cast: 0, total: b.voters.length }, null));
   await mergeState(ev.id, { voteMessageId: msg.id });
   scheduleAutoClose(i.guild!, ev.id, round);
-  await i.update(await scumConsole((await getEvent(ev.id))!,
+  await answer(i, await scumConsole((await getEvent(ev.id))!,
     `Ray-e ${round === 1 ? 'aval' : 'dovom'} baz shod too <#${ch.id}>. Shomaresh makhfi-ye.`));
 }
 
@@ -1385,6 +1426,10 @@ async function castVote(i: StringSelectMenuInteraction, ev: EventRow): Promise<v
 async function endVote(
   ev: EventRow, guild: Guild, i?: ButtonInteraction,
 ): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (i && !i.deferred && !i.replied) await i.deferUpdate();
+
   const st = stateOf(ev);
   // Already shut — a timer racing God's button lands here and does nothing.
   if (!st.voteOpen) {
@@ -1426,7 +1471,7 @@ async function endVote(
       const share = outcome.tally[0]?.votes ?? 0;
       await say(ch, `## ⚖️ Ray-e aval tamoom shod\n<@${outcome.eliminated}> — **${num(share)}** ray az **${num(living)}** nafar.`
         + '\n-# Bishtar az nesf. Ray-e dovom nadarim. Ye lahze sabr konid.', C.day);
-      await i?.update(await scumConsole(fresh,
+      await answerMaybe(i, await scumConsole(fresh,
         `${nameOf(outcome.eliminated)} ba ${share}/${living} ray oftad — taid kon ya avaz kon.`));
       return;
     }
@@ -1442,7 +1487,7 @@ async function endVote(
       ? `## 🗣️ Roo miz\n${outcome.nominees.map((id, k) => `\`${k + 1}\` <@${id}>`).join('\n')}`
         + '\n-# Be tartib defa mikonan. Gardanande nobat ro rad mikone.'
       : '## 😐 Ray-giri be jayi nareside\nHich kas hazf nemishe. Shab mishe.', C.day);
-    await i?.update(await scumConsole(fresh, outcome.nominees.length
+    await answerMaybe(i, await scumConsole(fresh, outcome.nominees.length
       ? `${outcome.nominees.length} nafar raftan roo miz.`
       : 'Na kesi bala-ye nesf, na do nafar roo miz — Shab bezan.'));
     return;
@@ -1456,7 +1501,7 @@ async function endVote(
     await say(ch, outcome.tied
       ? '## ⚖️ Mosavi shod\nHich kas hazf nemishe. Rooz tamoom shod.'
       : '## 😐 Hich ray-i sabt nashod\nHich kas hazf nemishe. Rooz tamoom shod.', C.day);
-    await i?.update(await scumConsole(fresh, outcome.tied
+    await answerMaybe(i, await scumConsole(fresh, outcome.tied
       ? 'Mosavi — kesi hazf nashod. Shab bezan.'
       : 'Hich ray-i nayoomad. Shab bezan.'));
     return;
@@ -1468,7 +1513,7 @@ async function endVote(
   });
   await say(ch, `## ⚖️ Ray tamoom shod\nBishtarin ray: <@${outcome.eliminated}>`
     + '\n-# Ye lahze sabr konid — hanooz ghati nashode.', C.day);
-  await i?.update(await scumConsole((await getEvent(ev.id))!,
+  await answerMaybe(i, await scumConsole((await getEvent(ev.id))!,
     `${nameOf(outcome.eliminated)} bishtarin ray ro avord — taid kon ya avaz kon.`));
 }
 
@@ -1578,12 +1623,16 @@ async function warnReason(i: StringSelectMenuInteraction, ev: EventRow): Promise
  * second one takes a player out, and that must never be a surprise.
  */
 async function warnSave(i: ModalSubmitInteraction, ev: EventRow, who: string): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferReply({ flags: MessageFlags.Ephemeral });
+
   const guild = i.guild!;
   const roster = await players(ev.id);
   const target = roster.find(p => p.userId === who);
   const nameOf = namer(guild, roster);
   if (!target?.alive) {
-    await i.reply({ content: 'Oon nafar zende nist.', flags: MessageFlags.Ephemeral });
+    await answer(i, { content: 'Oon nafar zende nist.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -1603,7 +1652,7 @@ async function warnSave(i: ModalSubmitInteraction, ev: EventRow, who: string): P
       `**Dalil:** ${reason}`,
       `-# Ba ${num(WARN_LIMIT)}-omin ekhtar az baazi mire biroon.`,
     ].join('\n'), C.day);
-    await i.reply({
+    await answer(i, {
       content: `⚠️ ${nameOf(who)} — ekhtar ${now.length}/${WARN_LIMIT} sabt shod.`,
       flags: MessageFlags.Ephemeral,
     });
@@ -1629,7 +1678,7 @@ async function warnSave(i: ModalSubmitInteraction, ev: EventRow, who: string): P
     '-# Naghshesh lo nemire.',
   ].join('\n'), C.mafia);
 
-  await i.reply({
+  await answer(i, {
     content: `⛔ ${nameOf(who)} ba ${WARN_LIMIT} ekhtar hazf shod.`,
     flags: MessageFlags.Ephemeral,
   });
@@ -1708,7 +1757,7 @@ async function swapPickNew(
             .setValue(m.id)))));
   }
 
-  await i.update({ components: [box], ...v2eph });
+  await answer(i, { components: [box], ...v2eph });
 }
 
 /**
@@ -1723,16 +1772,20 @@ async function swapDo(
   i: UserSelectMenuInteraction | StringSelectMenuInteraction,
   ev: EventRow, outgoing: string, incoming: string,
 ): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const guild = i.guild!;
   const roster = await players(ev.id);
   const seat = roster.find(p => p.userId === outgoing);
   // A Components V2 message carries no `content` — Discord rejects the whole
   // edit — so even the failures have to be containers.
-  if (!seat) { await i.update({ components: [new ContainerBuilder().setAccentColor(C.mafia)
+  if (!seat) { await answer(i, { components: [new ContainerBuilder().setAccentColor(C.mafia)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         '## ⚠️ Oon nafar too baazi nist.'))], ...v2eph }); return; }
   if (roster.some(p => p.userId === incoming)) {
-    await i.update({
+    await answer(i, {
       components: [new ContainerBuilder().setAccentColor(C.mafia)
         .addTextDisplayComponents(new TextDisplayBuilder().setContent(
           '## ⚠️ In nafar khodesh too baazi-ye\nYe nafare dige entekhab kon.'))],
@@ -1742,12 +1795,12 @@ async function swapDo(
   }
 
   const member = await guild.members.fetch(incoming).catch(() => null);
-  if (!member) { await i.update({ components: [new ContainerBuilder().setAccentColor(C.mafia)
+  if (!member) { await answer(i, { components: [new ContainerBuilder().setAccentColor(C.mafia)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         '## ⚠️ Oon user peyda nashod.'))], ...v2eph }); return; }
 
   const ok = await replacePlayer(ev.id, outgoing, incoming, member.user.tag);
-  if (!ok) { await i.update({ components: [new ContainerBuilder().setAccentColor(C.mafia)
+  if (!ok) { await answer(i, { components: [new ContainerBuilder().setAccentColor(C.mafia)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         '## ⚠️ Nashod avazesh konam. Dobare emtehan kon.'))], ...v2eph }); return; }
   await mergeState(ev.id, swapPlayerInState(stateOf(ev), outgoing, incoming));
@@ -1790,7 +1843,7 @@ async function swapDo(
     asked = await promptOneActor(guild, fresh, incoming);
   }
 
-  await i.update({
+  await answer(i, {
     components: [new ContainerBuilder().setAccentColor(C.day)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         `## ✅ Avaz shod\n<@${outgoing}> → <@${incoming}>`
@@ -1815,9 +1868,13 @@ async function swapDo(
 async function signOffVote(
   i: ButtonInteraction | StringSelectMenuInteraction, ev: EventRow, instead: string | null,
 ): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const st = stateOf(ev);
   if (st.pending?.kind !== 'confirm') {
-    await i.reply({ content: 'Chizi baraye taid nist.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'Chizi baraye taid nist.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -1825,7 +1882,7 @@ async function signOffVote(
   const roster = await players(ev.id);
   const victim = roster.find(p => p.userId === target);
   if (!victim?.alive) {
-    await i.reply({ content: 'Oon nafar zende nist.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'Oon nafar zende nist.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -1842,7 +1899,7 @@ async function signOffVote(
     await mergeState(ev.id, { pending: { ...st.pending, target: instead } });
     const fresh = (await getEvent(ev.id))!;
     const who = namer(i.guild, roster)(instead);
-    await i.update(await scumConsole(fresh, instead === st.pending.target
+    await answer(i, await scumConsole(fresh, instead === st.pending.target
       ? `Hadaf hanoozam ${who} e — baraye hazf "Taid" ro bezan.`
       : `Hadaf avaz shod be ${who} — hanooz taid nashode.`));
     return;
@@ -1853,9 +1910,13 @@ async function signOffVote(
 
 /** God calls the vote off: it happened, and it takes nobody. */
 async function cancelVoteKill(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const st = stateOf(ev);
   if (st.pending?.kind !== 'confirm') {
-    await i.reply({ content: 'Chizi baraye taid nist.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'Chizi baraye taid nist.', flags: MessageFlags.Ephemeral });
     return;
   }
   await mergeState(ev.id, {
@@ -1865,7 +1926,7 @@ async function cancelVoteKill(i: ButtonInteraction, ev: EventRow): Promise<void>
   await applyTextRules(i.guild!, fresh, 'day');
   await say(chatOf(fresh, i.guild!),
     '## 🚫 Ray laghv shod\nHich kas hazf nemishe. Rooz tamoom shod.', C.day);
-  await i.update(await scumConsole(fresh, 'Ray laghv shod — kesi hazf nashod. Shab bezan.'));
+  await answer(i, await scumConsole(fresh, 'Ray laghv shod — kesi hazf nashod. Shab bezan.'));
 }
 
 /**
@@ -1928,6 +1989,10 @@ async function carryOutVote(
 async function applyElimination(
   i: ButtonInteraction | StringSelectMenuInteraction, ev: EventRow, target: string,
 ): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const roster = await players(ev.id);
   const victim = roster.find(p => p.userId === target);
   const ch = chatOf(ev, i.guild!);
@@ -1946,7 +2011,7 @@ async function applyElimination(
       '## 💣 Terrorist\nDari miri, vali tanha nemiri. Ye nafar ro ba khodet bebar.',
       C.mafia, { select: terrorSelect(ev.id, living) });
     await say(ch, '## 💣 Sabr konid\nHanooz tamoom nashode.', C.mafia);
-    await i.update(await scumConsole((await getEvent(ev.id))!, sent
+    await answer(i, await scumConsole((await getEvent(ev.id))!, sent
       ? 'Terrorist DM shod. Ta entekhab nakone rooz tamoom nemishe.'
       : `⚠️ DM-e terrorist baste-st — <@${target}> ro dasti bepors, bad "Rad kardan" bezan.`));
     return;
@@ -1956,17 +2021,21 @@ async function applyElimination(
   const fresh = (await getEvent(ev.id))!;
   await applyTextRules(i.guild!, fresh, 'day');
   await applyVoice(i.guild!, fresh, false);
-  await i.update(await scumConsole(fresh, `<@${target}> hazf shod. Rooz tamoom — Shab bezan.`));
+  await answer(i, await scumConsole(fresh, `<@${target}> hazf shod. Rooz tamoom — Shab bezan.`));
 }
 
 /* ══ defence ═══════════════════════════════════════════════════════ */
 
 /** Hands the floor to the next nominee, or reports that everyone has spoken. */
 async function advanceDefence(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const st = stateOf(ev);
   const order = st.defence?.order ?? st.nominees ?? [];
   if (!order.length) {
-    await i.reply({ content: 'Aval ray-e aval ro beband.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'Aval ray-e aval ro beband.', flags: MessageFlags.Ephemeral });
     return;
   }
   const ch = chatOf(ev, i.guild!);
@@ -1974,7 +2043,7 @@ async function advanceDefence(i: ButtonInteraction, ev: EventRow): Promise<void>
 
   if (!turn) {
     await say(ch, '## ✅ Defa-ha tamoom shod\nHala ray-e dovom.', C.day);
-    await i.update(await scumConsole(ev, 'Hameye defa-ha anjam shod — Ray 2 bezan.'));
+    await answer(i, await scumConsole(ev, 'Hameye defa-ha anjam shod — Ray 2 bezan.'));
     return;
   }
 
@@ -1991,7 +2060,7 @@ async function advanceDefence(i: ButtonInteraction, ev: EventRow): Promise<void>
     flags: MessageFlags.IsComponentsV2 as number,
     allowedMentions: { users: [turn.id] },
   }).catch(() => {});
-  await i.update(await scumConsole(fresh, `Nobat-e defa: <@${turn.id}> (${turn.index}/${turn.total}).`));
+  await answer(i, await scumConsole(fresh, `Nobat-e defa: <@${turn.id}> (${turn.index}/${turn.total}).`));
 }
 
 /* ══ the gun in daylight ═══════════════════════════════════════════ */
@@ -2004,12 +2073,16 @@ async function advanceDefence(i: ButtonInteraction, ev: EventRow): Promise<void>
  * the same way the room does: by watching nothing happen.
  */
 async function fireTheGun(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const st = stateOf(ev);
   const day = st.day ?? 0;
   if (!isDaylight(st.phase)) {
     // Naming the actual boundary: "only in the day" reads as though the
     // defence and the first ballot were closed too, and they are not.
-    await i.reply({
+    await note(i, {
       content: st.phase === 'vote2'
         ? 'Ejma shoro shode — dige nemishe shellik kard.'
         : 'Faghat too rooz mishe shellik kard, ta ghabl az Ejma.',
@@ -2018,7 +2091,7 @@ async function fireTheGun(i: StringSelectMenuInteraction, ev: EventRow): Promise
     return;
   }
   if (!canFireGun(st, i.user.id, day)) {
-    await i.reply({ content: 'Alan nemitooni shellik koni.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'Alan nemitooni shellik koni.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -2026,13 +2099,13 @@ async function fireTheGun(i: StringSelectMenuInteraction, ev: EventRow): Promise
   const roster = await players(ev.id);
   const victim = roster.find(p => p.userId === target);
   if (!victim?.alive) {
-    await i.reply({ content: 'In nafar too baazi nist.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'In nafar too baazi nist.', flags: MessageFlags.Ephemeral });
     return;
   }
 
   const shot = fireGun(st.gunHolders ?? [], i.user.id, target);
   if (!shot.fired) {
-    await i.reply({ content: 'Aslahe shellik nashod.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'Aslahe shellik nashod.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -2051,7 +2124,7 @@ async function fireTheGun(i: StringSelectMenuInteraction, ev: EventRow): Promise
       + '\n-# Aslahe khali bood. Hala hame midoonan.', C.day);
   }
 
-  await i.update({
+  await answer(i, {
     components: [new ContainerBuilder().setAccentColor(shot.hit ? C.mafia : C.day)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         shot.hit ? '## 🔫 Zadi va khord.' : '## 🔫 Aslahe khali bood.'))],
@@ -2404,9 +2477,13 @@ export async function scumComponent(
 
 /** The Terrorist's last act. Public, and without revealing the victim's role. */
 async function takeOneWithYou(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const st = stateOf(ev);
   if (st.pending?.kind !== 'terrorist' || st.pending.actor !== i.user.id) {
-    await i.reply({ content: 'Dige nemitooni.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'Dige nemitooni.', flags: MessageFlags.Ephemeral });
     return;
   }
   const target = i.values[0]!;
@@ -2419,7 +2496,7 @@ async function takeOneWithYou(i: StringSelectMenuInteraction, ev: EventRow): Pro
     + '\n-# Naghsh-e hich kodoom lo nemire.', C.mafia);
   await applyTextRules(i.guild!, fresh, 'day');
   await applyVoice(i.guild!, fresh, false);
-  await i.update({
+  await answer(i, {
     components: [new ContainerBuilder().setAccentColor(C.mafia)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 💣 Anjam shod.'))],
     ...v2,
@@ -2434,15 +2511,19 @@ async function takeOneWithYou(i: StringSelectMenuInteraction, ev: EventRow): Pro
  * reading that cannot loop forever, and it is flagged for confirmation.
  */
 async function answerVeto(i: ButtonInteraction, ev: EventRow, cancel: boolean): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const st = stateOf(ev);
   if (st.pending?.kind !== 'veto' || st.pending.actor !== i.user.id) {
-    await i.reply({ content: 'Dige nemitooni.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'Dige nemitooni.', flags: MessageFlags.Ephemeral });
     return;
   }
   const target = st.pending.target;
 
   if (!cancel) {
-    await i.update({
+    await answer(i, {
       components: [new ContainerBuilder().setAccentColor(C.day)
         .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 👌 Gozashti bere.'))],
       ...v2,
@@ -2464,7 +2545,7 @@ async function answerVeto(i: ButtonInteraction, ev: EventRow, cancel: boolean): 
   const nameOf = namer(i.guild, roster);
   const choices = roster.filter(p => p.alive && p.userId !== target);
   if (!choices.length) {
-    await i.update({
+    await answer(i, {
       components: [new ContainerBuilder().setAccentColor(C.day)
         .addTextDisplayComponents(new TextDisplayBuilder().setContent(
           '## ⚠️ Kesi nist ke jash bezari.\nRay hamoon mimoone.'))],
@@ -2475,7 +2556,7 @@ async function answerVeto(i: ButtonInteraction, ev: EventRow, cancel: boolean): 
     return;
   }
 
-  await i.update({
+  await answer(i, {
     components: [new ContainerBuilder().setAccentColor(C.day)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         '## 🛑 Veto\nKi ro jash mizani biroon?'))
@@ -2491,9 +2572,13 @@ async function answerVeto(i: ButtonInteraction, ev: EventRow, cancel: boolean): 
 
 /** The Shahrdar has named their replacement. */
 async function vetoPick(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
+  // Acknowledged before the work, not after: everything below is network
+  // calls, and Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const st = stateOf(ev);
   if (st.pending?.kind !== 'veto' || st.pending.actor !== i.user.id) {
-    await i.reply({ content: 'Dige nemitooni.', flags: MessageFlags.Ephemeral });
+    await note(i, { content: 'Dige nemitooni.', flags: MessageFlags.Ephemeral });
     return;
   }
   const chosen = i.values[0]!;
@@ -2502,7 +2587,7 @@ async function vetoPick(i: StringSelectMenuInteraction, ev: EventRow): Promise<v
   const me = roster.find(p => p.userId === i.user.id);
   const left = me ? Math.max(0, (usesLeft(st, me) ?? 1) - 1) : 0;
 
-  await i.update({
+  await answer(i, {
     components: [new ContainerBuilder().setAccentColor(C.day)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         `## 🛑 Veto\n${isolate(nameOf(chosen))} ro jash gozashti.`))],

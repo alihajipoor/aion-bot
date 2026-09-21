@@ -480,6 +480,26 @@ async function console_(ev: EventRow, note?: string) {
   return { components: [box], flags: (MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral) as number };
 }
 
+/*
+ * Answer correctly whether or not the interaction has already been acknowledged.
+ *
+ * The same pair as the Scum console, and for the same reason: the way to beat
+ * Discord's three-second window is to acknowledge first and work afterwards,
+ * but a handler that has acknowledged can no longer reply or update. These let
+ * a handler defer up front without rewriting both of its answer paths.
+ */
+type Answerable2 = ButtonInteraction | StringSelectMenuInteraction;
+
+const answer = async (i: Answerable2, payload: object): Promise<void> => {
+  if (i.deferred || i.replied) await i.editReply(payload as never);
+  else await i.update(payload as never);
+};
+
+const note = async (i: Answerable2, payload: object): Promise<void> => {
+  if (i.deferred || i.replied) await i.followUp(payload as never);
+  else await i.reply(payload as never);
+};
+
 const canRun = (i: MessageComponentInteraction, ev: EventRow): boolean => {
   const m = i.member as GuildMember;
   return i.user.id === ev.hostId
@@ -1110,6 +1130,10 @@ async function castEjma(i: StringSelectMenuInteraction, ev: EventRow): Promise<v
 
 /** Ends accusations and asks the narrator to confirm who goes to defence. */
 async function endEjma(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  // Acknowledged before the work: what follows is network calls, and
+  // Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const st = ev.state as DayState;
   const votes = st.ejma?.votes ?? {};
   const roster = await players(ev.id);
@@ -1128,7 +1152,7 @@ async function endEjma(i: ButtonInteraction, ev: EventRow): Promise<void> {
   const fresh = (await getEvent(ev.id))!;
   await i.message.edit(ejmaCard(fresh, alive, false)).catch(() => {});
 
-  await i.reply({
+  await note(i, {
     components: [new ContainerBuilder().setAccentColor(C.day)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
         `### 🗣️ Ki bere roo miz?\n${suggested.length
@@ -1151,6 +1175,10 @@ async function endEjma(i: ButtonInteraction, ev: EventRow): Promise<void> {
 /* ── stage 2: defence ─────────────────────────────────────────── */
 
 async function setNominees(i: StringSelectMenuInteraction, ev: EventRow): Promise<void> {
+  // Acknowledged before the work: what follows is network calls, and
+  // Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   await mergeState(ev.id, { nominees: i.values, defense: { order: i.values, at: -1 } });
   const fresh = (await getEvent(ev.id))!;
 
@@ -1166,7 +1194,7 @@ async function setNominees(i: StringSelectMenuInteraction, ev: EventRow): Promis
     allowedMentions: { parse: [] },
   }).catch(() => {});
 
-  await i.update(await console_(fresh, `${i.values.length} nafar rafan roo miz.`));
+  await answer(i, await console_(fresh, `${i.values.length} nafar rafan roo miz.`));
 }
 
 /** Hands the floor to the next nominee, or reports that everyone has spoken. */
@@ -1288,6 +1316,10 @@ async function castVote(i: StringSelectMenuInteraction, ev: EventRow): Promise<v
 }
 
 async function closeVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
+  // Acknowledged before the work: what follows is network calls, and
+  // Discord stops listening three seconds after the click.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const st = ev.state as DayState;
   const votes = st.votes ?? {};
   const counts = new Map<string, number>();
@@ -1301,7 +1333,7 @@ async function closeVote(i: ButtonInteraction, ev: EventRow): Promise<void> {
   const roster = await players(ev.id);
   const ids = (fresh.state as DayState).nominees ?? [];
 
-  await i.update(finalCard(fresh, roster.filter(p => ids.includes(p.userId)), roster.filter(p => p.alive).length, false));
+  await answer(i, finalCard(fresh, roster.filter(p => ids.includes(p.userId)), roster.filter(p => p.alive).length, false));
 
   const ch = chatOf(fresh, i.guild!);
   await ch?.send({
