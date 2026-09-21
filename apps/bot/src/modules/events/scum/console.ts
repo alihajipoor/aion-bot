@@ -1448,7 +1448,8 @@ async function endVote(
   const st = stateOf(ev);
   // Already shut — a timer racing God's button lands here and does nothing.
   if (!st.voteOpen) {
-    await i?.reply({ content: 'Ray-giri baz nist.', flags: MessageFlags.Ephemeral });
+    // Already acknowledged above, so this has to be a follow-up, not a reply.
+    if (i) await note(i, { content: 'Ray-giri baz nist.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -2664,7 +2665,7 @@ async function finishEliminationOutsideConsole(
 async function clearPending(i: ButtonInteraction, ev: EventRow): Promise<void> {
   const st = stateOf(ev);
   const p = st.pending;
-  if (!p) { await i.reply({ content: 'Chizi montazer nist.', flags: MessageFlags.Ephemeral }); return; }
+  if (!p) { await note(i, { content: 'Chizi montazer nist.', flags: MessageFlags.Ephemeral }); return; }
   await mergeState(ev.id, { pending: null });
 
   if (p.kind === 'veto') {
@@ -2675,7 +2676,7 @@ async function clearPending(i: ButtonInteraction, ev: EventRow): Promise<void> {
     return;
   }
   await mergeState(ev.id, { phase: 'day', nominees: [], defence: { order: [], at: -1 } });
-  await i.update(await scumConsole((await getEvent(ev.id))!,
+  await answer(i, await scumConsole((await getEvent(ev.id))!,
     'Entekhab-e terrorist rad shod. Rooz tamoom — Shab bezan.'));
 }
 
