@@ -1001,3 +1001,17 @@ test('a short name is tagged without being cut', async () => {
   assert.equal(__tagged('Nima', '(Alive)'), 'Nima (Alive)');
   assert.equal(__tagged('Nima', '(Dead)'), 'Nima (Dead)');
 });
+
+/* ── the name tag never reaches the permanent record ────────────── */
+
+test('stripTag removes the game tag and leaves everything else alone', async () => {
+  const { stripTag } = await import('../dist/modules/events/nicknames.js');
+  assert.equal(stripTag('Λ | Nima (Alive)'), 'Λ | Nima');
+  assert.equal(stripTag('Λ | Mosiouw 🪽 (Dead)'), 'Λ | Mosiouw 🪽');
+  assert.equal(stripTag('Λ | AHMADREZA (ALIVE)'), 'Λ | AHMADREZA');
+  // A name that merely contains the word is not a tag.
+  assert.equal(stripTag('Alive And Well'), 'Alive And Well');
+  assert.equal(stripTag('Λ | Rt 🍇'), 'Λ | Rt 🍇');
+  // Only the trailing one, and only once.
+  assert.equal(stripTag('(Dead) Λ | S'), '(Dead) Λ | S');
+});

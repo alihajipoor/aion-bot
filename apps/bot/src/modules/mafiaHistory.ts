@@ -9,6 +9,8 @@ import {
 import { findRole } from '../lib/roles.js';
 import { asciiFold, isolate, num } from '../lib/text.js';
 import { logger } from '../lib/log.js';
+import { setGameMessage, gameFor } from '../lib/mafiaStats.js';
+import { stripTag } from './events/nicknames.js';
 
 const log = logger('mafia-history');
 
@@ -157,6 +159,48 @@ export interface PostResult {
  * is logged and swallowed, because a game must not be left half-ended because
  * someone deleted a channel.
  */
+/**
+ * Redraws a game's card after the fact — for an MVP named once it was over.
+ *
+ * Rebuilt from what was stored rather than from the guild, because by now the
+ * players are called whatever they were called before the game and several of
+ * them may have left. The roster on the row is what the card printed.
+ */
+export async function refreshMafiaHistory(
+  guild: Guild, eventId: number,
+): Promise<boolean> {
+  const row = await gameFor(guild.id, eventId).catch(() => null);
+  if (!row?.messageId || !row.roster?.length) return false;
+
+  const channel = mafiaHistoryChannel(guild);
+  if (!channel) return false;
+
+  const nameOf = (id: string) => stripTag(guild.members.cache.get(id)?.displayName ?? id);
+  const card = historyCard({
+    guildId: guild.id,
+    eventId,
+    mode: row.mode as FinishedGame['mode'],
+    winner: row.winner,
+    mvpUserId: row.mvpUserId,
+    endedAt: row.endedAt,
+    players: row.roster.map(p => ({
+      userId: p.userId, role: p.roleFa, roleFa: p.roleFa,
+      side: p.side as FinishedGame['players'][number]['side'],
+    })),
+  }, nameOf);
+
+  const msg = await channel.messages.fetch(row.messageId).catch(() => null);
+  if (!msg) return false;
+  // Keep whatever was above the card — the role ping on the original post.
+  const kept = msg.components.length > 1 ? [msg.components[0]!] : [];
+  await msg.edit({
+    components: [...kept, card] as never,
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },
+  }).catch(e => { log.warn('could not redraw the history card', e); return null; });
+  return true;
+}
+
 export async function postMafiaHistory(guild: Guild, game: FinishedGame): Promise<PostResult> {
   let row;
   try {
@@ -176,7 +220,15 @@ export async function postMafiaHistory(guild: Guild, game: FinishedGame): Promis
     return { recorded: true, messageId: null };
   }
 
-  const nameOf = (id: string) => guild.members.cache.get(id)?.displayName ?? id;
+  /*
+   * Names without the game's own tags.
+   *
+   * The card is built while the players are still called "(Alive)" and
+   * "(Dead)" — the nicknames are put back a moment later, during teardown — so
+   * the permanent record froze a state that stops being true the second it is
+   * written. This is the one place the tag must not appear.
+   */
+  const nameOf = (id: string) => stripTag(guild.members.cache.get(id)?.displayName ?? id);
 
   // The ping lives in the text, because a Components V2 message carries no
   // separate content field. allowedMentions is what decides whether it rings,
@@ -200,6 +252,15 @@ export async function postMafiaHistory(guild: Guild, game: FinishedGame): Promis
       allowedMentions: { parse: [], roles: role ? [role.id] : [] },
     });
     log.info(`game ${game.eventId} posted to #${channel.name}`);
+    // Remembered so the card can be corrected — an MVP named afterwards used
+    // to update the table and leave this post saying nothing.
+    await setGameMessage(game.guildId, game.eventId, msg.id,
+      game.players.map(p => ({
+        userId: p.userId,
+        roleFa: p.roleFa ?? p.role ?? '?',
+        side: String(p.side ?? 'shahr'),
+      })))
+      .catch(e => log.warn('could not remember the history card', e));
     return { recorded: true, messageId: msg.id };
   } catch (e) {
     log.error('could not post the history card', e);

@@ -43,6 +43,13 @@
       "when": 1789339037150,
       "tag": "0005_wandering_talisman",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790118209645,
+      "tag": "0006_handy_zodiak",
+      "breakpoints": true
     }
   ]
 }

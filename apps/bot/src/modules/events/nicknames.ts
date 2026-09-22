@@ -119,3 +119,12 @@ export async function resealNicknames(
 
 /** Exported for the tests: the truncation is the part worth proving. */
 export const __tagged = tagged;
+
+/**
+ * A display name with the game's own tag taken off.
+ *
+ * For anywhere a name is written down permanently — the history card — where
+ * "(Dead)" stops being true the moment the game ends and the names go back.
+ */
+export const stripTag = (name: string): string =>
+  name.replace(/\s*\((?:Alive|Dead)\)\s*$/i, '');

@@ -388,6 +388,22 @@ export const mafiaGames = pgTable('mafia_games', {
   /** God picks it by hand, and may not pick one at all. */
   mvpUserId:   snowflake('mvp_user_id'),
   playerCount: integer('player_count').notNull().default(0),
+  /**
+   * The history card this game was announced on.
+   *
+   * Kept so the card can be corrected later — an MVP named after the fact used
+   * to update the table and the database and leave the post itself saying
+   * nothing, which is the copy everybody actually reads.
+   */
+  messageId:   snowflake('message_id'),
+  /**
+   * The roster as the card printed it.
+   *
+   * There is no per-game players table, so without this the card cannot be
+   * rebuilt — and a card that cannot be rebuilt cannot be corrected when the
+   * MVP is named afterwards. Stored as it was shown, names and all.
+   */
+  roster:      jsonb('roster').$type<{ userId: string; roleFa: string; side: string }[]>(),
   endedAt:     timestamp('ended_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [
   uniqueIndex('mafia_games_event_idx').on(t.eventId),

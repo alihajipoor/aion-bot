@@ -173,6 +173,29 @@ export async function recordGame(game: FinishedGame): Promise<GameRow | null> {
  *
  * Passing null clears it.
  */
+/**
+ * Remembers which post announced a game, and what it printed.
+ *
+ * Both, because correcting the card later needs the message to edit and the
+ * roster to redraw — there is no per-game players table to read it back from.
+ */
+export async function setGameMessage(
+  guildId: string, eventId: number, messageId: string,
+  roster: { userId: string; roleFa: string; side: string }[],
+): Promise<void> {
+  await getDb().update(mafiaGames).set({ messageId, roster })
+    .where(and(eq(mafiaGames.guildId, guildId), eq(mafiaGames.eventId, eventId)));
+}
+
+/** The recorded game for an event, or null. */
+export async function gameFor(
+  guildId: string, eventId: number,
+): Promise<GameRow | null> {
+  const [row] = await getDb().select().from(mafiaGames)
+    .where(and(eq(mafiaGames.guildId, guildId), eq(mafiaGames.eventId, eventId))).limit(1);
+  return row ?? null;
+}
+
 export async function setGameMvp(
   guildId: string, eventId: number, userId: string | null,
 ): Promise<{ changed: boolean; previous: string | null }> {

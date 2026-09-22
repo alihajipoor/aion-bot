@@ -3,6 +3,7 @@ import {
 } from 'discord.js';
 import { recentGames, setGameMvp, playerRecord, totalWins, totalLosses } from '../lib/mafiaStats.js';
 import { refreshScoreboard } from '../modules/mafiaScoreboard.js';
+import { refreshMafiaHistory } from '../modules/mafiaHistory.js';
 import { isolate, num } from '../lib/text.js';
 import { hasRole } from '../lib/roles.js';
 import type { Command } from '../types.js';
@@ -98,10 +99,22 @@ const command: Command = {
 
     // The scoreboard counts MVPs, so it is stale the moment this changes.
     await refreshScoreboard(guild).catch(() => {});
+    /*
+     * And so is the card in the history channel.
+     *
+     * That post is the copy people actually read — the table is a summary
+     * nobody opens afterwards. Naming an MVP used to update the database and
+     * the scoreboard and leave the announcement itself saying nothing, which
+     * looked exactly like the command had not worked.
+     */
+    const redrawn = await refreshMafiaHistory(guild, eventId).catch(() => false);
     await i.editReply(
       `⭐ MVP e bazi \`#${num(eventId)}\` shod **${isolate(nameOf(user.id))}**.`
       + (res.previous ? `\n-# Ghablan ${isolate(nameOf(res.previous))} bood — shomaresh oon pas gerefte shod.` : '')
-      + '\n-# Jadval update shod.');
+      + '\n-# Jadval update shod.'
+      + (redrawn
+        ? '\n-# Kart e tarikhche ham edit shod.'
+        : '\n-# ⚠️ Kart e tarikhche peyda nashod — oon post dasti bayad edit beshe.'));
   },
 };
 export default command;

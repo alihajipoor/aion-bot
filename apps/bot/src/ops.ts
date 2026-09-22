@@ -21,6 +21,7 @@ import { openGiveaway, scoreInvites, unattributedJoins } from './lib/giveaway.js
 import { REASON_TEXT, type Reason } from './lib/invites.js';
 import { postAnnouncement, awardPodium, refreshAnnouncement, refreshBoard } from './modules/giveawayPoster.js';
 import { recentGames, setGameMvp } from './lib/mafiaStats.js';
+import { refreshMafiaHistory } from './modules/mafiaHistory.js';
 import { liveEvents, players, replacePlayer, mergeState, getEvent } from './modules/events/store.js';
 import { swapPlayerInState, stateOf } from './modules/events/scum/console.js';
 import { refreshScoreboard } from './modules/mafiaScoreboard.js';
@@ -258,8 +259,13 @@ async function mafiaMvp(): Promise<void> {
   }
   console.log(`event ${eventId}: mvp ${res.previous ?? '—'} -> ${userId ?? '—'}`);
 
-  // The scoreboard counts MVPs, so it is wrong until it is redrawn.
-  await withGuild(async g => { await refreshScoreboard(g); });
+  // The scoreboard counts MVPs, so it is wrong until it is redrawn — and so is
+  // the history card, which is the copy people actually read.
+  await withGuild(async g => {
+    await refreshScoreboard(g);
+    const ok = await refreshMafiaHistory(g, eventId).catch(() => false);
+    console.log(ok ? 'history card redrawn' : 'history card not found — edit it by hand');
+  });
   console.log('scoreboard refreshed');
 }
 
