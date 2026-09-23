@@ -26,6 +26,7 @@ const REPOST = process.argv.includes('--repost');
 const GUIDE   = '•︱📜│𝙼𝙰𝙵𝙸𝙰-𝙶𝚄𝙸𝙳𝙴';
 const SCORE   = '•︱📊│𝙼𝙰𝙵𝙸𝙰-𝚂𝙲𝙾𝚁𝙴';
 const HISTORY = '•︱🏆│𝙼𝙰𝙵𝙸𝙰-𝙷𝙸𝚂𝚃𝙾𝚁𝚈';
+const MEME    = '•︱😂│𝙼𝙰𝙵𝙸𝙰-𝙼𝙴𝙼𝙴';
 const STAFF = ['Consultant', 'Dev'];
 // Verified members. QUIDDITCH grants sight through these, never through
 // @everyone — which is exactly what these channels got wrong.
@@ -334,32 +335,63 @@ c.once('clientReady', async () => {
       if (!memberRoles.some(r => foldRole(r.name) === foldRole(n))) console.warn(`! member role not found: ${n}`);
     }
 
-    const overwrites = [
+    /*
+     * Two shapes: a noticeboard and a room.
+     *
+     * The guide, the history and the scoreboard are things the bot writes and
+     * members read. The meme channel is the opposite — members write it — so
+     * it cannot just reuse the same list, and the difference is stated here
+     * rather than left to whoever edits this next.
+     *
+     * What does not change between them is the part that matters: @everyone is
+     * denied sight, and sight comes from the member roles. Unverified accounts
+     * hold nothing but @everyone.
+     */
+    const overwritesFor = ({ writable }) => [
       // No ViewChannel here: unverified accounts hold only @everyone.
       { id: g.roles.everyone.id,
         deny:  [P.ViewChannel, P.SendMessages, P.SendMessagesInThreads, P.CreatePublicThreads] },
       ...memberRoles.map(r => ({
-        id: r.id, allow: [P.ViewChannel, P.ReadMessageHistory, P.AddReactions],
+        id: r.id,
+        allow: writable
+          ? [P.ViewChannel, P.ReadMessageHistory, P.AddReactions,
+             P.SendMessages, P.AttachFiles, P.EmbedLinks]
+          : [P.ViewChannel, P.ReadMessageHistory, P.AddReactions],
       })),
       { id: g.members.me.id,
         allow: [P.ViewChannel, P.ReadMessageHistory, P.SendMessages,
                 P.ManageMessages, P.EmbedLinks, P.AttachFiles] },
       ...staffRoles.map(r => ({
         id: r.id,
-        allow: [P.ViewChannel, P.ReadMessageHistory, P.SendMessages, P.ManageMessages],
+        // Staff can post pictures where members can. On a noticeboard that is
+        // pointless; in a meme channel, a moderator who cannot attach an image
+        // is a moderator who cannot join in.
+        allow: writable
+          ? [P.ViewChannel, P.ReadMessageHistory, P.SendMessages, P.ManageMessages,
+             P.AttachFiles, P.EmbedLinks, P.AddReactions]
+          : [P.ViewChannel, P.ReadMessageHistory, P.SendMessages, P.ManageMessages],
       })),
       // A section ban removes the section from view entirely.
       ...sanction('Event Banned',        [P.ViewChannel]),
       ...sanction('Server Banned',       [P.ViewChannel]),
-      // A mute leaves them watching, unable to contribute — reactions included,
-      // or a muted member still argues in 👍 and 👎 under the rules post.
-      ...sanction('Entertainment Muted', [P.SendMessages, P.AddReactions, P.SendMessagesInThreads]),
+      /*
+       * A mute leaves them watching, unable to contribute — reactions included,
+       * or a muted member still argues in 👍 and 👎 under the rules post.
+       *
+       * AttachFiles is in the list for the meme channel's sake: a mute that
+       * stops words and not pictures stops nothing at all in a room whose
+       * entire content is pictures.
+       */
+      ...sanction('Entertainment Muted',
+        [P.SendMessages, P.AddReactions, P.SendMessagesInThreads, P.AttachFiles, P.EmbedLinks]),
     ];
 
     const SPECS = [
       { name: GUIDE,   match: /mafia-?guide/,   topic: 'Ghavanin-e mafia — naghsh-ha, shab, rooz' },
       { name: HISTORY, match: /mafia-?history/, topic: 'Natije-ye har bazi — barande, tarkib, MVP' },
       { name: SCORE,   match: /mafia-?score/,   topic: 'Jadval-e bazikon-ha — har saat update mishe' },
+      { name: MEME,    match: /mafia-?meme/,    writable: true,
+        topic: 'Meme-haye mafia — har chi too baazi gozasht' },
     ];
 
     const made = {};
@@ -375,20 +407,25 @@ c.once('clientReady', async () => {
         made[spec.name] = existing;
         if (APPLY) {
           // set(), not edit(): this list is the whole truth for the channel.
-          await existing.permissionOverwrites.set(overwrites, 'AION: mafia channels');
-          console.log(`      overwrites re-applied — writable by ${STAFF.join(', ')} ✅`);
+          await existing.permissionOverwrites.set(
+            overwritesFor({ writable: spec.writable === true }), 'AION: mafia channels');
+          console.log(`      overwrites re-applied — ${spec.writable ? 'members can post' : `writable by ${STAFF.join(', ')}`} ✅`);
         }
         continue;
       }
 
       console.log(`${APPLY ? 'MAKE ' : 'plan '} ${spec.name}  in  ${cat.name}`);
-      console.log('       @everyone: read + react, no sending');
+      console.log('       unverified (@everyone): cannot see it');
+      console.log(spec.writable
+        ? '       members: read, react, post, attach'
+        : '       members: read + react, no sending');
       console.log(`       writable by: ${STAFF.join(', ')}`);
       if (!APPLY) continue;
 
       made[spec.name] = await g.channels.create({
         name: spec.name, type: ChannelType.GuildText, parent: cat.id,
-        topic: spec.topic, permissionOverwrites: overwrites,
+        topic: spec.topic,
+        permissionOverwrites: overwritesFor({ writable: spec.writable === true }),
         reason: 'AION: mafia channels',
       });
       console.log(`       made ${made[spec.name].id} ✅`);
