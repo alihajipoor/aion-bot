@@ -132,7 +132,20 @@ export function explicitDistribution(
   const known = new Map(scenario.roles.map(r => [r.key, r]));
   known.set(CITIZEN.key, CITIZEN);
 
-  const asked = Object.keys(counts).filter(k => (counts[k] ?? 0) > 0 && known.has(k));
+  /*
+   * A map holding keys this scenario has never heard of came from the other
+   * mode, and none of it can be trusted.
+   *
+   * Silently keeping the three keys the two catalogues happen to share —
+   * doctor, detective, sniper — is worse than ignoring the map: it deals a
+   * table that is a fragment of one game's intent expressed in another game's
+   * words. The panel clears these on a mode switch now; this is for the events
+   * that were configured before it did.
+   */
+  const wanted = Object.keys(counts).filter(k => (counts[k] ?? 0) > 0);
+  if (wanted.some(k => !known.has(k))) return null;
+
+  const asked = wanted.filter(k => known.has(k));
   if (!asked.length) return null;
 
   const boss = mandatoryOf(scenario);

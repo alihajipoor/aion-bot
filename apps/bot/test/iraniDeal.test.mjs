@@ -71,14 +71,18 @@ test('the boss is never the one trimmed', () => {
   assert.equal(out[0].key, 'godfather');
 });
 
-test('counts from the other mode are ignored, not dealt', () => {
-  // Scum role keys. They must not reach a Persian table.
-  const out = explicitDistribution(gf, 5, { natasha: 2, saghi: 1, doctor: 1 });
-  assert.ok(!keys(out).includes('natasha'));
-  assert.ok(!keys(out).includes('saghi'));
-  assert.equal(tally(out).doctor, 1);
-  assert.equal(tally(out).godfather, 1);   // forced in
-  assert.equal(out.length, 5);
+test('a map mixing the two vocabularies is rejected whole', () => {
+  /*
+   * This used to assert that the foreign keys were dropped and `doctor` was
+   * still honoured. That was the bug, written down as the rule: the three keys
+   * the catalogues share got applied and every Persian role without a Scum
+   * counterpart vanished, so a ten-player table came out as a boss, a doctor
+   * and seven citizens.
+   *
+   * A map that mentions a role this scenario does not have was written for the
+   * other game. None of it is meant for this table.
+   */
+  assert.equal(explicitDistribution(gf, 5, { natasha: 2, saghi: 1, doctor: 1 }), null);
 });
 
 test('every scenario has a boss to force in', () => {
@@ -101,4 +105,32 @@ test('the automatic ladder is untouched by any of this', () => {
   const auto = distribution(gf, 9, []);
   assert.equal(auto.length, 9);
   assert.equal(auto[0].key, 'godfather');
+});
+
+/* ── counts from the other mode must not be half-honoured ───────── */
+
+test('a counts map written for Scum is ignored, not partly applied', () => {
+  // doctor, detective and sniper are the only keys the two catalogues share.
+  // Honouring just those produced a ten-player table with a boss, a doctor, a
+  // detective and seven citizens — and a console reading "night jobs 2/2".
+  const scumCounts = {
+    don: 1, natasha: 1, saghi: 1, shahrvand: 4,   // no Persian equivalent
+    doctor: 1, detective: 1,                       // shared keys
+  };
+  assert.equal(explicitDistribution(gf, 10, scumCounts), null,
+    'a foreign map means fall back to the scenario ladder');
+});
+
+test('a clean Persian counts map still works', () => {
+  const out = explicitDistribution(gf, 6, { godfather: 1, doctor: 1, detective: 1, citizen: 3 });
+  assert.equal(out.length, 6);
+  assert.equal(tally(out).citizen, 3);
+});
+
+test('citizen is a known key and does not poison the map', () => {
+  // CITIZEN is not in scenario.roles, so it has to be allowed explicitly or
+  // every hand-built cast would be thrown away as foreign.
+  const out = explicitDistribution(gf, 4, { godfather: 1, citizen: 3 });
+  assert.ok(out, 'citizen must count as known');
+  assert.equal(out.length, 4);
 });

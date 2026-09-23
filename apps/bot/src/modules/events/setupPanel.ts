@@ -588,7 +588,21 @@ export async function setupComponent(
       return true;
     }
     const mode = modeOf(ev) === 'scum' ? 'irani' : 'scum';
-    await mergeState(ev.id, { mode });
+    /*
+     * Switching mode throws the role counts away.
+     *
+     * A count belongs to a vocabulary, not to the event. The two catalogues
+     * share exactly three keys — doctor, detective and sniper — so counts set
+     * for Scum did not simply get ignored by a Persian deal: the three that
+     * overlapped were honoured and every Persian role that had no counterpart
+     * was dropped. The table came out with a boss, a doctor, a detective and
+     * seven plain citizens, and a narrator watching "Karhaye shab 2/2" on a ten
+     * player game could not see why.
+     *
+     * Clearing them falls back to the scenario's own ladder, which is what
+     * somebody switching mode means.
+     */
+    await mergeState(ev.id, { mode, config: { ...rawConfig(ev), roleCounts: {} } });
     await i.update(screen((await getEvent(ev.id))!, 'hub'));
     return true;
   }

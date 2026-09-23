@@ -26,6 +26,7 @@ import {
 // and these two are pure functions that touch neither.
 import { rebalanceUses, roleForBudget } from './scum/console.js';
 import { resealNicknames } from './nicknames.js';
+import { warnButton, warnMark, warnPrompt, warnReason, warnSave } from './warnings.js';
 import { eachLimit } from '../../lib/parallel.js';
 
 const log = logger('mafia');
@@ -373,7 +374,8 @@ async function console_(ev: EventRow, note?: string) {
       `🔴 **Mafia** ${mafiaAlive}   ·   🟢 **Shahr** ${townAlive}`,
       '',
       ...roster.map(p =>
-        `${p.alive ? '🟢' : '⚫'} \`${String(p.seat ?? 0).padStart(2, ' ')}\` <@${p.userId}> — ${roleOf(p.role).fa}`),
+        `${p.alive ? '🟢' : '⚫'} \`${String(p.seat ?? 0).padStart(2, ' ')}\` <@${p.userId}> — ${roleOf(p.role).fa}`
+        + warnMark(ev, p.userId)),
       ...(note ? ['', `> ${note}`] : []),
     ].join('\n')));
 
@@ -449,6 +451,8 @@ async function console_(ev: EventRow, note?: string) {
       .setEmoji(muted ? '🔊' : '🔇')
       .setStyle(muted ? ButtonStyle.Success : ButtonStyle.Secondary)
       .setDisabled(!ev.voiceChannelId),
+    // A rule about the table applies to the table whichever scenario is on.
+    warnButton(MAFIA_ID, ev.id, roster.some(p => p.alive)),
     ...(phase === 'setup' ? [] : [
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'mafia')).setLabel('Mafia bord')
         .setEmoji('🔴').setStyle(ButtonStyle.Danger),
@@ -581,6 +585,12 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
   // than taking over the console, so God can tune a rule without losing the
   // phase buttons he is mid-game with.
   if (await setupComponent(i, ev)) return;
+
+  if (step === 'warn' && i.isButton()) {
+    await warnPrompt(i, ev, MAFIA_ID, id => i.guild?.members.cache.get(id)?.displayName ?? id);
+    return;
+  }
+  if (step === 'warnwho' && i.isStringSelectMenu()) { await warnReason(i, ev, MAFIA_ID); return; }
 
   if (step === 'console' || step === 'refresh') {
     const payload = await console_(ev);
@@ -725,8 +735,31 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
   }
 }
 
-export async function mafiaModal(_i: ModalSubmitInteraction): Promise<void> {
-  // Reserved: scenario editing arrives with the second scenario.
+export async function mafiaModal(i: ModalSubmitInteraction): Promise<void> {
+  const [step, idRaw, arg] = dec(i.customId);
+  if (step !== 'warnsave' || !arg) return;
+
+  const ev = await getEvent(Number(idRaw));
+  if (!ev) { await i.reply({ content: 'Event peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
+
+  const m = i.member as GuildMember | null;
+  const allowed = i.user.id === ev.hostId
+    || (m && (m.permissions.has(PermissionFlagsBits.Administrator)
+      || hasRole(m, ['Consultant', 'PowerAdmin', 'Dev'])));
+  if (!allowed) { await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral }); return; }
+
+  const guild = i.guild!;
+  await warnSave(i, ev, arg, {
+    guild,
+    chat: chatOf(ev, guild),
+    nameOf: id => guild.members.cache.get(id)?.displayName ?? id,
+    // A death changes who is muted, and this mode has its own rules for that.
+    afterKill: async () => {
+      const fresh = (await getEvent(ev.id))!;
+      const phase = ((fresh.state as { phase?: string }).phase as 'night' | 'day') ?? 'day';
+      await applyVoice(guild, fresh, phase);
+    },
+  });
 }
 
 /* ── phase announcements ───────────────────────────────────────── */
