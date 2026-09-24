@@ -42,6 +42,9 @@ import { resealNicknames } from '../nicknames.js';
 import {
   warnButton, warnMark, warnPrompt, warnReason, warnSave, WARN_LIMIT, type Warn,
 } from '../warnings.js';
+import {
+  godButton, godPrompt, godSwap, swapRoleButton, swapRolePrompt, swapRolePickB, swapRoleDo,
+} from '../handover.js';
 import type { Phase } from '../games.js';
 import {
   SCUM_ROLES, roleOf, resolveNight, resolveDayVote, terroristTriggers, fireGun,
@@ -941,6 +944,8 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
       .setStyle(st.forceMute ? ButtonStyle.Success : ButtonStyle.Secondary)
       .setDisabled(!ev.voiceChannelId),
     warnButton(SCUM_ID, ev.id, roster.some(p => p.alive)),
+    godButton(SCUM_ID, ev.id),
+    swapRoleButton(SCUM_ID, ev.id, roster.filter(p => p.alive && p.role).length >= 2),
   ));
 
   if (phase !== 'setup') {
@@ -2198,6 +2203,34 @@ export async function scumComponent(
   if (step === 'defence' && i.isButton()) { await advanceDefence(i, ev); return; }
   if (step === 'win' && i.isButton()) { await declareWin(i, ev, arg === 'mafia' ? 'mafia' : 'shahr'); return; }
   if (step === 'clear' && i.isButton()) { await clearPending(i, ev); return; }
+  if (step === 'god' && i.isButton()) { await godPrompt(i, ev, SCUM_ID); return; }
+  if (step === 'godpick' && i.isStringSelectMenu()) {
+    await godSwap(i, ev, i.values[0]!, {
+      chat: chatOf(ev, i.guild!),
+    });
+    return;
+  }
+  if (step === 'rswap' && i.isButton()) {
+    const roster = await players(ev.id);
+    await swapRolePrompt(i, ev, SCUM_ID, k => faOf(k), namer(i.guild, roster));
+    return;
+  }
+  if (step === 'rswapa' && i.isStringSelectMenu()) {
+    const roster = await players(ev.id);
+    await swapRolePickB(i, ev, SCUM_ID, i.values[0]!, k => faOf(k), namer(i.guild, roster));
+    return;
+  }
+  if (step === 'rswapb' && i.isStringSelectMenu() && arg) {
+    const roster = await players(ev.id);
+    await swapRoleDo(i, ev, arg, i.values[0]!, {
+      chat: chatOf(ev, i.guild!),
+      faOf: k => faOf(k),
+      nameOf: namer(i.guild, roster),
+      blurbOf: k => (k && NIGHT_ASK[k as RoleKey]?.prompt) || 'Naghshet ro be hich kas nagoo.',
+    });
+    return;
+  }
+
   if (step === 'warn' && i.isButton()) {
     await warnPrompt(i, ev, SCUM_ID, namer(i.guild, await players(ev.id)));
     return;

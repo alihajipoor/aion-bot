@@ -27,6 +27,9 @@ import {
 import { rebalanceUses, roleForBudget } from './scum/console.js';
 import { resealNicknames } from './nicknames.js';
 import { warnButton, warnMark, warnPrompt, warnReason, warnSave } from './warnings.js';
+import {
+  godButton, godPrompt, godSwap, swapRoleButton, swapRolePrompt, swapRolePickB, swapRoleDo,
+} from './handover.js';
 import { eachLimit } from '../../lib/parallel.js';
 
 const log = logger('mafia');
@@ -453,6 +456,8 @@ async function console_(ev: EventRow, note?: string) {
       .setDisabled(!ev.voiceChannelId),
     // A rule about the table applies to the table whichever scenario is on.
     warnButton(MAFIA_ID, ev.id, roster.some(p => p.alive)),
+    godButton(MAFIA_ID, ev.id),
+    swapRoleButton(MAFIA_ID, ev.id, roster.filter(p => p.alive && p.role).length >= 2),
     ...(phase === 'setup' ? [] : [
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'mafia')).setLabel('Mafia bord')
         .setEmoji('🔴').setStyle(ButtonStyle.Danger),
@@ -585,6 +590,31 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
   // than taking over the console, so God can tune a rule without losing the
   // phase buttons he is mid-game with.
   if (await setupComponent(i, ev)) return;
+
+  if (step === 'god' && i.isButton()) { await godPrompt(i, ev, MAFIA_ID); return; }
+  if (step === 'godpick' && i.isStringSelectMenu()) {
+    await godSwap(i, ev, i.values[0]!, { chat: chatOf(ev, i.guild!) });
+    return;
+  }
+  if (step === 'rswap' && i.isButton()) {
+    await swapRolePrompt(i, ev, MAFIA_ID,
+      k => roleOf(k).fa, id => i.guild?.members.cache.get(id)?.displayName ?? id);
+    return;
+  }
+  if (step === 'rswapa' && i.isStringSelectMenu()) {
+    await swapRolePickB(i, ev, MAFIA_ID, i.values[0]!,
+      k => roleOf(k).fa, id => i.guild?.members.cache.get(id)?.displayName ?? id);
+    return;
+  }
+  if (step === 'rswapb' && i.isStringSelectMenu() && arg) {
+    await swapRoleDo(i, ev, arg, i.values[0]!, {
+      chat: chatOf(ev, i.guild!),
+      faOf: k => roleOf(k).fa,
+      nameOf: id => i.guild?.members.cache.get(id)?.displayName ?? id,
+      blurbOf: k => roleOf(k).blurb ?? 'Naghshet ro be hich kas nagoo.',
+    });
+    return;
+  }
 
   if (step === 'warn' && i.isButton()) {
     await warnPrompt(i, ev, MAFIA_ID, id => i.guild?.members.cache.get(id)?.displayName ?? id);

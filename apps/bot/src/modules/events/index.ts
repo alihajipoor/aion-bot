@@ -33,6 +33,7 @@ import {
 } from './scum/index.js';
 import { resealEventAccess } from './lockout.js';
 import { resealNicknames } from './nicknames.js';
+import { setCardRefresher } from './handover.js';
 import { startEsmFamil, endEsmFamil, esmComponent, esmModal, esmSelect, ESM_ID } from './esmfamil.js';
 import { startSoali, endSoali, soaliComponent, soaliModal, SOALI_ID } from './soali.js';
 import type { AionClient } from '../../client.js';
@@ -303,6 +304,17 @@ export async function controlCard(ev: EventRow) {
 
   return { components: [box], flags: MessageFlags.IsComponentsV2 as const };
 }
+
+/*
+ * Both cards that name the narrator, redrawn together.
+ *
+ * Handing the game over changes a name printed in two places, and handover.ts
+ * cannot import this file — this file imports its callers. So it is handed in.
+ */
+setCardRefresher(async (guild, ev) => {
+  await refreshCard(guild, ev).catch(() => {});
+  await refreshSignup(guild, ev).catch(() => {});
+});
 
 /** Rewrites the card in place so the interface never shows a stale status. */
 async function refreshCard(guild: Guild, ev: EventRow): Promise<void> {

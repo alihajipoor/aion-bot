@@ -36,6 +36,17 @@ const secretChannels = (guild: Guild, ev: EventRow): TextChannel[] => {
 interface LockState {
   lockedIds?: string[];
   /**
+   * Who was given sight of the console channel because they are narrating.
+   *
+   * The interface channel grants ViewChannel to staff roles. A narrator who is
+   * not staff — and handing the game to a spectator mid-evening is exactly when
+   * that happens — could not open the console at all: the button lives on a
+   * card in a channel they cannot see. So the host gets a member overwrite for
+   * as long as they are the host, and it is remembered here so it can be taken
+   * back when they stop being one.
+   */
+  hostGrantId?: string;
+  /**
    * Administrator-carrying roles taken off players for the duration, by user.
    *
    * Written before the roles are removed, never after. If the process dies
@@ -93,6 +104,7 @@ export async function resealEventAccess(
     await mergeState(ev.id, { lockedIds: [...want] }).catch(() => {});
   }
 
+  await resealHostSight(guild, ev, channels, reason);
   await resealAdminRoles(guild, ev, want, reason);
 
   /*
@@ -115,6 +127,40 @@ export async function resealEventAccess(
     log.warn(`event #${ev.id}: ${immune.length} player(s) still hold Administrator`);
   }
   return immune;
+}
+
+/**
+ * Lets whoever is narrating see the console channel, and only while they are.
+ *
+ * Derived like everything else here: the current host gets the grant, the
+ * previous holder loses it. Staff already see the channel through their roles,
+ * so the overwrite is redundant for them — but harmless, and writing it
+ * unconditionally means the take-back does not have to guess who needed it.
+ *
+ * Removed when the event ends, because `ev.hostId` stops mattering then and a
+ * spectator left with standing access to the staff channel is exactly the kind
+ * of leftover nobody goes looking for.
+ */
+async function resealHostSight(
+  guild: Guild, ev: EventRow, channels: TextChannel[], reason: string,
+): Promise<void> {
+  const live = ev.status !== 'ended' && ev.status !== 'cancelled';
+  const want = live ? ev.hostId : null;
+  const had = (ev.state as LockState)?.hostGrantId ?? null;
+  if (want === had) return;
+
+  for (const channel of channels) {
+    if (had) {
+      await channel.permissionOverwrites.delete(had, `${reason} — no longer narrating`)
+        .catch(e => log.warn(`could not take console sight from ${had}: ${(e as Error).message}`));
+    }
+    if (want) {
+      await channel.permissionOverwrites.edit(want, { ViewChannel: true }, { reason })
+        .catch(e => log.warn(`could not give console sight to ${want}: ${(e as Error).message}`));
+    }
+  }
+  await mergeState(ev.id, { hostGrantId: want }).catch(() => {});
+  log.info(`event #${ev.id}: console sight ${had ?? 'nobody'} -> ${want ?? 'nobody'}`);
 }
 
 /**
