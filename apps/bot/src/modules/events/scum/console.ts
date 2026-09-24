@@ -184,43 +184,6 @@ export function limitFor(role: RoleKey, cfg: ScumLimits = {}): number | null {
 }
 
 /**
- * Moves a live counter when God changes the budget behind it.
- *
- * By the difference, not to the new total: a Sniper who has already fired one
- * of two and is cut to one bullet has none left, not one. Spent is spent. And
- * it never hands back more than the new ceiling.
- *
- * Before the game starts there is nothing to move — `seedUses` has not run, and
- * it will read the new config when it does.
- */
-export function rebalanceUses(
-  uses: Record<string, number> | undefined,
-  roster: readonly Seat[],
-  role: RoleKey,
-  before: number,
-  after: number,
-): Record<string, number> | null {
-  if (!uses || before === after || !Number.isFinite(before) || !Number.isFinite(after)) return null;
-  const next = { ...uses };
-  let touched = false;
-  for (const p of roster) {
-    if (p.role !== role) continue;
-    const left = next[p.userId];
-    if (left === undefined) continue;
-    next[p.userId] = Math.max(0, Math.min(after, left + (after - before)));
-    touched = true;
-  }
-  return touched ? next : null;
-}
-
-/** Which role a budget field counts for. */
-export const roleForBudget = (field: string): RoleKey | null =>
-  field === 'sniperBullets' ? 'sniper'
-  : field === 'shahrdarVetoes' ? 'shahrdar'
-  : field === 'kalantarGuns' ? 'kalantar'
-  : null;
-
-/**
  * Rewrites every trace of one player id as another, across the whole state.
  *
  * A substitution is not a new signup: the seat, the role and everything the
@@ -2609,11 +2572,3 @@ async function clearPending(i: ButtonInteraction, ev: EventRow): Promise<void> {
     'Entekhab-e terrorist rad shod. Rooz tamoom — Shab bezan.'));
 }
 
-/**
- * Writes God's per-role limits before the game starts.
- *
- * Setup owns the buttons that choose these numbers; `startScum` reads them back
- * out of state when it seeds the counters, so they have to land first.
- */
-export const setScumLimits = (id: number, cfg: ScumLimits): Promise<void> =>
-  mergeState(id, { config: cfg });

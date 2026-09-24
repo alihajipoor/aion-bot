@@ -30,7 +30,7 @@ import {
   countsAsOf, mandatoryOf,
   type MafiaConfig, type Phase, type TextRule, type RoleDef,
 } from './games.js';
-import { SCUM_ROLES, canDisable, type ScumRole } from './scum/rules.js';
+import { SCUM_ROLES, canDisable, type ScumRole, type RoleKey } from './scum/rules.js';
 import { distribution as scumDistribution } from './scum/deal.js';
 
 /**
@@ -305,6 +305,54 @@ const tableSize = (ev: EventRow): number =>
  * the explicit list — which is what `explicitCast` does — so the first edit
  * inherits the split's numbers instead of wiping the table.
  */
+/*
+ * Moved here out of the Scum console, which mafia.ts must not import.
+ *
+ * mafia.ts registers the applier that uses these, and scum/console.ts imports
+ * mafia.ts for the text rules — so importing it back made a cycle. Under ESM a
+ * cycle does not fail loudly at build time; it fails at boot, when one module's
+ * top-level code runs before another's bindings exist, and the bot crash-looped
+ * on `Cannot access 'setTextRuleApplier' before initialization`.
+ *
+ * Both are pure and belong beside the panel that writes the numbers anyway.
+ */
+/**
+ * Moves a live counter when God changes the budget behind it.
+ *
+ * By the difference, not to the new total: a Sniper who has already fired one
+ * of two and is cut to one bullet has none left, not one. Spent is spent. And
+ * it never hands back more than the new ceiling.
+ *
+ * Before the game starts there is nothing to move — `seedUses` has not run, and
+ * it will read the new config when it does.
+ */
+export function rebalanceUses(
+  uses: Record<string, number> | undefined,
+  roster: readonly { userId: string; role: string | null }[],
+  role: RoleKey,
+  before: number,
+  after: number,
+): Record<string, number> | null {
+  if (!uses || before === after || !Number.isFinite(before) || !Number.isFinite(after)) return null;
+  const next = { ...uses };
+  let touched = false;
+  for (const p of roster) {
+    if (p.role !== role) continue;
+    const left = next[p.userId];
+    if (left === undefined) continue;
+    next[p.userId] = Math.max(0, Math.min(after, left + (after - before)));
+    touched = true;
+  }
+  return touched ? next : null;
+}
+
+/** Which role a budget field counts for. */
+export const roleForBudget = (field: string): RoleKey | null =>
+  field === 'sniperBullets' ? 'sniper'
+  : field === 'shahrdarVetoes' ? 'shahrdar'
+  : field === 'kalantarGuns' ? 'kalantar'
+  : null;
+
 function effectiveCounts(ev: EventRow): { counts: Record<string, number>; auto: boolean } {
   const cfg = panelConfig(ev);
   const set = cfg.roleCounts ?? {};

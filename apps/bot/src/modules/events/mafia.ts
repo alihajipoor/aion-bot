@@ -21,10 +21,10 @@ import { hasRole } from '../../lib/roles.js';
 import { postMafiaHistory } from '../mafiaHistory.js';
 import {
   SETUP_ID, setupButton, setupComponent, setTextRuleApplier, setLimitApplier,
+  rebalanceUses, roleForBudget,
 } from './setupPanel.js';
 // Counter maths only — no cycle: scum/console imports mafia.ts for text rules,
 // and these two are pure functions that touch neither.
-import { rebalanceUses, roleForBudget } from './scum/console.js';
 import { resealNicknames } from './nicknames.js';
 import { warnButton, warnMark, warnPrompt, warnReason, warnSave } from './warnings.js';
 import {

@@ -35,7 +35,7 @@ import {
   type EventRow, type PlayerRow,
 } from '../store.js';
 import { SCUM_ROLES, canDisable, MANDATORY_ROLES, type RoleKey, type Team } from './rules.js';
-import { setScumLimits, type ScumLimits } from './console.js';
+import type { ScumLimits } from './console.js';
 
 const log = logger('scum-deal');
 
@@ -519,6 +519,22 @@ const dmOne = async (
  * config back out of state when it seeds the counters, so the numbers have to
  * be there first.
  */
+/**
+ * Writes God's per-role limits before the game starts.
+ *
+ * Lives here rather than in the console because the console imports mafia.ts
+ * for its text rules, and mafia.ts imports the settings panel, and the panel
+ * imports this file — so a single function pulled the whole console into that
+ * chain and closed a loop. Under ESM a loop does not fail at build time; it
+ * fails at boot, with one module's top-level code running before another's
+ * bindings exist, and the bot crash-looped on
+ * `Cannot access 'setTextRuleApplier' before initialization`.
+ *
+ * It only merges state, so it never needed the console in the first place.
+ */
+export const setScumLimits = (id: number, cfg: ScumLimits): Promise<void> =>
+  mergeState(id, { config: cfg });
+
 export async function dealScum(
   guild: Guild, ev: EventRow, cfg: ScumDealConfig = {},
 ): Promise<DealResult> {

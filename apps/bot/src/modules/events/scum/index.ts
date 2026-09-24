@@ -32,7 +32,6 @@ export {
   startScum,
   endScum,
   setScumFinisher,
-  setScumLimits,
   isScum,
   // Pure helpers, exported because the flow tests exercise them directly.
   limitFor,
@@ -100,4 +99,5 @@ export {
   grayAllowance, dealtCounts, limitsFrom, traitorSides, traitorSideOf,
   GRAY_ONE, GRAY_BOTH, asDealt,
   type ScumDealConfig, type DealResult, type Shuffle,
+  setScumLimits,
 } from './deal.js';
