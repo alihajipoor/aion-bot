@@ -16,6 +16,7 @@ import {
 } from './wizard.js';
 import { asciiFold, isolate, LRI, PDI } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
+import { eachLimit } from '../../lib/parallel.js';
 import { emitLog } from '../../lib/logbus.js';
 import {
   createEvent, getEvent, liveEvents, patchEvent, players, addPlayer, removePlayer,
@@ -714,15 +715,23 @@ async function afterRosterEdit(
   i: StringSelectMenuInteraction | UserSelectMenuInteraction, ev: EventRow, note: string,
 ): Promise<void> {
   const guild = i.guild!;
+  /*
+   * Answer first: resealing the roster rewrites a permission overwrite per
+   * player and then redraws two cards, which is well past the three seconds
+   * Discord waits. The editor was seeing "did not respond" on an edit that had
+   * in fact gone through.
+   */
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const fresh = (await getEvent(ev.id))!;
   // The roster changed, so who may see the console changed with it.
   await resealEventAccess(guild, fresh, `AION event #${fresh.id} edited`);
   await refreshSignup(guild, fresh);
   await refreshCard(guild, fresh);
-  await i.update({
+  await i.editReply({
     components: [new ContainerBuilder().setAccentColor(C.brand)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(`✅ ${note}`))],
-    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+    flags: MessageFlags.IsComponentsV2,
   });
 }
 
@@ -875,14 +884,20 @@ async function beginEvent(guild: Guild, ev: EventRow): Promise<void> {
       .catch(e => log.warn('nickname tagging failed', e));
   }
 
-  // Pull in anyone who signed up and is already sitting in another room.
+  /*
+   * Pull in anyone who signed up and is already sitting in another room.
+   *
+   * Concurrently: moving ten people one at a time is ten round trips stacked
+   * end to end, and Shoroo is the press everybody is watching.
+   */
   if (voiceId) {
-    for (const p of roster) {
-      const m = guild.members.cache.get(p.userId);
-      if (m?.voice.channelId && m.voice.channelId !== voiceId) {
-        await m.voice.setChannel(voiceId, `AION event #${ev.id}`).catch(() => {});
-      }
-    }
+    const move = roster
+      .map(p => guild.members.cache.get(p.userId))
+      .filter((m): m is GuildMember =>
+        Boolean(m?.voice.channelId && m.voice.channelId !== voiceId));
+    await eachLimit(move, 8, async m => {
+      await m.voice.setChannel(voiceId!, `AION event #${ev.id}`);
+    });
   }
 
   let fresh = (await getEvent(ev.id))!;
@@ -939,11 +954,13 @@ async function sweep(guild: Guild, ev: EventRow, reason: string): Promise<void> 
       // afterwards reports nobody every time.
       const leaving = [...channel.members.values()];
       if (to) {
-        for (const m of leaving) {
-          await m.voice.setChannel(to.id, reason)
-            .catch(e => log.warn(`could not move ${m.user.tag} out of ${channel.name}: ${(e as Error).message}`));
-        }
-        log.info(`moved ${leaving.length} member(s) from ${channel.name} to ${to.name}`);
+        // Together, not in turn: the game is over and nobody should sit through
+        // ten round trips watching the room empty one person at a time.
+        const moved = await eachLimit(leaving, 8, async m => {
+          await m.voice.setChannel(to.id, reason);
+        });
+        if (moved.failed) log.warn(`could not move ${moved.failed} out of ${channel.name}`);
+        log.info(`moved ${moved.done} member(s) from ${channel.name} to ${to.name}`);
       } else {
         log.warn(`no room to move ${leaving.length} member(s) out of ${channel.name}`);
       }

@@ -250,13 +250,16 @@ async function applyVoice(guild: Guild, ev: EventRow, phase: 'night' | 'day'): P
 
 async function releaseVoice(guild: Guild, ev: EventRow): Promise<void> {
   const roster = await players(ev.id);
-  for (const p of roster) {
-    gameHeld.delete(p.userId);
+  // Everyone is unmuted together: the game is over and nobody should sit
+  // through a round trip per player before they can speak again.
+  const leaving = roster;
+  for (const p of leaving) gameHeld.delete(p.userId);
+  await eachLimit(leaving, 8, async p => {
     const m = guild.members.cache.get(p.userId);
     if (m?.voice.channelId && m.voice.serverMute) {
-      await m.voice.setMute(false, 'AION mafia ended').catch(() => {});
+      await m.voice.setMute(false, 'AION mafia ended');
     }
-  }
+  });
 }
 
 /* ── start / end ───────────────────────────────────────────────── */
@@ -314,13 +317,22 @@ export async function startMafia(guild: Guild, ev: EventRow): Promise<void> {
   }).catch((e: Error) => { log.warn(`mafia room failed: ${e.message}`); return null; });
   if (room) owned.push(room.id);
 
+  /*
+   * The cards go out together, not one after another.
+   *
+   * A DM is a round trip; ten in a row is ten of them stacked, and this runs
+   * inside the press of Shoroo that everybody is watching. The seat write is a
+   * local query and stays in the loop; only the slow half is collected and
+   * waited on once.
+   */
+  const dealt: Promise<unknown>[] = [];
   for (let i = 0; i < seats.length; i++) {
     const p = seats[i]!;
     const role = roles[i]!;
     await assignRole(ev.id, p.userId, role.key, role.side, i + 1);
 
     const member = guild.members.cache.get(p.userId);
-    await member?.send({
+    dealt.push(member?.send({
       components: [new ContainerBuilder().setAccentColor(role.side === 'mafia' ? C.mafia : C.town)
         .addTextDisplayComponents(new TextDisplayBuilder().setContent(
           `## ${role.side === 'mafia' ? '🔴' : '🟢'} ${role.fa}`))
@@ -335,8 +347,9 @@ export async function startMafia(guild: Guild, ev: EventRow): Promise<void> {
           role.side === 'mafia' && room ? `-# Otagh e mafia: <#${room.id}>` : '-# Be hich kas naghshet ro nagoo.',
         ].join('\n')))],
       flags: MessageFlags.IsComponentsV2,
-    }).catch(() => log.warn(`could not DM ${p.userTag} their role`));
+    }).catch(() => log.warn(`could not DM ${p.userTag} their role`)) ?? Promise.resolve());
   }
+  await Promise.all(dealt);
 
   if (room && mafiaIds.length) {
     await room.send({

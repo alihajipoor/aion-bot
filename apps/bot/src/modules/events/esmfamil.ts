@@ -357,6 +357,9 @@ export async function esmSelect(i: StringSelectMenuInteraction): Promise<void> {
     challenge: { targetId, column, answer, byId: i.user.id, votes: {} },
   });
 
+  // Posting the challenge card is a round trip; answer the click first.
+  if (!i.deferred && !i.replied) await i.deferUpdate();
+
   const roster = await players(ev.id);
   const ch = channelOf(i.guild!, ev);
   const msg = await ch?.send(challengeCard({
@@ -367,7 +370,7 @@ export async function esmSelect(i: StringSelectMenuInteraction): Promise<void> {
     const cur = (await getEvent(ev.id))!.state as State;
     await mergeState(ev.id, { challenge: { ...cur.challenge!, messageId: msg.id } });
   }
-  await i.update({
+  await i.editReply({
     components: [new ContainerBuilder().setAccentColor(C.wait)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent('Etraz ferestade shod.'))],
     flags: MessageFlags.IsComponentsV2,

@@ -574,6 +574,7 @@ export async function dealScum(
   if (room) owned.push(room.id);
 
   const undelivered: string[] = [];
+  const sending: Promise<void>[] = [];
   const dealt: DealResult['roles'] = [];
 
   for (let idx = 0; idx < seats.length; idx++) {
@@ -591,20 +592,32 @@ export async function dealScum(
     await assignRole(ev.id, p.userId, key, def.side, seat);
     dealt.push({ userId: p.userId, role: key, seat });
 
-    const ok = key === 'traitor'
-      ? await (async () => {
-        const t = traitorDm(ev.id);
-        return dmOne(guild, p.userId, t.body, C.gray, t.buttons);
-      })()
-      : await dmOne(
-        guild, p.userId, roleCard(key, seat, cfg, room?.id ?? null),
-        def.side === 'mafia' ? C.mafia : def.side === 'gray' ? C.gray : C.shahr,
-      );
-    if (!ok) {
-      undelivered.push(p.userId);
-      log.warn(`scum #${ev.id}: could not DM ${p.userTag ?? p.userId} their role`);
-    }
+    /*
+     * Collected, not awaited here.
+     *
+     * Each card is a round trip and this runs inside Shoroo. Waiting for one
+     * player's DM before starting the next one made dealing a ten-hand table
+     * take ten times longer than it needed to, for no reason: no card depends
+     * on any other.
+     */
+    sending.push((async () => {
+      const ok = key === 'traitor'
+        ? await (async () => {
+          const t = traitorDm(ev.id);
+          return dmOne(guild, p.userId, t.body, C.gray, t.buttons);
+        })()
+        : await dmOne(
+          guild, p.userId, roleCard(key, seat, cfg, room?.id ?? null),
+          def.side === 'mafia' ? C.mafia : def.side === 'gray' ? C.gray : C.shahr,
+        );
+      if (!ok) {
+        undelivered.push(p.userId);
+        log.warn(`scum #${ev.id}: could not DM ${p.userTag ?? p.userId} their role`);
+      }
+    })());
   }
+  // Every undelivered card has to be known before the caller reports them.
+  await Promise.all(sending);
 
   if (room && teamIds.length) {
     await room.send({

@@ -1,4 +1,6 @@
-import { PermissionFlagsBits, type Guild, type TextChannel } from 'discord.js';
+import {
+  PermissionFlagsBits, type Guild, type GuildMember, type TextChannel,
+} from 'discord.js';
 import { mergeState, players, type EventRow } from './store.js';
 import { logger } from '../../lib/log.js';
 import { eachLimit } from '../../lib/parallel.js';
@@ -187,40 +189,52 @@ async function resealAdminRoles(
   let changed = false;
 
   // Give back first. Somebody who left the roster, or a game that has finished,
-  // should not wait on the rest of this succeeding.
-  for (const [userId, roleIds] of Object.entries(stored)) {
-    if (playing.has(userId)) continue;
-    const m = await guild.members.fetch(userId).catch(() => null);
-    if (m) {
-      for (const id of roleIds) {
-        await m.roles.add(id, `${reason} — restoring`).catch(
-          e => log.warn(`could not restore ${id} to ${m.user.tag}: ${(e as Error).message}`));
-      }
-      log.info(`event #${ev.id}: gave ${roleIds.length} role(s) back to ${m.user.tag}`);
-    }
-    delete next[userId];
-    changed = true;
-  }
+  // should not wait on the rest of this succeeding — and one slow member must
+  // not hold up the other nine, so they go together.
+  const giveBack = Object.entries(stored).filter(([id]) => !playing.has(id));
+  await eachLimit(giveBack, 6, async ([userId, roleIds]) => {
+    const m = guild.members.cache.get(userId) ?? await guild.members.fetch(userId).catch(() => null);
+    if (!m) return;
+    await eachLimit(roleIds, 4, async id => { await m.roles.add(id, `${reason} — restoring`); });
+    log.info(`event #${ev.id}: gave ${roleIds.length} role(s) back to ${m.user.tag}`);
+  });
+  for (const [userId] of giveBack) { delete next[userId]; changed = true; }
 
+  /*
+   * Stripping, in two passes rather than one.
+   *
+   * The invariant is that a removal is written down before it happens, so a
+   * crash between the two leaves a restore that puts back a role somebody
+   * still has — harmless — rather than a role nobody can prove they were owed.
+   * The old loop honoured that by writing the state inside itself, once per
+   * player, which meant a database round trip and a role edit alternating all
+   * the way down the table.
+   *
+   * Working out who loses what is all cache reads, so it costs nothing to do
+   * first. Then the record is written once, and only then do the removals go
+   * out — together. Same guarantee, one write, no stacking.
+   */
+  const toStrip: { m: GuildMember; ids: string[] }[] = [];
   for (const userId of playing) {
     if (stored[userId]) continue;                    // already stripped
-    const m = guild.members.cache.get(userId) ?? await guild.members.fetch(userId).catch(() => null);
+    const m = guild.members.cache.get(userId);
     if (!m) continue;
     const admin = m.roles.cache.filter(r =>
       r.id !== guild.id && r.permissions.has(PermissionFlagsBits.Administrator) && r.editable);
     if (!admin.size) continue;
-
     const ids = [...admin.keys()];
     next[userId] = ids;
-    // Recorded before removal, on purpose — see the note on strippedRoles.
+    toStrip.push({ m, ids });
+  }
+
+  if (toStrip.length) {
+    // Written before a single role comes off — see the note on strippedRoles.
     await mergeState(ev.id, { strippedRoles: next }).catch(() => {});
     changed = false;                                  // just written
-
-    for (const id of ids) {
-      await m.roles.remove(id, `${reason} — playing`).catch(
-        e => log.warn(`could not strip ${id} from ${m.user.tag}: ${(e as Error).message}`));
-    }
-    log.info(`event #${ev.id}: stripped ${ids.length} admin role(s) from ${m.user.tag}`);
+    await eachLimit(toStrip, 6, async ({ m, ids }) => {
+      await eachLimit(ids, 4, async id => { await m.roles.remove(id, `${reason} — playing`); });
+      log.info(`event #${ev.id}: stripped ${ids.length} admin role(s) from ${m.user.tag}`);
+    });
   }
 
   if (changed) await mergeState(ev.id, { strippedRoles: next }).catch(() => {});

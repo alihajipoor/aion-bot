@@ -758,13 +758,16 @@ export async function endScum(guild: Guild, ev: EventRow): Promise<void> {
   // handles for games nobody remembers.
   clearTimeout(autoCloseTimers.get(ev.id));
   autoCloseTimers.delete(ev.id);
-  for (const p of await players(ev.id).catch(() => [])) {
-    gameHeld.delete(p.userId);
+  // Everyone is unmuted together: the game is over and nobody should sit
+  // through a round trip per player before they can speak again.
+  const leaving = await players(ev.id).catch(() => []);
+  for (const p of leaving) gameHeld.delete(p.userId);
+  await eachLimit(leaving, 8, async p => {
     const m = guild.members.cache.get(p.userId);
     if (m?.voice.channelId && m.voice.serverMute) {
-      await m.voice.setMute(false, 'AION scum ended').catch(() => {});
+      await m.voice.setMute(false, 'AION scum ended');
     }
-  }
+  });
 }
 
 /**

@@ -216,10 +216,11 @@ export async function soaliModal(i: ModalSubmitInteraction): Promise<void> {
       subject: i.fields.getTextInputValue('subject').trim(),
       thinkerId: i.user.id, phase: 'playing', asked: 0, guesses: 0,
     });
+    // The board is a round trip; the modal is answered before it goes out.
+    await i.reply({ content: 'Sabt shod ✅ Hala baghie mipoorsan.', flags: MessageFlags.Ephemeral });
     const fresh = (await getEvent(ev.id))!;
     const msg = await ch?.send(board(fresh));
     if (msg) await mergeState(ev.id, { boardMessageId: msg.id });
-    await i.reply({ content: 'Sabt shod ✅ Hala baghie mipoorsan.', flags: MessageFlags.Ephemeral });
     return;
   }
 
