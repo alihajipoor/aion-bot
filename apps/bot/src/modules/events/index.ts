@@ -11,7 +11,7 @@ import {
 import { renderHeaderBanner } from '../../lib/banner.js';
 import { CATALOGUE, SCENARIOS, scenarioOf, distribution, type GameKey } from './games.js';
 import {
-  WZ, decWizard, draftFor, clearDraft, screenFor, applyChange, timerModal, configOf,
+  WZ, decWizard, draftFor, clearDraft, screenFor, applyChange, timerModal, configOf, roleStep,
   modeOf as draftMode,
 } from './wizard.js';
 import { asciiFold, isolate, LRI, PDI } from '../../lib/text.js';
@@ -475,7 +475,18 @@ export async function handleSelect(
 
 /** Wizard controls: every change redraws the same ephemeral screen. */
 export async function handleWizard(i: ButtonInteraction | StringSelectMenuInteraction): Promise<void> {
-  const [a, b] = decWizard(i.customId);
+  const parts = decWizard(i.customId);
+  const [a, b] = parts;
+
+  /*
+   * The roles sub-screen answers for its own controls and nobody else's.
+   *
+   * It is the settings panel's screen, rendered against the draft, so the
+   * host picks roles and counts the same way before the game exists as after.
+   */
+  const d0 = draftFor(i.user.id);
+  const roles = roleStep(d0, parts, i.isStringSelectMenu() ? i.values : []);
+  if (roles) { await i.update(roles); return; }
 
   if (i.isStringSelectMenu()) {
     const d = draftFor(i.user.id);

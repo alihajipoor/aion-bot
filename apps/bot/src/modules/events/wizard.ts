@@ -11,6 +11,8 @@ import {
 } from './games.js';
 import { settings } from '../../lib/settings.js';
 import { SCUM_ROLES, canDisable } from './scum/rules.js';
+import { rolesScreen, type RoleScreenIds } from './setupPanel.js';
+import type { EventRow } from './store.js';
 import { distribution as scumDistribution } from './scum/deal.js';
 
 export const WZ = 'wz';
@@ -197,15 +199,18 @@ function mafiaScreen(d: Draft) {
      * without him leaves them unable to kill. Absent from the list rather than
      * ticked-and-refused, since a switch that cannot move is just a puzzle.
      */
-    const toggleable = Object.values(SCUM_ROLES).filter(r => canDisable(r.key));
-    box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-      new StringSelectMenuBuilder().setCustomId(enc('m', 'scumroles'))
-        .setPlaceholder('Naghsh ha — tik = too bazi hast')
-        .setMinValues(0).setMaxValues(Math.min(25, toggleable.length))
-        .addOptions(toggleable.slice(0, 25).map(r => new StringSelectMenuOptionBuilder()
-          .setLabel(r.fa).setValue(r.key)
-          .setDescription(r.side === 'mafia' ? 'Mafia' : r.side === 'gray' ? 'Khakestari' : 'Shahr')
-          .setDefault(!d.mafia.disabledRoles.includes(r.key))))));
+    /*
+     * One button onto the real roles screen, instead of a row of switches.
+     *
+     * The switches could only say in-or-out; the screen behind this button sets
+     * how many of each, which is what the host actually wants to decide before
+     * a game starts. It is the same screen the settings panel shows once the
+     * game exists — not a copy of it — so the two cannot disagree.
+     */
+    box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(enc('m', 'openroles'))
+        .setLabel('Naghsh ha va tedadeshoon').setEmoji('🎭')
+        .setStyle(ButtonStyle.Primary)));
   }
 
   if (!scum) box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
@@ -222,15 +227,12 @@ function mafiaScreen(d: Draft) {
       .addOptions(counts.map(n => new StringSelectMenuOptionBuilder()
         .setLabel(`${n} nafar`).setValue(String(n)).setDefault(n === d.players)))));
 
-  const optional = scum ? [] : sc.roles.filter(r => r.optional);
-  if (optional.length) {
-    box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-      new StringSelectMenuBuilder().setCustomId(enc('m', 'roles'))
-        .setPlaceholder('Naghsh haye ekhtiari')
-        .setMinValues(0).setMaxValues(optional.length)
-        .addOptions(optional.map(r => new StringSelectMenuOptionBuilder()
-          .setLabel(r.fa).setValue(r.key).setDescription(r.blurb.slice(0, 100))
-          .setDefault(d.mafia.optionalRoles.includes(r.key))))));
+  // Same screen for the Persian side: which roles, and how many of each.
+  if (!scum) {
+    box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(enc('m', 'openroles'))
+        .setLabel('Naghsh ha va tedadeshoon').setEmoji('🎭')
+        .setStyle(ButtonStyle.Primary)));
   }
 
   box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
@@ -355,6 +357,65 @@ export function timerModal(d: Draft): ModalBuilder {
       num('day', 'Rooz (sanie)', d.mafia.daySeconds),
       num('defense', 'Defa (sanie)', d.mafia.defenseSeconds),
       num('vote', 'Ray giri (sanie)', d.mafia.voteSeconds));
+}
+
+/**
+ * The draft, shaped like an event so the roles screen can read it.
+ *
+ * That screen takes an EventRow because it normally edits a live game. A draft
+ * has no row yet, and everything the screen actually reads — the mode, the
+ * config, the table size — is present here. Building a stand-in is what lets
+ * one screen serve both without a second copy of it.
+ *
+ * The id is zero and never used: the ids for every control are supplied
+ * separately, and they route back to the wizard rather than to the panel.
+ */
+export const draftAsEvent = (d: Draft): EventRow => ({
+  id: 0,
+  capacity: d.players,
+  state: { mode: d.mode, config: { ...d.mafia, players: d.players } },
+} as unknown as EventRow);
+
+/** Where the roles screen's controls send their clicks while still a draft. */
+const draftRoleIds = (): RoleScreenIds => ({
+  pick: enc('m', 'rolepick'),
+  count: key => enc('m', 'rolecount', key),
+  auto: enc('m', 'roleauto'),
+  back: new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(enc('m', 'rolesback'))
+      .setLabel('Bargard').setEmoji('◀️').setStyle(ButtonStyle.Secondary)),
+});
+
+/**
+ * The roles sub-screen, while the game is still a draft.
+ *
+ * Returns null for anything that is not one of its own controls, so the caller
+ * can fall through to the ordinary wizard handling without knowing what lives
+ * in here.
+ */
+export function roleStep(
+  d: Draft, parts: string[], values: string[],
+): ReturnType<typeof screenFor> | null {
+  const [group, field, arg] = parts;
+  if (group !== 'm') return null;
+
+  const draw = (picked?: string) =>
+    rolesScreen(draftAsEvent(d), picked, draftRoleIds()) as ReturnType<typeof screenFor>;
+
+  if (field === 'openroles') return draw();
+  if (field === 'rolepick') return draw(values[0]);
+  if (field === 'roleauto') { d.mafia.roleCounts = {}; return draw(); }
+  if (field === 'rolesback') return screenFor(d);
+  if (field === 'rolecount' && arg) {
+    const n = Number(values[0]);
+    const next = { ...(d.mafia.roleCounts ?? {}) };
+    // Zero means "not in this game", and a zero left in the map would still
+    // count as an explicit cast — so it is removed rather than stored.
+    if (Number.isFinite(n) && n > 0) next[arg] = n; else delete next[arg];
+    d.mafia.roleCounts = next;
+    return draw(arg);
+  }
+  return null;
 }
 
 /** Applies one wizard control and returns the redrawn screen. */

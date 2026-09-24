@@ -323,7 +323,23 @@ function effectiveCounts(ev: EventRow): { counts: Record<string, number>; auto: 
   return { counts, auto: true };
 }
 
-function rolesScreen(ev: EventRow, picked?: string) {
+/**
+ * Where the buttons on the roles screen send their clicks.
+ *
+ * The screen is rendered twice from two different places — the settings panel
+ * on a live event, and the creation wizard on a draft that has no event yet —
+ * so the ids cannot be baked in. Everything else about it is identical, and
+ * deliberately: the host said this screen is the one they want, and a second
+ * implementation of it would drift from this one within a week.
+ */
+export interface RoleScreenIds {
+  pick: string;
+  count: (roleKey: string) => string;
+  auto: string;
+  back: ActionRowBuilder<ButtonBuilder>;
+}
+
+export function rolesScreen(ev: EventRow, picked?: string, ids?: RoleScreenIds) {
   const { counts, auto } = effectiveCounts(ev);
   const size = tableSize(ev);
   const total = Object.values(counts).reduce((a, n) => a + n, 0);
@@ -357,7 +373,7 @@ function rolesScreen(ev: EventRow, picked?: string) {
     ].join('\n')));
 
   box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-    new StringSelectMenuBuilder().setCustomId(enc('cfgrolepick', ev.id))
+    new StringSelectMenuBuilder().setCustomId(ids?.pick ?? enc('cfgrolepick', ev.id))
       .setPlaceholder(picked
         ? `Naghsh — ${panelRole(ev, picked)?.fa ?? picked}`
         : 'Kodoom naghsh ro avaz koni?')
@@ -371,7 +387,7 @@ function rolesScreen(ev: EventRow, picked?: string) {
     // The Don cannot go to zero; he is the mafia's only night shot.
     const floor = isLocked(ev, picked) ? 1 : 0;
     box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-      new StringSelectMenuBuilder().setCustomId(enc('cfgrolecount', ev.id, picked))
+      new StringSelectMenuBuilder().setCustomId(ids?.count(picked) ?? enc('cfgrolecount', ev.id, picked))
         .setPlaceholder(`Chand ta? — alan ${counts[picked] ?? 0}`)
         .addOptions(Array.from({ length: 9 - floor }, (_, k) => k + floor).map(n =>
           new StringSelectMenuOptionBuilder()
@@ -379,12 +395,19 @@ function rolesScreen(ev: EventRow, picked?: string) {
             .setDefault(n === (counts[picked] ?? 0))))));
   }
 
-  box.addActionRowComponents(backRow(ev.id, [
-    new ButtonBuilder().setCustomId(enc('cfgroleauto', ev.id))
-      .setLabel('Khodkar').setEmoji('🎲')
-      .setStyle(auto ? ButtonStyle.Success : ButtonStyle.Secondary)
-      .setDisabled(auto),
-  ]));
+  box.addActionRowComponents(ids
+    ? new ActionRowBuilder<ButtonBuilder>().addComponents(
+        ...ids.back.components,
+        new ButtonBuilder().setCustomId(ids.auto)
+          .setLabel('Khodkar').setEmoji('🎲')
+          .setStyle(auto ? ButtonStyle.Success : ButtonStyle.Secondary)
+          .setDisabled(auto))
+    : backRow(ev.id, [
+        new ButtonBuilder().setCustomId(enc('cfgroleauto', ev.id))
+          .setLabel('Khodkar').setEmoji('🎲')
+          .setStyle(auto ? ButtonStyle.Success : ButtonStyle.Secondary)
+          .setDisabled(auto),
+      ]));
 
   return { components: [box], flags: (MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral) as number };
 }
