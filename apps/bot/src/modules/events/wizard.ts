@@ -135,8 +135,8 @@ function mafiaScreen(d: Draft) {
   const box = new ContainerBuilder().setAccentColor(C.mafia)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       scum
-        ? '## 🃏 Setup — Mafia Scum\n-# Naghsh ha sabet-an. Faghat tedad ro entekhab kon.'
-        : '## 🕵️ Setup — Mafia\n-# Sanario, tedad va naghsh ha ro tanzim kon. Har chizi avaz koni, jadval zir hamoon lahze update mishe.'))
+        ? '## 🃏 Setup — Mafia Scum\n-# Tedade bazikon ro bezan, baad naghsh ha va tedade har kodoom ro entekhab kon.'
+        : '## 🕵️ Setup — Mafia\n-# Sanario va tedade bazikon ro bezan, baad naghsh ha va tedade har kodoom ro entekhab kon.'))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
 
   if (!scum) box.addTextDisplayComponents(new TextDisplayBuilder().setContent([
@@ -425,12 +425,12 @@ export function applyChange(d: Draft, group: string, field: string, values: stri
     else if (field === 'scenario') { d.mafia.scenario = values[0]!; d.mafia.optionalRoles = []; }
     if (field === 'players') d.players = Number(values[0]);
     if (field === 'roles') d.mafia.optionalRoles = values;
-    // Ticked is in, so anything left unticked is what gets stored as off.
-    if (field === 'scumroles') {
-      d.mafia.disabledRoles = Object.values(SCUM_ROLES)
-        .filter(r => canDisable(r.key) && !values.includes(r.key))
-        .map(r => r.key);
-    }
+    /*
+     * `scumroles` is gone: the tick-list it served was replaced by the roles
+     * screen, which sets counts rather than in-or-out. `disabledRoles` stays in
+     * the config because the dealer still honours it when no counts are set —
+     * it is simply never written from here any more.
+     */
     if (field === 'flags') {
       for (const f of OPTION_FLAGS) (d.mafia[f.key] as boolean) = values.includes(f.key);
     }
