@@ -23,6 +23,7 @@ on:
           - mafia-games
           - mafia-mvp
           - mafia-swap
+          - vps-status
           - giveaway-start
           - giveaway-close
       title:
@@ -91,6 +92,30 @@ jobs:
           set -euo pipefail
           APP=/opt/aion
           cd "$APP"
+
+          # Hardware, not the bot. Runs plain shell rather than ops.js, so it
+          # keeps working when the bundle is the thing that is broken — which is
+          # exactly when somebody asks how the machine is doing.
+          if [ "$TASK" = "vps-status" ]; then
+            echo "===== uptime / load ====="; uptime
+            echo; echo "===== cpu ====="
+            nproc --all | sed 's/^/cores: /'
+            top -bn1 | head -3 | tail -2
+            echo; echo "===== memory ====="; free -h
+            echo; echo "===== disk ====="; df -h / /opt 2>/dev/null | sort -u
+            echo; echo "===== biggest under /opt ====="
+            du -xh -d1 /opt 2>/dev/null | sort -h | tail -6
+            echo; echo "===== services ====="
+            for u in aion-bot aion-web aion-watchdog.timer postgresql; do
+              printf '%-22s %s\n' "$u" "$(systemctl is-active "$u" 2>/dev/null || echo '-')"
+            done
+            echo; echo "===== bot process ====="
+            ps -o pid,etime,%cpu,%mem,rss,cmd -C node --sort=-%mem 2>/dev/null | head -5
+            echo; echo "===== recent errors ====="
+            journalctl -u aion-bot --since '1 hour ago' -p err --no-pager 2>/dev/null | tail -8 || echo "(none)"
+            exit 0
+          fi
+
           set -a; . "$APP/.env"; set +a
           sudo -u aionbot \
             --preserve-env=DISCORD_TOKEN,DISCORD_CLIENT_ID,LIVE_GUILD_ID,DATABASE_URL,NODE_ENV,LOG_LEVEL \
