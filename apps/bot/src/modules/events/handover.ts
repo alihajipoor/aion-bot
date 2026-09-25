@@ -7,7 +7,7 @@ import {
 } from 'discord.js';
 import { isolate, num, asciiFold } from '../../lib/text.js';
 import {
-  getEvent, patchEvent, mergeState, players, assignRole,
+  getEvent, patchEvent, mergeState, players, assignRole, removePlayer,
   type EventRow, type PlayerRow,
 } from './store.js';
 import { resealEventAccess } from './lockout.js';
@@ -69,23 +69,35 @@ export const godButton = (prefix: string, eventId: number): ButtonBuilder =>
 /**
  * Offers the people who could take over.
  *
- * A living player is deliberately not on the list. Whoever narrates reads every
- * role in the game, so handing it to somebody still playing does not transfer
+ * Once the cards are out, a living player is not on the list: whoever narrates
+ * reads every role, so handing it to somebody still playing does not transfer
  * the job, it ends the game — quietly, with nobody saying so. The dead are
- * fine: they are out and already know what they knew.
+ * fine; they are out and already know what they knew.
+ *
+ * Before the game starts, that rule has nothing to protect and everything to
+ * break. Signed-up players are all "alive" from the moment they press Sabt-nam,
+ * so applying it to a game that has not been dealt ruled out the entire room
+ * and left the host staring at "nobody can take this". There are no roles yet.
+ * Anyone in earshot can take it, and if they had signed up they simply stop
+ * being a player — a narrator does not hold a card.
  */
 export async function godPrompt(
   i: ButtonInteraction, ev: EventRow, prefix: string,
 ): Promise<void> {
   const roster = await players(ev.id);
-  const alive = new Set(roster.filter(p => p.alive).map(p => p.userId));
+  const dealt = ev.status === 'running' && roster.some(p => p.role);
+  const barred = dealt
+    ? new Set(roster.filter(p => p.alive).map(p => p.userId))
+    : new Set<string>();
   const here = nearby(i.guild, ev)
-    .filter(m => m.id !== ev.hostId && !alive.has(m.id));
+    .filter(m => m.id !== ev.hostId && !barred.has(m.id));
 
   if (!here.length) {
     await i.reply({
-      content: 'Kesi nist ke betoone gardanande beshe — bazikon-haye zende nemitoonan.'
-        + '\n-# Har ki mikhad, aval biad too voice.',
+      content: dealt
+        ? 'Kesi nist ke betoone gardanande beshe — bazikon-haye zende nemitoonan.'
+          + '\n-# Har ki mikhad, aval biad too voice.'
+        : 'Kesi too voice nist. Har ki mikhad gardanande beshe, aval biad too voice.',
       ...eph,
     });
     return;
@@ -99,8 +111,8 @@ export async function godPrompt(
           .setPlaceholder(`Ki gardanande beshe? (${num(here.length)} nafar)`)
           .addOptions(here.slice(0, 25).map(m => new StringSelectMenuOptionBuilder()
             .setLabel(m.displayName.slice(0, 60))
-            .setDescription(roster.some(p => p.userId === m.id)
-              ? 'az baazi hazf shode' : 'tamashachi')
+            .setDescription(!roster.some(p => p.userId === m.id) ? 'tamashachi'
+              : dealt ? 'az baazi hazf shode' : 'sabt-nam karde — az liste baazi dar miad')
             .setValue(m.id)))))],
     ...v2eph,
   });
@@ -126,7 +138,9 @@ export async function godSwap(
   const guild = i.guild!;
 
   const roster = await players(ev.id);
-  if (roster.some(p => p.userId === incoming && p.alive)) {
+  const dealt = ev.status === 'running' && roster.some(p => p.role);
+
+  if (dealt && roster.some(p => p.userId === incoming && p.alive)) {
     await i.editReply({
       components: [card('## ⚠️ Bazikon-e zende nemitoone gardanande beshe',
         'Gardanande hameye naghsh-ha ro mibine. Aval az baazi darash biar.', 0xed4245)],
@@ -134,6 +148,17 @@ export async function godSwap(
     });
     return;
   }
+
+  /*
+   * Before the deal, a signed-up player may take it — and stops being a player.
+   *
+   * A narrator does not hold a card. Leaving them on the roster would deal them
+   * one and then lock them out of the console they are supposed to be running,
+   * because the lockout shuts out everybody on the roster except the host — and
+   * they would be both.
+   */
+  const wasPlaying = !dealt && roster.some(p => p.userId === incoming);
+  if (wasPlaying) await removePlayer(ev.id, incoming);
 
   const member = await guild.members.fetch(incoming).catch(() => null);
   if (!member) {
@@ -172,7 +197,9 @@ export async function godSwap(
 
   await ctx.chat?.send({
     components: [card('## 🎙 Gardanande avaz shod',
-      `<@${outgoing}> → <@${incoming}>\n-# Baazi hamoon jaii-ye ke bood. Hich chiz reset nashod.`)],
+      `<@${outgoing}> → <@${incoming}>`
+      + (wasPlaying ? '\n-# Az liste sabt-nam dar oomad — gardanande baazi nemikone.' : '')
+      + '\n-# Baazi hamoon jaii-ye ke bood. Hich chiz reset nashod.')],
     flags: MessageFlags.IsComponentsV2,
     allowedMentions: { users: [outgoing, incoming] },
   }).catch(() => {});
