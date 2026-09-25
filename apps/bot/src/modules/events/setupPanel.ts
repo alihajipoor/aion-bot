@@ -32,6 +32,7 @@ import {
 } from './games.js';
 import { SCUM_ROLES, canDisable, type ScumRole, type RoleKey } from './scum/rules.js';
 import { distribution as scumDistribution } from './scum/deal.js';
+import { refreshEventCards } from './handover.js';
 
 /**
  * The custom-id prefix. It must stay equal to `MAFIA_ID`, because index.ts
@@ -93,10 +94,24 @@ export const panelConfig = (ev: EventRow): PanelConfig =>
  * The raw blob is spread rather than `panelConfig(fresh)` so that keys outside
  * `MafiaConfig` — the wizard stores `players` there — survive a settings change.
  */
-async function write(ev: EventRow, patch: Partial<PanelConfig>): Promise<EventRow> {
+async function write(
+  i: { guild: Guild | null }, ev: EventRow, patch: Partial<PanelConfig>,
+): Promise<EventRow> {
   const fresh = (await getEvent(ev.id)) ?? ev;
   await mergeState(ev.id, { config: { ...PANEL_DEFAULTS, ...rawConfig(fresh), ...patch } });
-  return (await getEvent(ev.id)) ?? fresh;
+  const after = (await getEvent(ev.id)) ?? fresh;
+
+  /*
+   * The public cards say what this just changed, so redraw them.
+   *
+   * Deliberately not awaited. Editing two messages is two more round trips to
+   * Discord, and the click that got us here has three seconds to be answered
+   * — spending them on a card the host is not currently looking at is how the
+   * panel starts saying "did not respond". The screen the host *is* looking at
+   * is rendered from the row this returns, so it is never the stale one.
+   */
+  if (i.guild) void refreshEventCards(i.guild, after).catch(() => {});
+  return after;
 }
 
 /* ── the live text channel ─────────────────────────────────────── */
@@ -674,7 +689,10 @@ export async function setupComponent(
      * somebody switching mode means.
      */
     await mergeState(ev.id, { mode, config: { ...rawConfig(ev), roleCounts: {} } });
-    await i.update(screen((await getEvent(ev.id))!, 'hub'));
+    const after = (await getEvent(ev.id))!;
+    // Switching mode replaces the entire cast, which the signup post prints.
+    if (i.guild) void refreshEventCards(i.guild, after).catch(() => {});
+    await i.update(screen(after, 'hub'));
     return true;
   }
 
@@ -700,27 +718,27 @@ export async function setupComponent(
     // so changing one role does not silently empty the other twelve.
     const { counts } = effectiveCounts(ev);
     const next = { ...counts, [arg]: n };
-    await i.update(rolesScreen(await write(ev, { roleCounts: next }), arg));
+    await i.update(rolesScreen(await write(i, ev, { roleCounts: next }), arg));
     return true;
   }
 
   if (step === 'cfgroleauto' && i.isButton()) {
-    await i.update(rolesScreen(await write(ev, { roleCounts: {} })));
+    await i.update(rolesScreen(await write(i, ev, { roleCounts: {} })));
     return true;
   }
 
   if (step === 'cfgflag' && i.isButton() && arg) {
     const cfg = panelConfig(ev);
     if (arg === 'signupGated') {
-      await i.update(screen(await write(ev, { signupGated: !cfg.signupGated }), 'hub'));
+      await i.update(screen(await write(i, ev, { signupGated: !cfg.signupGated }), 'hub'));
       return true;
     }
     if (arg === 'nightStoryPublic') {
-      await i.update(screen(await write(ev, { nightStoryPublic: !cfg.nightStoryPublic }), 'hub'));
+      await i.update(screen(await write(i, ev, { nightStoryPublic: !cfg.nightStoryPublic }), 'hub'));
       return true;
     }
     if (arg === 'voteAutoClose') {
-      await i.update(screen(await write(ev, { voteAutoClose: !cfg.voteAutoClose }), 'vote'));
+      await i.update(screen(await write(i, ev, { voteAutoClose: !cfg.voteAutoClose }), 'vote'));
       return true;
     }
     return unknown(i, ev);
@@ -732,7 +750,7 @@ export async function setupComponent(
     if (!phase || !value || !isTextRule(value)) return unknown(i, ev);
 
     const cfg = panelConfig(ev);
-    const next = await write(ev, { textRules: { ...cfg.textRules, [phase]: value } });
+    const next = await write(i, ev, { textRules: { ...cfg.textRules, [phase]: value } });
     // Mid-game, the phase being edited may be the phase the room is standing
     // in. Move the channel now rather than at the next press of Shab.
     await reapply(i.guild, next, phase);
@@ -744,7 +762,7 @@ export async function setupComponent(
     const n = Number(i.values[0]);
     if (!Number.isFinite(n)) return unknown(i, ev);
     if (arg === 'voteSeconds') {
-      await i.update(screen(await write(ev, { voteSeconds: n }), 'vote'));
+      await i.update(screen(await write(i, ev, { voteSeconds: n }), 'vote'));
       return true;
     }
     if (isBudget(arg)) {
@@ -755,7 +773,7 @@ export async function setupComponent(
       // Read before writing: the live counter moves by the difference, so the
       // old number is needed and is gone a line later.
       const before = panelConfig(ev)[arg];
-      const after = await write(ev, patch);
+      const after = await write(i, ev, patch);
       await applyLimit?.(after, arg, Number(before), n).catch(() => {});
       await i.update(screen((await getEvent(ev.id)) ?? after, 'budget'));
       return true;

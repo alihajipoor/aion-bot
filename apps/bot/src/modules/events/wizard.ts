@@ -5,7 +5,7 @@ import {
   type ButtonInteraction, type StringSelectMenuInteraction,
 } from 'discord.js';
 import {
-  CATALOGUE, SCENARIOS, scenarioOf, distribution, sideCounts,
+  CATALOGUE, SCENARIOS, scenarioOf, distribution, explicitDistribution, sideCounts,
   MAFIA_DEFAULTS, ESM_DEFAULTS, ESM_COLUMNS, SOALI_DEFAULTS,
   type GameKey, type MafiaConfig, type EsmFamilConfig, type SoaliConfig,
 } from './games.js';
@@ -119,7 +119,12 @@ function mafiaScreen(d: Draft) {
   // Only worked out for the Persian game. Computing it regardless was how the
   // scenario's cast ended up printed above the Scum one, two tables on a screen
   // that can only deal from a single one.
-  const roles = scum ? [] : distribution(sc, d.players, d.mafia.optionalRoles);
+  // Same rule as the deal and the signup post: an explicit cast wins over the
+  // scenario's ladder. Without this the table on *this* screen ignored the
+  // counts set one button away on the roles screen.
+  const roles = scum ? []
+    : explicitDistribution(sc, d.players, d.mafia.roleCounts ?? {})
+      ?? distribution(sc, d.players, d.mafia.optionalRoles);
   const sides = sideCounts(roles);
   // Scum has no scenario, so its range is its own. Reading the scenario's here
   // is what would grey out Besaz on a perfectly valid Scum table.

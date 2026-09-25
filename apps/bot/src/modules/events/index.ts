@@ -9,7 +9,8 @@ import {
   type MessageCreateOptions, type Collection, type Message,
 } from 'discord.js';
 import { renderHeaderBanner } from '../../lib/banner.js';
-import { CATALOGUE, SCENARIOS, scenarioOf, distribution, type GameKey } from './games.js';
+import { CATALOGUE, SCENARIOS, scenarioOf, distribution, explicitDistribution,
+  type GameKey } from './games.js';
 import {
   WZ, decWizard, draftFor, clearDraft, screenFor, applyChange, timerModal, configOf, roleStep,
   modeOf as draftMode,
@@ -339,7 +340,7 @@ async function refreshCard(guild: Guild, ev: EventRow): Promise<void> {
  * that reorders, and a cast list that renders "٢× پدرخوانده" as something else
  * is worse than no list.
  */
-async function castLines(ev: EventRow): Promise<string[]> {
+export async function castLines(ev: EventRow): Promise<string[]> {
   if (ev.game !== 'mafia') return [];
   const cfg = mafiaConfigOf(ev);
   const count = Number((ev.state as { config?: { players?: number } }).config?.players)
@@ -353,7 +354,19 @@ async function castLines(ev: EventRow): Promise<string[]> {
       .map(r => ({ fa: r.fa, side: r.side }));
   } else {
     const sc = scenarioOf(cfg.scenario);
-    dealt = distribution(sc, count, cfg.optionalRoles).map(r => ({ fa: r.fa, side: r.side }));
+    /*
+     * God's own numbers, exactly as the deal will read them.
+     *
+     * This list is a promise about the game that is about to be dealt, and
+     * `dealMafia` has honoured an explicit cast since Tanzimat gained the
+     * counts screen. Printing the scenario's automatic ladder here made the
+     * post contradict the deal: a host who set the roles saw the defaults and
+     * concluded the setting had not saved. The Scum branch above has always
+     * read them, because its `distribution` takes the whole config.
+     */
+    const cast = explicitDistribution(sc, count, cfg.roleCounts ?? {})
+      ?? distribution(sc, count, cfg.optionalRoles);
+    dealt = cast.map(r => ({ fa: r.fa, side: r.side }));
   }
   if (!dealt.length) return [];
 

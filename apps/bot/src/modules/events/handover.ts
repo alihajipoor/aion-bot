@@ -28,6 +28,19 @@ let refreshCards: CardRefresher | null = null;
 export const setCardRefresher = (fn: CardRefresher): void => { refreshCards = fn; };
 
 /**
+ * Redraw both cards for an event, from anywhere that changed what they say.
+ *
+ * The settings panel needs this too: the signup post prints the cast, so a
+ * host who edits the role counts and never sees the post change assumes the
+ * edit did nothing. It lives here because this is already the module holding
+ * the injected refresher, and importing it is cycle-free — handover imports
+ * nothing that imports the panel.
+ */
+export const refreshEventCards = async (guild: Guild, ev: EventRow): Promise<void> => {
+  await refreshCards?.(guild, ev);
+};
+
+/**
  * Two repairs a narrator needs mid-evening, shared by both consoles.
  *
  *   · hand the game to somebody else without disturbing anything else
