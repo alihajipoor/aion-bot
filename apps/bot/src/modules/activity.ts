@@ -62,12 +62,20 @@ function sampleVoice(client: AionClient): void {
   {
     for (const vs of guild.voiceStates.cache.values()) {
       const member = vs.member;
+      /*
+       * In a voice channel is in a voice channel.
+       *
+       * This used to withhold credit for sitting in the AFK room, for being
+       * deafened, and for being alone — each defensible on its own and, put
+       * together, baffling to look at. Somebody who spent an evening in voice
+       * would be missing from the board entirely because they had deafened
+       * themselves while idling, and there was no way to tell from the outside
+       * that the time had simply never been recorded.
+       *
+       * The board is a measure of who is around, not of who was listening
+       * attentively, and the owner asked for it to say exactly that.
+       */
       if (!member || member.user.bot || !vs.channelId) continue;
-      const a = settings().activity;
-      if (!a.countAfk && vs.channelId === guild.afkChannelId) continue;
-      if (!a.countDeafened && (vs.selfDeaf || vs.deaf)) continue;   // not really listening
-      const others = vs.channel?.members.filter(m => !m.user.bot).size ?? 0;
-      if (!a.countAlone && others < 2) continue;                    // alone in the channel
       bump(guild.id, member.id, 'voiceSeconds', SAMPLE_MS / 1000);
     }
   }

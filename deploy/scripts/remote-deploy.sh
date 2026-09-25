@@ -4,22 +4,33 @@ set -euo pipefail
 
 APP=/opt/aion
 RELEASES=/opt/aion-releases
-BUNDLE=${1:-/tmp/aion.tar.gz}
+STAGING=${1:-/opt/aion-staging}
 
-[ -f "$BUNDLE" ] || { echo "bundle $BUNDLE not found"; exit 1; }
+[ -d "$STAGING" ] || { echo "staging dir $STAGING not found"; exit 1; }
 
 mkdir -p "$APP" "$RELEASES"
 id -u aionbot >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin aionbot
 
 # Keep the last 3 releases so a bad deploy can be rolled back by hand.
+#
+# Hard links, not copies. A full copy duplicated production node_modules every
+# single deploy — several hundred megabytes each, three of them kept, on an
+# 18 GB disk. `cp -al` gives the same rollback for the cost of the directory
+# entries, because the files are identical until a deploy replaces one.
 if [ -d "$APP/apps" ]; then
   STAMP=$(date +%Y%m%d-%H%M%S)
-  cp -a "$APP" "$RELEASES/$STAMP"
+  cp -al "$APP" "$RELEASES/$STAMP" 2>/dev/null || cp -a "$APP" "$RELEASES/$STAMP"
   ls -1dt "$RELEASES"/*/ 2>/dev/null | tail -n +4 | xargs -r rm -rf
 fi
 
-tar xzf "$BUNDLE" -C "$APP"
-rm -f "$BUNDLE"
+# Staging already holds exactly what should be live — rsync put it there and
+# only sent what changed. Copying it across locally is disk-to-disk and takes
+# a moment. --delete so a file dropped from the build is dropped here too.
+#
+# .env, run/ and web/ live only on the server and must survive.
+rsync -a --delete \
+  --exclude '.env' --exclude 'run/' --exclude 'web/' --exclude 'web.old/' \
+  "$STAGING/" "$APP/"
 
 install -m 644 "$APP/deploy/systemd/aion-bot.service" /etc/systemd/system/
 [ -f "$APP/deploy/systemd/aion-web.service" ] && install -m 644 "$APP/deploy/systemd/aion-web.service" /etc/systemd/system/

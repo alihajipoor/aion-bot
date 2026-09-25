@@ -47,9 +47,6 @@ export interface AionSettings {
     intervalMinutes: number;
   };
   activity: {
-    countAfk: boolean;
-    countDeafened: boolean;
-    countAlone: boolean;
     messageDebounceSec: number;
   };
   logging: {
@@ -149,9 +146,6 @@ export const DEFAULT_SETTINGS: AionSettings = {
   },
   counters: { enabled: true, intervalMinutes: 6 },
   activity: {
-    countAfk: false,
-    countDeafened: false,
-    countAlone: false,
     messageDebounceSec: 3,
   },
   logging: { disabledEvents: [], batchMs: 1000 },

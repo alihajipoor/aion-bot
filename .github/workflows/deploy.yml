@@ -50,16 +50,18 @@ jobs:
       - name: Prune to production dependencies
         run: npm ci --omit=dev
 
-      - name: Package
+      - name: Stage the payload
         run: |
-          tar czf aion.tar.gz \
-            node_modules \
-            package.json package-lock.json \
-            apps/bot/dist apps/bot/package.json apps/bot/assets \
-            packages/db/dist packages/db/package.json packages/db/migrations \
-            deploy \
-            webdist
-          ls -lh aion.tar.gz
+          # Collected into one tree so rsync has a single source to compare
+          # against the copy already on the VPS.
+          rm -rf .payload && mkdir -p .payload
+          cp -a node_modules package.json package-lock.json .payload/
+          mkdir -p .payload/apps/bot .payload/packages/db
+          cp -a apps/bot/dist apps/bot/package.json apps/bot/assets .payload/apps/bot/
+          cp -a packages/db/dist packages/db/package.json packages/db/migrations .payload/packages/db/
+          cp -a deploy .payload/
+          cp -a webdist .payload/
+          du -sh .payload
 
       # The bundle is not uploaded as an artifact. Ship to VPS scps it straight
       # from the workspace in this same job, so nothing ever consumed it — it
@@ -79,6 +81,20 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
           SSH="ssh -i $HOME/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=20"
-          scp -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes aion.tar.gz "root@$HOST:/tmp/aion.tar.gz"
+          # rsync, not scp.
+          #
+          # scp re-sent the whole 117 MB bundle every deploy — production
+          # node_modules and the web build included — and the runner sits in
+          # Azure us-west while the VPS is in Germany. At ~200ms round trip
+          # SSH's own channel window throttles a single stream to a couple of
+          # megabits, so the upload alone took eight and a half minutes for a
+          # change of one file.
+          #
+          # rsync compares both sides and sends only the difference. The
+          # dependencies almost never move, so a normal deploy ships the handful
+          # of rebuilt files instead of the entire tree.
+          rsync -az --delete --partial \
+            -e "ssh -i $HOME/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=20" \
+            .payload/ "root@$HOST:/opt/aion-staging/"
           scp -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes deploy/scripts/remote-deploy.sh "root@$HOST:/tmp/remote-deploy.sh"
-          $SSH "root@$HOST" 'bash /tmp/remote-deploy.sh /tmp/aion.tar.gz'
+          $SSH "root@$HOST" 'bash /tmp/remote-deploy.sh /opt/aion-staging'

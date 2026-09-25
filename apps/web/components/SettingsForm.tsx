@@ -120,10 +120,7 @@ export function SettingsForm({ settings }: { settings: AionSettings }) {
           </Field>
         </Group>
 
-        <Group title="Activity tracking" hint="What counts towards the leaderboards.">
-          <Toggle name="countAfk" label="Count time in the AFK channel" defaultChecked={s.activity.countAfk} />
-          <Toggle name="countDeafened" label="Count time while deafened" defaultChecked={s.activity.countDeafened} />
-          <Toggle name="countAlone" label="Count time alone in a room" defaultChecked={s.activity.countAlone} />
+        <Group title="Activity tracking" hint="Voice time counts whenever somebody is in a voice channel — AFK, deafened or alone included.">
           <Field label="Message cooldown" htmlFor="messageDebounceSec"
             hint="Minimum gap between two messages that both count. Stops spam inflating the chat board.">
             <Num name="messageDebounceSec" defaultValue={s.activity.messageDebounceSec} min={0} max={60} suffix="seconds" />

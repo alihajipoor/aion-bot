@@ -59,9 +59,6 @@ export async function saveSettings(_prev: SaveResult | null, form: FormData): Pr
       intervalMinutes: num(form, 'intervalMinutes', d.counters.intervalMinutes),
     },
     activity: {
-      countAfk: bool(form, 'countAfk'),
-      countDeafened: bool(form, 'countDeafened'),
-      countAlone: bool(form, 'countAlone'),
       messageDebounceSec: num(form, 'messageDebounceSec', d.activity.messageDebounceSec),
     },
     logging: {
