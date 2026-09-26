@@ -57,14 +57,29 @@ const card = (title: string, body?: string, colour = 0x9b6cff) =>
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       body ? `${title}\n${body}` : title));
 
-/** The game's own room and the hall — the only places a candidate can be. */
-export function nearby(guild: Guild | null, ev: EventRow): GuildMember[] {
+/**
+ * Everyone who could plausibly be at this table.
+ *
+ * The game's own room and the hall, plus whichever channel the person asking
+ * is sitting in. That last one is not a convenience: the game's room does not
+ * exist until Shoroo is pressed, and the hall is somewhere people are moved
+ * *to*, not somewhere they wait. Before a game starts the whole table is
+ * wherever it happened to gather, so a narrator handing the job over there
+ * was told "nobody is in voice" while nine people sat around them.
+ *
+ * Still not a list of the server. Three rooms at most, and only the people
+ * actually in them.
+ */
+export function nearby(
+  guild: Guild | null, ev: EventRow, asker?: GuildMember | null,
+): GuildMember[] {
   if (!guild) return [];
   const out = new Map<string, GuildMember>();
   const rooms = [
     ev.voiceChannelId ? guild.channels.cache.get(ev.voiceChannelId) : undefined,
     [...guild.channels.cache.values()].find(c =>
       c.isVoiceBased() && /event[-\s]?hall/i.test(asciiFold(c.name))),
+    asker?.voice.channel ?? undefined,
   ];
   for (const room of rooms) {
     if (!room?.isVoiceBased()) continue;
@@ -102,15 +117,30 @@ export async function godPrompt(
   const barred = dealt
     ? new Set(roster.filter(p => p.alive).map(p => p.userId))
     : new Set<string>();
-  const here = nearby(i.guild, ev)
-    .filter(m => m.id !== ev.hostId && !barred.has(m.id));
+  const asker = i.guild?.members.cache.get(i.user.id) ?? null;
+  const pool = new Map(nearby(i.guild, ev, asker).map(m => [m.id, m]));
+
+  /*
+   * Before the deal, everyone who signed up is a candidate whether or not the
+   * bot can see them in a voice channel this second. They said they are here;
+   * that is the whole meaning of Sabt-nam. Relying on voice state alone made
+   * the button depend on where the table happened to be standing.
+   */
+  if (!dealt) {
+    for (const p of roster) {
+      const m = i.guild?.members.cache.get(p.userId);
+      if (m && !m.user.bot) pool.set(m.id, m);
+    }
+  }
+
+  const here = [...pool.values()].filter(m => m.id !== ev.hostId && !barred.has(m.id));
 
   if (!here.length) {
     await i.reply({
       content: dealt
         ? 'Kesi nist ke betoone gardanande beshe — bazikon-haye zende nemitoonan.'
           + '\n-# Har ki mikhad, aval biad too voice.'
-        : 'Kesi too voice nist. Har ki mikhad gardanande beshe, aval biad too voice.',
+        : 'Kesi nist. Har ki mikhad gardanande beshe, aval sabt-nam kone ya biad too voice.',
       ...eph,
     });
     return;
