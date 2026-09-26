@@ -8,6 +8,7 @@ import { createGzip } from 'node:zlib';
 import nodemailer from 'nodemailer';
 import { ChannelType, type Guild } from 'discord.js';
 import { getDb, backups } from '@aion/db';
+import { desc, eq } from 'drizzle-orm';
 import { settings } from '../lib/settings.js';
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
@@ -202,15 +203,46 @@ async function record(filename: string, bytes: number, emailedTo: string[], ok: 
   });
 }
 
+/**
+ * The day the last backup was taken, according to the database.
+ *
+ * This used to be a variable in the worker's closure, which made "already done
+ * today" mean "already done since this process started". Every restart cleared
+ * it, and every deploy is a restart — so a day with eleven deploys produced
+ * eleven full backups, eleven `backups` rows, and eleven emails carrying the
+ * entire database as an attachment. The daily schedule quietly became a
+ * per-deploy one, and the mailbox was the only place it showed.
+ *
+ * The `backups` table already records every run, so it is the thing that
+ * actually knows. A failed run counts: it means the hour came round and was
+ * attempted, and retrying it fifteen minutes later would resend whatever went
+ * wrong all over again.
+ */
+async function lastBackupDay(): Promise<string | null> {
+  const [row] = await getDb().select({ createdAt: backups.createdAt })
+    .from(backups)
+    .where(eq(backups.guildId, config.guildId))
+    .orderBy(desc(backups.createdAt))
+    .limit(1);
+  return row ? row.createdAt.toISOString().slice(0, 10) : null;
+}
+
 export function startBackupWorker(client: AionClient): NodeJS.Timeout {
-  let lastRunDay = '';
   const tick = async () => {
     const cfg = settings().backup;
     if (!cfg.enabled) return;
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
-    if (lastRunDay === today || now.getUTCHours() < cfg.hourUtc) return;
-    lastRunDay = today;
+    if (now.getUTCHours() < cfg.hourUtc) return;
+    // Read on every tick rather than cached: a cache is exactly what broke this.
+    const last = await lastBackupDay().catch(e => {
+      // Unreachable database means we cannot tell whether today is done. Skip
+      // rather than guess — a missed backup is recoverable, a restart loop that
+      // mails the database every fifteen minutes is not.
+      log.error('cannot read the last backup date — skipping this tick', e);
+      return today;
+    });
+    if (last === today) return;
     await runBackup(client);
   };
   const timer = setInterval(() => void tick(), CHECK_MS);
