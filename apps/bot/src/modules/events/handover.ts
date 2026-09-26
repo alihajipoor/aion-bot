@@ -117,30 +117,54 @@ export async function godPrompt(
   const barred = dealt
     ? new Set(roster.filter(p => p.alive).map(p => p.userId))
     : new Set<string>();
-  const asker = i.guild?.members.cache.get(i.user.id) ?? null;
+  const asker = i.member && 'voice' in i.member ? i.member as GuildMember : null;
   const pool = new Map(nearby(i.guild, ev, asker).map(m => [m.id, m]));
 
   /*
    * Before the deal, everyone who signed up is a candidate whether or not the
    * bot can see them in a voice channel this second. They said they are here;
-   * that is the whole meaning of Sabt-nam. Relying on voice state alone made
-   * the button depend on where the table happened to be standing.
+   * that is the whole meaning of Sabt-nam.
+   *
+   * Fetched, not read from the cache. `guild.members.cache` is not the member
+   * list — Discord sends only a slice of a guild this size in GUILD_CREATE,
+   * and in practice that slice is the people currently in voice. Reading the
+   * cache here therefore added nobody except the players who were already
+   * going to be found in a voice channel, which is precisely the set this is
+   * meant to widen. It is a bounded fetch: the ids on this event's roster.
    */
-  if (!dealt) {
-    for (const p of roster) {
-      const m = i.guild?.members.cache.get(p.userId);
-      if (m && !m.user.bot) pool.set(m.id, m);
-    }
+  if (!dealt && roster.length && i.guild) {
+    const fetched = await i.guild.members
+      .fetch({ user: roster.map(p => p.userId) })
+      .catch(() => null);
+    for (const m of (fetched?.values() ?? [])) if (!m.user.bot) pool.set(m.id, m);
   }
 
   const here = [...pool.values()].filter(m => m.id !== ev.hostId && !barred.has(m.id));
 
   if (!here.length) {
+    /*
+     * Say what was looked at, not just that it came up empty.
+     *
+     * "Nobody is in voice" sent the host hunting for a problem that was not
+     * there twice over — once when the rule was wrong and once when the rooms
+     * were. A count per place turns the next report into a fact.
+     */
+    const room = ev.voiceChannelId ? i.guild?.channels.cache.get(ev.voiceChannelId) : null;
+    const hall = [...(i.guild?.channels.cache.values() ?? [])].find(c =>
+      c.isVoiceBased() && /event[-\s]?hall/i.test(asciiFold(c.name)));
+    const n = (c: unknown) =>
+      c && typeof c === 'object' && 'members' in c
+        ? num((c as { members: { size: number } }).members.size) : num(0);
+    log.warn(`event #${ev.id}: no handover candidate — roster=${roster.length} dealt=${dealt}`
+      + ` room=${ev.voiceChannelId ?? 'none'} askerVoice=${asker?.voice.channelId ?? 'none'}`);
     await i.reply({
       content: dealt
         ? 'Kesi nist ke betoone gardanande beshe — bazikon-haye zende nemitoonan.'
           + '\n-# Har ki mikhad, aval biad too voice.'
-        : 'Kesi nist. Har ki mikhad gardanande beshe, aval sabt-nam kone ya biad too voice.',
+        : 'Kesi nist ke gardanande beshe.'
+          + `\n-# Otagh-e baazi: ${room ? n(room) : '—'} · EVENT HALL: ${hall ? n(hall) : '—'}`
+          + ` · voice-e shoma: ${asker?.voice.channel ? n(asker.voice.channel) : '—'}`
+          + ` · sabt-nam: ${num(roster.length)}`,
       ...eph,
     });
     return;
