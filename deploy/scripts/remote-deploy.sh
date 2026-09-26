@@ -28,8 +28,17 @@ fi
 # a moment. --delete so a file dropped from the build is dropped here too.
 #
 # .env, run/ and web/ live only on the server and must survive.
+#
+# Every pattern is anchored with a leading slash, which in rsync means "the
+# root of this transfer" rather than the root of the filesystem. Without it a
+# pattern matches the END of a path at ANY depth, so `web/` protected
+# /opt/aion/web as intended and also silently refused to send
+# webdist/apps/web/ — the entire Next.js standalone server. The bundle arrived
+# with an empty apps/, got swapped in as the live web/, and the panel spent a
+# day in a restart loop on `CHDIR: No such file or directory` while the deploy
+# reported success. `run/` had the same reach into node_modules.
 rsync -a --delete \
-  --exclude '.env' --exclude 'run/' --exclude 'web/' --exclude 'web.old/' \
+  --exclude '/.env' --exclude '/run/' --exclude '/web/' --exclude '/web.old/' \
   "$STAGING/" "$APP/"
 
 install -m 644 "$APP/deploy/systemd/aion-bot.service" /etc/systemd/system/
@@ -40,11 +49,24 @@ install -m 644 "$APP/deploy/systemd/aion-watchdog.timer" /etc/systemd/system/
 mkdir -p "$APP/run"
 
 # The web bundle ships as webdist/ and is swapped in atomically.
+#
+# Checked before the swap, not after. The old code moved the live panel out of
+# the way and the new bundle in without ever asking whether the new one could
+# start, so a bundle that lost its server on the way here destroyed a working
+# panel and replaced it with a directory that cannot even be entered. The one
+# file systemd needs is the one worth proving.
 if [ -d "$APP/webdist" ]; then
-  rm -rf "$APP/web.old"
-  [ -d "$APP/web" ] && mv "$APP/web" "$APP/web.old"
-  mv "$APP/webdist" "$APP/web"
-  rm -rf "$APP/web.old"
+  if [ -f "$APP/webdist/apps/web/server.js" ]; then
+    rm -rf "$APP/web.old"
+    [ -d "$APP/web" ] && mv "$APP/web" "$APP/web.old"
+    mv "$APP/webdist" "$APP/web"
+    rm -rf "$APP/web.old"
+  else
+    echo "!! webdist has no apps/web/server.js — keeping the panel that is already live"
+    find "$APP/webdist" -maxdepth 3 | head -20
+    rm -rf "$APP/webdist"
+    WEB_BUNDLE_BAD=1
+  fi
 fi
 chown -R aionbot:aionbot "$APP"
 [ -f "$APP/.env" ] && chmod 600 "$APP/.env" && chown aionbot:aionbot "$APP/.env"
@@ -101,5 +123,26 @@ if [ -f "$APP/run/bot.heartbeat.json" ]; then
 else
   echo '!! no heartbeat file — the bot could not write to '"$APP/run"
 fi
-[ -d "$APP/web" ] && { echo '-- web --'; systemctl is-active aion-web || journalctl -u aion-web -n 15 --no-pager; }
+# The panel's health is reported, not assumed.
+#
+# This used to print `systemctl is-active` and ignore the answer, so a web
+# service that had failed 9421 times in a row still left a green deploy. The
+# bot's exit code is what gates the workflow and that stays true — a broken
+# panel must not look like a broken bot — but silence is what let this run for
+# a day unnoticed.
+if [ -d "$APP/web" ]; then
+  echo '-- web --'
+  if systemctl is-active --quiet aion-web; then
+    echo 'aion-web is active'
+  else
+    echo '!! aion-web is NOT active'
+    journalctl -u aion-web -n 15 --no-pager
+  fi
+fi
+# Written as an if, not `test && echo`: under `set -e` an AND-list whose test
+# fails takes the exit status of the whole list, and would end the script here
+# on the ordinary path where the bundle was fine.
+if [ -n "${WEB_BUNDLE_BAD:-}" ]; then
+  echo '!! the web bundle was rejected this deploy — see above'
+fi
 systemctl is-active --quiet aion-bot
