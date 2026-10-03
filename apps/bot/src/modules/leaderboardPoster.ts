@@ -88,9 +88,20 @@ const art = (file: Buffer | null, name: string): { files?: AttachmentBuilder[] }
 async function postDaily(guild: Guild): Promise<void> {
   const channel = publicChannel(guild);
   if (!channel) { log.warn('no top-active channel found'); return; }
-  const rows = await queryActivity(guild.id, sinceDay('day'));
+  /*
+   * All of it, not the last day of it.
+   *
+   * The post goes out every 24 hours; that is the cadence, and it was read as
+   * the window too. A board that resets each night ranks whoever happened to
+   * be around last night, so the standing it shows is not a standing at all —
+   * somebody with a hundred hours sits below somebody with three, and the
+   * board the server treats as "who is most active here" turns over daily.
+   *
+   * The daily reposting stays. Only the window it reads changes.
+   */
+  const rows = await queryActivity(guild.id, sinceDay('all'));
   const stamp = `<t:${Math.floor(Date.now() / 1000)}:D>`;
-  const footer = `24 saate gozashte · ${stamp}`;
+  const footer = `Rotbe bandi e kolli — az avval ta hala · ${stamp}`;
   const subtitle = `${guild.name} · ${new Date().toUTCString().slice(5, 16)}`;
 
   const named = (r: Row) => guild.members.cache.get(r.userId)?.displayName ?? r.userId;
@@ -100,20 +111,20 @@ async function postDaily(guild: Guild): Promise<void> {
   const invites = [...rows].filter(r => r.invites > 0).sort((a, b) => b.invites - a.invites).slice(0, 8);
 
   const voiceBanner = await renderLeaderboardBanner({
-    title: 'Top Voice — 24 saat', subtitle, accent: '#4aa6ff',
-    kicker: 'DAILY · VOICE', footer: 'TOP ACTIVE',
+    title: 'Top Voice — koll', subtitle, accent: '#4aa6ff',
+    kicker: 'OVERALL · VOICE', footer: 'TOP ACTIVE',
     rows: voice.map(r => ({ name: named(r), value: hhmm(r.voice), amount: r.voice })),
   });
-  // Only posted when somebody actually invited someone; an empty third board
-  // every night is noise.
+  // Only posted when somebody has actually invited someone; an empty third
+  // board every night is noise.
   const inviteBanner = invites.length ? await renderLeaderboardBanner({
-    title: 'Top Inviters — 24 saat', subtitle, accent: '#9b6cff',
-    kicker: 'DAILY · INVITES', footer: 'TOP ACTIVE',
+    title: 'Top Inviters — koll', subtitle, accent: '#9b6cff',
+    kicker: 'OVERALL · INVITES', footer: 'TOP ACTIVE',
     rows: invites.map(r => ({ name: named(r), value: `${r.invites} nafar`, amount: r.invites })),
   }) : null;
   const chatBanner = await renderLeaderboardBanner({
-    title: 'Top Chatters — 24 saat', subtitle, accent: '#fee75c',
-    kicker: 'DAILY · CHAT', footer: 'TOP ACTIVE',
+    title: 'Top Chatters — koll', subtitle, accent: '#fee75c',
+    kicker: 'OVERALL · CHAT', footer: 'TOP ACTIVE',
     rows: chat.map(r => ({ name: named(r), value: `${r.chat} pm`, amount: r.chat })),
   });
 
