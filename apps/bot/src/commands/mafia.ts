@@ -6,6 +6,10 @@ import { refreshScoreboard } from '../modules/mafiaScoreboard.js';
 import { refreshMafiaHistory } from '../modules/mafiaHistory.js';
 import { isolate, num } from '../lib/text.js';
 import { hasRole } from '../lib/roles.js';
+import {
+  openSeason, awardPoint, undoPoint, recentPoints, REASONS, reasonOf,
+} from '../lib/mafiaSeason.js';
+import { refreshSeasonBoard } from '../modules/mafiaSeasonBoard.js';
 import type { Command } from '../types.js';
 
 /**
@@ -35,12 +39,91 @@ const command: Command = {
       .setDescription('Akharin bazi haye sabt shode'))
     .addSubcommand(s => s.setName('amar')
       .setDescription('Amar e yek bazikon')
-      .addUserOption(o => o.setName('user').setDescription('Ki? (khali = khodet)'))),
+      .addUserOption(o => o.setName('user').setDescription('Ki? (khali = khodet)')))
+    /*
+     * Points, away from the console.
+     *
+     * The console button needs a game open, and the two commonest corrections
+     * happen when there is not one: remembering afterwards that somebody
+     * deserved a point, and deciding on reflection that somebody did not.
+     * Same season, same rows, same board — just reachable at any hour.
+     */
+    .addSubcommand(s => s.setName('emtiaz')
+      .setDescription('Be yeki emtiaz bede — baazi lazem nist')
+      .addUserOption(o => o.setName('user').setDescription('Ki?').setRequired(true))
+      .addStringOption(o => o.setName('dalil').setDescription('Baraye chi?').setRequired(true)
+        .addChoices(...REASONS.map(r => ({ name: `${r.emoji} ${r.fa}`.slice(0, 100), value: r.key }))))
+      .addStringOption(o => o.setName('tozih')
+        .setDescription('Tozih — baraye "yek chiz e dige" lazem e')))
+    .addSubcommand(s => s.setName('emtiaz-list')
+      .setDescription('Akharin emtiaz haye dade shode, ba shomare')
+      .addUserOption(o => o.setName('user').setDescription('Faghat ye nafar')))
+    .addSubcommand(s => s.setName('emtiaz-hazf')
+      .setDescription('Yek emtiaz ro pas begir')
+      .addIntegerOption(o => o.setName('id')
+        .setDescription('Shomare az emtiaz-list').setRequired(true))),
 
   async execute(i) {
     const sub = i.options.getSubcommand();
     const guild = i.guild!;
     const nameOf = (id: string) => guild.members.cache.get(id)?.displayName ?? id;
+
+    if (sub.startsWith('emtiaz')) {
+      await i.deferReply({ flags: MessageFlags.Ephemeral });
+      const m = i.member as GuildMember | null;
+      if (!m || !isStaff(m)) { await i.editReply('Faghat gardanande va admin.'); return; }
+
+      const season = await openSeason(guild.id);
+      if (!season) { await i.editReply('Hich mosabeghe-i baz nist.'); return; }
+
+      if (sub === 'emtiaz-list') {
+        const only = i.options.getUser('user')?.id;
+        const rows = (await recentPoints(guild.id, season.id, 25))
+          .filter(r => !only || r.userId === only);
+        if (!rows.length) { await i.editReply('Hanooz emtiazi dade nashode.'); return; }
+        await i.editReply([
+          `**${isolate(season.title)}** — akharin emtiaz ha:`,
+          ...rows.slice(0, 15).map(r => {
+            const d = reasonOf(r.reason);
+            return `\`#${r.id}\` ${d.emoji} ${isolate(nameOf(r.userId))}`
+              + ` — ${isolate(r.note ?? d.fa)}`
+              + `  <t:${Math.floor(r.awardedAt.getTime() / 1000)}:R>`;
+          }),
+          '-# Ba `/mafia emtiaz-hazf id:<shomare>` pas migiri.',
+        ].join('\n'));
+        return;
+      }
+
+      if (sub === 'emtiaz-hazf') {
+        const id = i.options.getInteger('id', true);
+        // Scoped to this season on purpose: an id from a previous run is a
+        // typo, not an instruction, and deleting by bare id would honour it.
+        const mine = (await recentPoints(guild.id, season.id, 200)).find(r => r.id === id);
+        if (!mine) { await i.editReply(`Emtiaz \`#${id}\` too in mosabeghe nist.`); return; }
+        await undoPoint(id);
+        await refreshSeasonBoard(guild).catch(() => {});
+        await i.editReply(`🗑 Emtiaz \`#${id}\` az ${isolate(nameOf(mine.userId))} pas gerefte shod.`);
+        return;
+      }
+
+      const who = i.options.getUser('user', true);
+      const reason = i.options.getString('dalil', true);
+      const note = i.options.getString('tozih')?.trim().slice(0, 160) ?? null;
+      if (reason === 'other' && !note) {
+        await i.editReply('Baraye "yek chiz e dige" bayad tozih benevisi.');
+        return;
+      }
+      const row = await awardPoint({
+        guildId: guild.id, seasonId: season.id, userId: who.id,
+        reason, note, awardedBy: i.user.id,
+      });
+      await refreshSeasonBoard(guild).catch(() => {});
+      const d = reasonOf(reason);
+      await i.editReply(
+        `⭐ ${num(1)} emtiaz be ${isolate(nameOf(who.id))} — ${d.emoji} ${isolate(note ?? d.fa)}`
+        + `\n-# Shomare \`#${row.id}\` — age eshtebah bood, \`/mafia emtiaz-hazf id:${row.id}\`.`);
+      return;
+    }
 
     if (sub === 'amar') {
       await i.deferReply({ flags: MessageFlags.Ephemeral });
