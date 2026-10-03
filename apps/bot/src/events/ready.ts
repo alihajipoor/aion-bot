@@ -17,6 +17,7 @@ import { installGiveawayPoster } from '../modules/giveawayPoster.js';
 import { resealEventAccess } from '../modules/events/lockout.js';
 import { eventsWithStrippedRoles } from '../modules/events/store.js';
 import { installMafiaScoreboard } from '../modules/mafiaScoreboard.js';
+import { installMafiaSeasonBoard } from '../modules/mafiaSeasonBoard.js';
 import { installEvents, ensureEventPanel } from '../modules/events/index.js';
 import { ensureGuide } from '../commands/guide.js';
 import { startBackupWorker } from '../modules/backup.js';
@@ -88,6 +89,7 @@ const handler: EventHandler = {
       })();
     }
     installMafiaScoreboard(client);
+    installMafiaSeasonBoard(client);
     installEvents(client);
     startCounters(client);
     if (config.databaseUrl) {

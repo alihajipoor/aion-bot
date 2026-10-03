@@ -57,6 +57,13 @@
       "when": 1791041820887,
       "tag": "0007_fancy_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791042857280,
+      "tag": "0008_tidy_joystick",
+      "breakpoints": true
     }
   ]
 }

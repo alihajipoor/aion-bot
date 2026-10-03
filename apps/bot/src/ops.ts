@@ -17,6 +17,8 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { getDb, giveaways, memberJoins } from '@aion/db';
 import { config } from './config.js';
+import { openSeason, startSeason } from './lib/mafiaSeason.js';
+import { refreshSeasonBoard, finishSeason } from './modules/mafiaSeasonBoard.js';
 import { openGiveaway, scoreInvites, unattributedJoins } from './lib/giveaway.js';
 import { REASON_TEXT, type Reason } from './lib/invites.js';
 import { postAnnouncement, awardPodium, refreshAnnouncement, refreshBoard } from './modules/giveawayPoster.js';
@@ -41,6 +43,43 @@ async function withGuild<T>(fn: (g: import('discord.js').Guild) => Promise<T>): 
   const g = await c.guilds.fetch(config.guildId);
   await g.members.fetch();          // names and role lookups read the cache
   try { return await fn(g); } finally { await c.destroy(); }
+}
+
+/* ── mafia season ──────────────────────────────────────────────── */
+
+async function seasonStart(): Promise<void> {
+  if (await openSeason(config.guildId)) {
+    console.error('a season is already open — close it first');
+    process.exitCode = 1; return;
+  }
+  const days = Number(flag('days') ?? 7);
+  if (!Number.isFinite(days) || days < 1 || days > 120) {
+    console.error(`bad --days: ${flag('days')}`); process.exitCode = 1; return;
+  }
+  // Same encoding as the giveaway prizes: three slots, in board order.
+  const [games = '', wins = '', points = ''] = (flag('prizes') ?? '').split(';').map(x => x.trim());
+  const season = await startSeason({
+    guildId: config.guildId,
+    title: flag('title') || 'مسابقه‌ی مافیا',
+    days,
+    prizes: { games: games || undefined, wins: wins || undefined, points: points || undefined },
+  });
+  console.log(`started season #${season.id} "${season.title}" — ${days} days, ends ${season.endsAt.toISOString()}`);
+  console.log(`prizes: games=${games || '-'} wins=${wins || '-'} points=${points || '-'}`);
+  await withGuild(async g => { await refreshSeasonBoard(g); });
+  console.log('board posted');
+}
+
+async function seasonClose(): Promise<void> {
+  if (!await openSeason(config.guildId)) { console.error('nothing open'); process.exitCode = 1; return; }
+  const winners = await withGuild(async g => finishSeason(g));
+  console.log('closed. leaders:');
+  for (const line of winners) console.log(`  ${line}`);
+}
+
+async function seasonRefresh(): Promise<void> {
+  const ok = await withGuild(async g => refreshSeasonBoard(g));
+  console.log(ok ? 'season board refreshed' : 'nothing to refresh — no open season or no channel');
 }
 
 async function review(): Promise<void> {
@@ -367,6 +406,9 @@ async function mafiaSwap(): Promise<void> {
 }
 
 const tasks: Record<string, () => Promise<void>> = {
+  'season-start': seasonStart,
+  'season-close': seasonClose,
+  'season-refresh': seasonRefresh,
   'giveaway-review': review,
   'mafia-games': mafiaGames,
   'mafia-mvp': mafiaMvp,

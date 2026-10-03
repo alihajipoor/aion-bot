@@ -101,6 +101,20 @@ export async function recordGame(game: FinishedGame): Promise<GameRow | null> {
     winner: game.winner,
     mvpUserId: game.mvpUserId ?? null,
     playerCount: game.players.length,
+    /*
+     * Stored here, not only when the history card is posted.
+     *
+     * `setGameMessage` used to be the one place that filled this in, so a game
+     * whose card failed to post kept a null roster — and anything that counts
+     * per-player results from finished games, such as a season board, would
+     * silently skip it. The data is already in hand at this point; writing it
+     * twice is cheaper than a hole nobody notices.
+     */
+    roster: game.players.map(p => ({
+      userId: p.userId,
+      roleFa: p.roleFa ?? p.role ?? '',
+      side: p.side ?? '',
+    })),
     ...(game.endedAt ? { endedAt: game.endedAt } : {}),
   }).onConflictDoNothing({ target: mafiaGames.eventId }).returning();
 

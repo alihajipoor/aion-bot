@@ -37,6 +37,7 @@ import {
 import { applyTextRules, configOf, gameHeld } from '../mafia.js';
 // setupPanel imports games/store/scum-rules and never this file, so no cycle.
 import { setupButton } from '../setupPanel.js';
+import { pointButton, pointPrompt, pointWhy, pointSave, pointNote } from '../points.js';
 import { resealEventAccess } from '../lockout.js';
 import { resealNicknames } from '../nicknames.js';
 import {
@@ -914,6 +915,13 @@ export async function scumConsole(ev: EventRow, note?: string): Promise<{
     swapRoleButton(SCUM_ID, ev.id, roster.filter(p => p.alive && p.role).length >= 2),
   ));
 
+  // Its own row: the one above is already five wide. Enabled whenever there is
+  // anybody to credit, including the dead — a point is earned while alive and
+  // handed out whenever God gets round to it.
+  box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
+    pointButton(SCUM_ID, ev.id, roster.length > 0),
+  ));
+
   if (phase !== 'setup') {
     box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'mafia')).setLabel('Mafia bord')
@@ -1509,6 +1517,10 @@ export async function scumModal(i: ModalSubmitInteraction): Promise<void> {
   if (!ev) { await i.reply({ content: 'Event peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
   if (!canRun(i, ev)) {
     await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+  if (step === 'ptnote' && arg) {
+    await pointNote(i, ev, arg, id => i.guild?.members.cache.get(id)?.displayName ?? id);
     return;
   }
   if (step === 'warnsave' && arg) {
@@ -2170,6 +2182,13 @@ export async function scumComponent(
   if (step === 'win' && i.isButton()) { await declareWin(i, ev, arg === 'mafia' ? 'mafia' : 'shahr'); return; }
   if (step === 'clear' && i.isButton()) { await clearPending(i, ev); return; }
   if (step === 'god' && i.isButton()) { await godPrompt(i, ev, SCUM_ID); return; }
+
+  const named = (id: string) => i.guild?.members.cache.get(id)?.displayName ?? id;
+  if (step === 'pt' && i.isButton()) { await pointPrompt(i, ev, SCUM_ID, named); return; }
+  if (step === 'ptwho' && i.isStringSelectMenu()) { await pointWhy(i, ev, SCUM_ID, named); return; }
+  if (step === 'ptwhy' && i.isStringSelectMenu() && arg) {
+    await pointSave(i, ev, arg, named, SCUM_ID); return;
+  }
   if (step === 'godpick' && i.isStringSelectMenu()) {
     await godSwap(i, ev, i.values[0]!, {
       chat: chatOf(ev, i.guild!),

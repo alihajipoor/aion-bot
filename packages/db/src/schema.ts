@@ -448,3 +448,65 @@ export const mafiaStats = pgTable('mafia_stats', {
   primaryKey({ columns: [t.guildId, t.userId] }),
   index('mafia_stats_guild_games_idx').on(t.guildId, t.games),
 ]);
+
+/* ── mafia seasons ─────────────────────────────────────────────── */
+
+/**
+ * A timed competition laid over the ordinary games.
+ *
+ * Separate from `mafia_stats`, which is the lifetime record and must not move
+ * because a contest is running. A season is a window and a channel; everything
+ * it ranks is derived from rows that already exist, so closing one changes
+ * nothing about the history underneath it.
+ */
+export const mafiaSeasons = pgTable('mafia_seasons', {
+  id:        serial('id').primaryKey(),
+  guildId:   snowflake('guild_id').notNull(),
+  title:     text('title').notNull(),
+  startsAt:  timestamp('starts_at', { withTimezone: true }).notNull().defaultNow(),
+  endsAt:    timestamp('ends_at', { withTimezone: true }).notNull(),
+  /** Set when the board is frozen; `results` below is then the record. */
+  closedAt:  timestamp('closed_at', { withTimezone: true }),
+  /** Where the board lives. Created on first start and remembered after. */
+  channelId: snowflake('channel_id'),
+  messageId: snowflake('message_id'),
+  /**
+   * What each of the three titles pays, as the board prints it — keyed by the
+   * thing being ranked so a season can pay for only some of them.
+   */
+  prizes:    jsonb('prizes').$type<{ games?: string; wins?: string; points?: string }>()
+               .notNull().default({}),
+  results:   jsonb('results').$type<{
+               games: { userId: string; n: number }[];
+               wins: { userId: string; n: number }[];
+               points: { userId: string; n: number }[];
+             }>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [index('mafia_seasons_guild_idx').on(t.guildId, t.closedAt)]);
+
+/**
+ * One row per point God hands out, rather than a counter per player.
+ *
+ * Rows because the board has to be able to say *why* somebody is leading, and
+ * because a point given by mistake has to come off again without guessing what
+ * the total should have been. The timestamp is what scopes a point to a
+ * season, so a correction after the fact lands in the right window.
+ */
+export const mafiaPoints = pgTable('mafia_points', {
+  id:        serial('id').primaryKey(),
+  guildId:   snowflake('guild_id').notNull(),
+  seasonId:  integer('season_id').notNull(),
+  userId:    snowflake('user_id').notNull(),
+  /** The game it was earned in, when there was one. */
+  eventId:   integer('event_id'),
+  /** A key from REASONS in lib/mafiaSeason.ts, or 'other'. */
+  reason:    text('reason').notNull(),
+  /** What God typed, for 'other'. */
+  note:      text('note'),
+  points:    integer('points').notNull().default(1),
+  awardedBy: snowflake('awarded_by').notNull(),
+  awardedAt: timestamp('awarded_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  index('mafia_points_season_idx').on(t.guildId, t.seasonId, t.userId),
+  index('mafia_points_when_idx').on(t.guildId, t.awardedAt),
+]);

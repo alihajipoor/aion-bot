@@ -19,6 +19,7 @@ import {
 } from './games.js';
 import { hasRole } from '../../lib/roles.js';
 import { postMafiaHistory } from '../mafiaHistory.js';
+import { pointButton, pointPrompt, pointWhy, pointSave, pointNote } from './points.js';
 import {
   SETUP_ID, setupButton, setupComponent, setTextRuleApplier, setLimitApplier,
   rebalanceUses, roleForBudget,
@@ -471,15 +472,27 @@ async function console_(ev: EventRow, note?: string) {
     warnButton(MAFIA_ID, ev.id, roster.some(p => p.alive)),
     godButton(MAFIA_ID, ev.id),
     swapRoleButton(MAFIA_ID, ev.id, roster.filter(p => p.alive && p.role).length >= 2),
-    ...(phase === 'setup' ? [] : [
+    pointButton(MAFIA_ID, ev.id, roster.length > 0),
+  ));
+
+  /*
+   * The endings get their own row, and have to.
+   *
+   * They used to be spread into the row above, which made it four buttons
+   * before Shoroo and seven after — and an action row holds five. Discord
+   * rejects the whole message over the sixth, so the console stopped rendering
+   * at exactly the moment a game started using it.
+   */
+  if (phase !== 'setup') {
+    box.addActionRowComponents(new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'mafia')).setLabel('Mafia bord')
         .setEmoji('🔴').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(enc('win', ev.id, 'shahr')).setLabel('Shahr bord')
         .setEmoji('🟢').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(enc('mvp', ev.id)).setLabel('MVP')
         .setEmoji('⭐').setStyle(ButtonStyle.Secondary),
-    ]),
-  ));
+    ));
+  }
 
   if (phase !== 'setup') {
     const alive = roster.filter(p => p.alive);
@@ -605,6 +618,13 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
   if (await setupComponent(i, ev)) return;
 
   if (step === 'god' && i.isButton()) { await godPrompt(i, ev, MAFIA_ID); return; }
+
+  const named = (id: string) => i.guild?.members.cache.get(id)?.displayName ?? id;
+  if (step === 'pt' && i.isButton()) { await pointPrompt(i, ev, MAFIA_ID, named); return; }
+  if (step === 'ptwho' && i.isStringSelectMenu()) { await pointWhy(i, ev, MAFIA_ID, named); return; }
+  if (step === 'ptwhy' && i.isStringSelectMenu() && arg) {
+    await pointSave(i, ev, arg, named, MAFIA_ID); return;
+  }
   if (step === 'godpick' && i.isStringSelectMenu()) {
     await godSwap(i, ev, i.values[0]!, { chat: chatOf(ev, i.guild!) });
     return;
@@ -780,7 +800,7 @@ export async function mafiaComponent(i: ButtonInteraction | StringSelectMenuInte
 
 export async function mafiaModal(i: ModalSubmitInteraction): Promise<void> {
   const [step, idRaw, arg] = dec(i.customId);
-  if (step !== 'warnsave' || !arg) return;
+  if ((step !== 'warnsave' && step !== 'ptnote') || !arg) return;
 
   const ev = await getEvent(Number(idRaw));
   if (!ev) { await i.reply({ content: 'Event peyda nashod.', flags: MessageFlags.Ephemeral }); return; }
@@ -792,6 +812,10 @@ export async function mafiaModal(i: ModalSubmitInteraction): Promise<void> {
   if (!allowed) { await i.reply({ content: 'Faghat gardanande.', flags: MessageFlags.Ephemeral }); return; }
 
   const guild = i.guild!;
+  if (step === 'ptnote') {
+    await pointNote(i, ev, arg, id => guild.members.cache.get(id)?.displayName ?? id);
+    return;
+  }
   await warnSave(i, ev, arg, {
     guild,
     chat: chatOf(ev, guild),

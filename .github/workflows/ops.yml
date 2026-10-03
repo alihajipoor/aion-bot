@@ -24,6 +24,9 @@ on:
           - mafia-mvp
           - mafia-swap
           - vps-status
+          - season-start
+          - season-close
+          - season-refresh
           - giveaway-start
           - giveaway-close
       title:
