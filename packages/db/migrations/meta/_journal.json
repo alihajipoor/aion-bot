@@ -50,6 +50,13 @@
       "when": 1790118209645,
       "tag": "0006_handy_zodiak",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791041820887,
+      "tag": "0007_fancy_vermin",
+      "breakpoints": true
     }
   ]
 }

@@ -34,6 +34,10 @@ on:
         description: Duration in days (start only)
         type: string
         default: "21"
+      prizes:
+        description: "Prizes (start only) — places split by ; options by |"
+        type: string
+        default: ""
       back:
         description: Hours to reach back (window only)
         type: string
@@ -76,6 +80,7 @@ jobs:
           DAYS: ${{ inputs.days }}
           FLOORS: ${{ inputs.floors }}
           BACK: ${{ inputs.back }}
+          PRIZES: ${{ inputs.prizes }}
           EVENT: ${{ inputs.event }}
           USERID: ${{ inputs.user }}
           OLDID: ${{ inputs.old }}
@@ -88,7 +93,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=20 "root@$HOST" \
-            "TASK='$TASK' TITLE='$TITLE' DAYS='$DAYS' FLOORS='$FLOORS' BACK='$BACK' EVENT='$EVENT' USERID='$USERID' OLDID='$OLDID' NEWID='$NEWID' bash -s" <<'EOSSH'
+            "TASK='$TASK' TITLE='$TITLE' DAYS='$DAYS' FLOORS='$FLOORS' BACK='$BACK' PRIZES='$PRIZES' EVENT='$EVENT' USERID='$USERID' OLDID='$OLDID' NEWID='$NEWID' bash -s" <<'EOSSH'
           set -euo pipefail
           APP=/opt/aion
           cd "$APP"
@@ -121,6 +126,7 @@ jobs:
             --preserve-env=DISCORD_TOKEN,DISCORD_CLIENT_ID,LIVE_GUILD_ID,DATABASE_URL,NODE_ENV,LOG_LEVEL \
             node "$APP/apps/bot/dist/ops.js" "$TASK" \
               --title "$TITLE" --days "$DAYS" --floors "$FLOORS" --back "$BACK" \
+              ${PRIZES:+--prizes "$PRIZES"} \
               ${EVENT:+--event "$EVENT"} ${USERID:+--user "$USERID"} \
               ${OLDID:+--old "$OLDID"} ${NEWID:+--new "$NEWID"}
           EOSSH

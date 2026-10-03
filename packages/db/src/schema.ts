@@ -234,8 +234,23 @@ export const giveaways = pgTable('giveaways', {
   title:     text('title').notNull(),
   /** How old an invited account must already be, in days, to count. */
   minAccountAgeDays: integer('min_account_age_days').notNull().default(30),
-  /** Minimum qualified invites for 1st, 2nd and 3rd place. */
+  /**
+   * Minimum qualified invites per place, one entry per prize.
+   *
+   * Its length is how many places this run has. A single-element list is a
+   * one-winner contest, and the podium, the board and the announcement all
+   * read their shape from here rather than assuming three.
+   */
   floors:    jsonb('floors').$type<number[]>().notNull().default([100, 50, 30]),
+  /**
+   * What each place wins, as the announcement prints it — one list of options
+   * per place, in the same order as `floors`.
+   *
+   * On the row rather than in the code because the prizes change every run,
+   * and an announcement that promises last run's prizes is worse than one that
+   * promises nothing. Empty means the announcement simply omits the section.
+   */
+  prizes:    jsonb('prizes').$type<string[][]>().notNull().default([]),
   startsAt:  timestamp('starts_at', { withTimezone: true }).notNull().defaultNow(),
   endsAt:    timestamp('ends_at', { withTimezone: true }).notNull(),
   /** Set when the board is frozen; the result below is then the record. */

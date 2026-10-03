@@ -81,25 +81,42 @@ async function start(): Promise<void> {
   const days = Number(flag('days') ?? 21);
   const floors = (flag('floors') ?? '100,50,30').split(',').map(Number);
   const minAge = Number(flag('minage') ?? 30);
-  // Three numbers, each of them sane. "100,100,100" losing its commas on the
-  // way through a workflow input arrives as 100100100, which would otherwise
-  // start a giveaway nobody could ever win.
+  // One to three numbers, each of them sane. "100,100,100" losing its commas
+  // on the way through a workflow input arrives as 100100100, which would
+  // otherwise start a giveaway nobody could ever win.
+  //
+  // One floor means one prize and one winner. The podium, the board and the
+  // award step all read their length from this list rather than assuming three,
+  // so a single-prize run needs nothing else said anywhere.
   if (!Number.isFinite(days) || days < 1 || days > 120) {
     console.error(`bad --days: ${flag('days')}`); process.exitCode = 1; return;
   }
-  if (floors.length !== 3 || floors.some(n => !Number.isFinite(n) || n < 1 || n > 10_000)) {
-    console.error(`bad --floors: ${flag('floors')} — want three numbers like 100,100,100`);
+  if (floors.length < 1 || floors.length > 3
+      || floors.some(n => !Number.isFinite(n) || n < 1 || n > 10_000)) {
+    console.error(`bad --floors: ${flag('floors')} — want one to three numbers, like 20 or 100,50,30`);
     process.exitCode = 1; return;
   }
   if (!Number.isFinite(minAge) || minAge < 0 || minAge > 3650) {
     console.error(`bad --minage: ${flag('minage')}`); process.exitCode = 1; return;
   }
 
+  /*
+   * Prizes, one place per `;` and one option per `|`, in the same order as the
+   * floors. Left out, the announcement omits the prize section rather than
+   * inventing one — a contest that promises last run's rewards is worse than
+   * one that promises nothing in writing.
+   */
+  const prizes = (flag('prizes') ?? '').split(';')
+    .map(place => place.split('|').map(o => o.trim()).filter(Boolean))
+    .slice(0, floors.length);
+  while (prizes.length < floors.length) prizes.push([]);
+
   const endsAt = new Date(Date.now() + days * 86_400_000);
   const [row] = await getDb().insert(giveaways)
-    .values({ guildId: config.guildId, title, floors, endsAt, minAccountAgeDays: minAge })
+    .values({ guildId: config.guildId, title, floors, prizes, endsAt, minAccountAgeDays: minAge })
     .returning();
   console.log(`started #${row?.id} "${title}" — ${days} days, floors ${floors.join('/')}, ends ${endsAt.toISOString()}`);
+  console.log(`prizes: ${prizes.map((p, i) => `${i + 1}:[${p.join(' | ')}]`).join('  ') || '(none)'}`);
 
   // Posted here rather than left to the poster's ten-minute tick, so the run
   // and its announcement begin at the same moment. The date mark it writes is
@@ -137,8 +154,9 @@ async function setFloors(): Promise<void> {
   const g = await openGiveaway(config.guildId);
   if (!g) { console.error('nothing open'); process.exitCode = 1; return; }
   const floors = (flag('floors') ?? '').split(',').map(Number);
-  if (floors.length !== 3 || floors.some(n => !Number.isFinite(n) || n < 1 || n > 10_000)) {
-    console.error(`bad --floors: ${flag('floors')} — want three numbers like 100,50,30`);
+  if (floors.length < 1 || floors.length > 3
+      || floors.some(n => !Number.isFinite(n) || n < 1 || n > 10_000)) {
+    console.error(`bad --floors: ${flag('floors')} — want one to three numbers, like 20 or 100,50,30`);
     process.exitCode = 1; return;
   }
   await getDb().update(giveaways).set({ floors }).where(eq(giveaways.id, g.id));

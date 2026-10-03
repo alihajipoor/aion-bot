@@ -19,7 +19,17 @@ const log = logger('giveaway');
 const CHECK_MS = 10 * 60_000;
 const BOARD_EVERY_MS = 60 * 60_000;   // the standings go stale within minutes
 const RECRUITER = 'ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•';
-const RECRUITER_AT = 30;
+/**
+ * Where the progress role starts, as a fraction of the smallest prize.
+ *
+ * It used to be a flat 30, which was half the lowest floor of the first run and
+ * therefore invisible as a rule. A contest whose only prize sits at 20 would
+ * have made the role unreachable — you would have had to pass the winning line
+ * to earn the badge for approaching it. Derived from the floors, it is always
+ * the halfway mark of whatever is actually being run.
+ */
+const recruiterAt = (floors: number[]): number =>
+  Math.max(1, Math.ceil(Math.min(...floors) / 2));
 const PODIUM = ['ʟᴇɢᴇɴᴅ│𝙳𝙰𝚅𝙰𝚃│•', 'ᴇʟɪᴛᴇ│𝙳𝙰𝚅𝙰𝚃│•', 'ᴘɪsʜᴛᴀᴢ│𝙳𝙰𝚅𝙰𝚃│•'];
 
 interface Marks { lastGiveaway?: string; giveawayIds?: string[]; giveawayRun?: number; boardAt?: string }
@@ -212,12 +222,13 @@ async function sweepRecruiters(guild: Guild): Promise<void> {
   const scores = g ? await scoreInvites(guild.id, {
     from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
   }) : [];
-  const earned = new Set(scores.filter(s => s.qualified >= RECRUITER_AT).map(s => s.inviterId));
+  const at = g ? recruiterAt(g.floors) : Infinity;
+  const earned = new Set(scores.filter(s => s.qualified >= at).map(s => s.inviterId));
 
   for (const id of earned) {
     const m = guild.members.cache.get(id);
     if (m && !m.roles.cache.has(role.id)) {
-      await m.roles.add(role, `AION: ${RECRUITER_AT}+ davat`).catch(() => {});
+      await m.roles.add(role, `AION: ${at}+ davat`).catch(() => {});
       log.info(`recruiter role -> ${m.user.tag}`);
     }
   }
