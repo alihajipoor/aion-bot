@@ -1,7 +1,28 @@
 import type { giveaways } from '@aion/db';
-import { isolate } from './text.js';
+import { isolate, RLI, PDI } from './text.js';
 
 type Row = typeof giveaways.$inferSelect;
+
+/**
+ * One line of Persian prose, as its own right-to-left run.
+ *
+ * Without this each line is laid out in the client's own base direction, which
+ * is left-to-right: the sentence-final full stop lands at the left edge, an
+ * embedded LTR island like a `<t:…>` timestamp or the word RECRUITER cuts the
+ * sentence in half, and a mixed line such as "تتر (USDT) — ۴۰ دلار" comes out
+ * with its segments in reverse order. RLI fixes the base direction for the
+ * line; isolate() keeps each Latin or numeric island from leaking into it.
+ *
+ * The markdown prefix stays outside the isolate. Discord only parses `#`, `>`
+ * and `-#` at the very start of a line, and an invisible control character in
+ * front of them turns a heading into literal text.
+ */
+const MD_PREFIX = /^(?:#{1,3} |> ◆ |> |-# )?/;
+const rtl = (line: string): string => {
+  if (!line.trim()) return line;
+  const prefix = MD_PREFIX.exec(line)?.[0] ?? '';
+  return `${prefix}${RLI}${line.slice(prefix.length)}${PDI}`;
+};
 
 /** Persian digits, because a Persian announcement with 30 in it reads half-translated. */
 const fa = (n: number | string) => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)] ?? d);
@@ -65,7 +86,7 @@ export function announcement(g: Row): string {
            options.length > 1
              ? `**${ORDINAL[i]}** — خودت یکی رو انتخاب می‌کنی:`
              : `**${ORDINAL[i]}**:`,
-           ...options.map(o => `> ◆ ${o}`),
+           ...options.map(o => `> ◆ ${isolate(o)}`),
            '',
          ];
        })]
@@ -79,7 +100,7 @@ export function announcement(g: Row): string {
     '# 🎁 مسابقه‌ی دعوت آیون',
     '',
     'هر چقدر آدم بیشتری به سرور بیاری، شانس بردنت بیشتره.',
-    `مسابقه ${span(g.startsAt, g.endsAt)}‌ست و ${ends} تموم می‌شه.`,
+    `مسابقه ${span(g.startsAt, g.endsAt)}‌ست و ${isolate(ends)} تموم می‌شه.`,
     // Rendered in each reader's own timezone by Discord, which is the only way
     // to state a cut-off without starting an argument about clocks.
     `دعوت‌هایی که از ${isolate(from)} به بعد ثبت شدن حساب می‌شن.`,
@@ -90,7 +111,7 @@ export function announcement(g: Row): string {
     '',
     ...prizes,
     permanent,
-    `هر کسی هم ${fa(recruiterLine(floors))} تا دعوت معتبر داشته باشه، تا آخر مسابقه رول **ʀᴇᴄʀᴜɪᴛᴇʀ** رو می‌گیره.`,
+    `هر کسی هم ${fa(recruiterLine(floors))} تا دعوت معتبر داشته باشه، تا آخر مسابقه رول **${isolate('ʀᴇᴄʀᴜɪᴛᴇʀ')}** رو می‌گیره.`,
     '',
     '## ✅ چه دعوتی حساب می‌شه؟',
     '',
@@ -105,8 +126,8 @@ export function announcement(g: Row): string {
     '',
     '## 📊 دستورها',
     '',
-    '`/giveaway board` — جدول مسابقه',
-    '`/giveaway man` — دعوت‌های خودت، و دلیل اینکه کدوم حساب نشده و چرا',
+    `${isolate('`/giveaway board`')} — جدول مسابقه`,
+    `${isolate('`/giveaway man`')} — دعوت‌های خودت، و دلیل اینکه کدوم حساب نشده و چرا`,
     '',
     '## 🔗 چطور شروع کنم؟',
     '',
@@ -114,5 +135,5 @@ export function announcement(g: Row): string {
     'هر کی با اون لینک بیاد، **دقیقاً** به اسم تو ثبت می‌شه. همینو برای دوستات بفرست.',
     '',
     '-# این صفحه هر ۲۴ ساعت دوباره فرستاده می‌شه.',
-  ].join('\n');
+  ].map(rtl).join('\n');
 }
