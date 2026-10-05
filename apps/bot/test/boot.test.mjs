@@ -10,6 +10,7 @@
 // These two tests are the cheapest possible guard: load the graph, and refuse
 // a cycle outright.
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -33,7 +34,7 @@ test('there are no import cycles', () => {
    * a detector that counts it reports cycles that cannot exist. dist is exactly
    * the graph node will evaluate, which is the graph that can fail.
    */
-  const root = new URL('../dist/', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('../dist/', import.meta.url));
   const files = [];
   const walk = d => {
     for (const n of readdirSync(d)) {

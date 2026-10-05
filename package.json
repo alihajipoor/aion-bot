@@ -11,12 +11,13 @@
   },
   "scripts": {
     "bot:dev": "npm -w @aion/bot run dev",
+    "build": "npm -w @aion/bot run build",
     "bot:build": "npm -w @aion/bot run build",
     "bot:start": "npm -w @aion/bot run start",
     "db:generate": "npm -w @aion/db run generate",
     "db:migrate": "npm -w @aion/db run migrate",
     "typecheck": "tsc -b --pretty",
-    "test": "npm -w @aion/bot run build && node --test apps/bot/test/"
+    "test": "npm -w @aion/bot run build && node --test apps/bot/test/*.test.mjs"
   },
   "dependencies": {
     "discord.js": "^14.27.0",

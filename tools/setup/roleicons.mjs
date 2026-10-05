@@ -9,6 +9,7 @@
 import 'dotenv/config';
 import { writeFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import { join, extname, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Client, GatewayIntentBits } from 'discord.js';
 import { Resvg } from '@resvg/resvg-js';
 import { foldRole } from '../../apps/bot/dist/lib/roles.js';
@@ -273,7 +274,7 @@ const ICONS = [
   ['ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•', 'crew', C.purple, 'carve', 'Recruiter'],
 ];
 
-const FONT = new URL('../../apps/bot/assets/fonts/Vazirmatn-Bold.ttf', import.meta.url).pathname;
+const FONT = fileURLToPath(new URL('../../apps/bot/assets/fonts/Vazirmatn-Bold.ttf', import.meta.url));
 const opts = { fitTo: { mode: 'width', value: 128 },
   font: { fontFiles: [FONT], defaultFontFamily: 'Vazirmatn', loadSystemFonts: false } };
 
