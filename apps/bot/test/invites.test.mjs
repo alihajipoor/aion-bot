@@ -7,7 +7,7 @@
 // once it is handed over.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, accountCreatedAt } from '../dist/lib/invites.js';
+import { classify, accountCreatedAt, countsUntil } from '../dist/lib/invites.js';
 
 const DAY = 86_400_000;
 const EPOCH = 1420070400000n;
@@ -209,4 +209,31 @@ test('the shipped list is exactly the two people who asked to be out', async () 
     '1114694928824541194',   // TheFault
     '455110498132819976',    // Ali
   ].sort());
+});
+
+/* ── where the count stops ─────────────────────────────────────── */
+
+const ENDS = new Date('2026-10-10T15:41:36Z');
+const H = 3_600_000;
+
+test('an open giveaway counts up to now while the deadline is ahead', () => {
+  const now = new Date(ENDS.getTime() - 5 * H);
+  assert.equal(countsUntil({ endsAt: ENDS, closedAt: null }, now).getTime(), now.getTime());
+});
+
+test('an open giveaway stops counting at the announced end, not when someone closes it', () => {
+  // Left open over a weekend: a join two days late must not count.
+  const now = new Date(ENDS.getTime() + 48 * H);
+  assert.equal(countsUntil({ endsAt: ENDS, closedAt: null }, now).getTime(), ENDS.getTime());
+});
+
+test('a late close freezes the result at the end date too', () => {
+  const closedAt = new Date(ENDS.getTime() + 6 * H);
+  assert.equal(countsUntil({ endsAt: ENDS, closedAt }, new Date(ENDS.getTime() + 99 * H)).getTime(),
+    ENDS.getTime());
+});
+
+test('an early close ends the count at the close', () => {
+  const closedAt = new Date(ENDS.getTime() - 24 * H);
+  assert.equal(countsUntil({ endsAt: ENDS, closedAt }).getTime(), closedAt.getTime());
 });

@@ -19,7 +19,7 @@ import { getDb, giveaways, memberJoins } from '@aion/db';
 import { config } from './config.js';
 import { openSeason, startSeason } from './lib/mafiaSeason.js';
 import { refreshSeasonBoard, finishSeason } from './modules/mafiaSeasonBoard.js';
-import { openGiveaway, scoreInvites, unattributedJoins } from './lib/giveaway.js';
+import { openGiveaway, scoreInvites, countsUntil, unattributedJoins } from './lib/giveaway.js';
 import { REASON_TEXT, type Reason } from './lib/invites.js';
 import { postAnnouncement, awardPodium, refreshAnnouncement, refreshBoard } from './modules/giveawayPoster.js';
 import { recentGames, setGameMvp } from './lib/mafiaStats.js';
@@ -85,8 +85,9 @@ async function seasonRefresh(): Promise<void> {
 async function review(): Promise<void> {
   const g = await openGiveaway(config.guildId);
   const from = g?.startsAt ?? new Date(Date.now() - 21 * 86_400_000);
+  const to = g ? countsUntil(g) : new Date();
   const scores = await scoreInvites(config.guildId, {
-    from, to: new Date(), minAccountAgeDays: g?.minAccountAgeDays ?? 30,
+    from, to, minAccountAgeDays: g?.minAccountAgeDays ?? 30,
   });
   const all = scores.flatMap(s => s.invitees);
   const tally = all.reduce<Record<string, number>>((a, v) => {
@@ -101,7 +102,7 @@ async function review(): Promise<void> {
   for (const [k, n] of Object.entries(tally)) {
     console.log(`  ${k === 'ok' ? 'counts  ' : 'rejected'} ${String(n).padStart(4)}  ${REASON_TEXT[k as Reason]}`);
   }
-  console.log(`joins with no inviter      : ${await unattributedJoins(config.guildId, from)}`);
+  console.log(`joins with no inviter      : ${await unattributedJoins(config.guildId, from, to)}`);
   console.log(`inferred (not observed)    : ${all.filter(v => v.guessed).length}`);
   console.log(`\ntop inviters:`);
   if (!scores.length) console.log('  (nobody yet)');
@@ -172,7 +173,7 @@ async function close(): Promise<void> {
     return given;
   });
   const scores = await scoreInvites(config.guildId, {
-    from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
+    from: g.startsAt, to: countsUntil(g), minAccountAgeDays: g.minAccountAgeDays,
   });
   await getDb().update(giveaways).set({
     closedAt: new Date(),

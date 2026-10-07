@@ -5,7 +5,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { getDb, guilds } from '@aion/db';
 import {
-  ACCENT, openGiveaway, giveawayChannel, boardContainer, buttons, scoreInvites, places,
+  ACCENT, openGiveaway, giveawayChannel, boardContainer, buttons, scoreInvites, countsUntil, places,
 } from '../lib/giveaway.js';
 import { announcement } from '../lib/giveawayText.js';
 import { renderLeaderboardBanner } from '../lib/banner.js';
@@ -127,7 +127,7 @@ export async function postAnnouncement(guild: Guild): Promise<void> {
 async function renderBoard(guild: Guild, g: Awaited<ReturnType<typeof openGiveaway>>) {
   if (!g) throw new Error('no giveaway');
   const scores = await scoreInvites(guild.id, {
-    from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
+    from: g.startsAt, to: countsUntil(g), minAccountAgeDays: g.minAccountAgeDays,
   });
   const nameOf = (id: string) => guild.members.cache.get(id)?.displayName ?? `<@${id}>`;
   const png = await renderLeaderboardBanner({
@@ -220,7 +220,7 @@ async function sweepRecruiters(guild: Guild): Promise<void> {
   // has earned it — which is the same statement as "take it off everyone", and
   // deriving both from one set is why it cannot be left behind on someone.
   const scores = g ? await scoreInvites(guild.id, {
-    from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
+    from: g.startsAt, to: countsUntil(g), minAccountAgeDays: g.minAccountAgeDays,
   }) : [];
   const at = g ? recruiterAt(g.floors) : Infinity;
   const earned = new Set(scores.filter(s => s.qualified >= at).map(s => s.inviterId));
@@ -246,7 +246,7 @@ export async function awardPodium(guild: Guild): Promise<string[]> {
   const g = await openGiveaway(guild.id);
   if (!g) return [];
   const scores = await scoreInvites(guild.id, {
-    from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
+    from: g.startsAt, to: countsUntil(g), minAccountAgeDays: g.minAccountAgeDays,
   });
   const given: string[] = [];
   for (const p of places(scores, g.floors)) {

@@ -10,6 +10,8 @@ import { isolate } from '../../lib/text.js';
 import { logger } from '../../lib/log.js';
 import { and, eq, desc, sql } from 'drizzle-orm';
 import { getDb, memberJoins, inviteCache } from '@aion/db';
+import { openGiveaway, scoreInvites, countsUntil } from '../../lib/giveaway.js';
+import { NOT_COMPETING } from '../../lib/invites.js';
 import type { AionClient } from '../../client.js';
 import { isCounterChannel } from '../counters.js';
 
@@ -157,10 +159,33 @@ export function installLogging(client: AionClient): void {
           .where(and(eq(memberJoins.guildId, member.guild.id), eq(memberJoins.inviterId, inviterId)));
         total = row?.n ?? 0;
       } catch { /* not fatal */ }
+
+      // The total above is every join through this person's links, ever —
+      // rejoins, people who never verified, joins from before any giveaway. It
+      // is not the giveaway number, and printed bare it read as one: members
+      // compared "37 invites" here with "1" on the board and took the board to
+      // be wrong. So it says what it is, and the real count sits beside it.
+      let contest = '';
+      try {
+        const g = await openGiveaway(member.guild.id);
+        if (g) {
+          if (NOT_COMPETING.has(inviterId)) {
+            contest = 'Giveaway: not competing';
+          } else {
+            const scores = await scoreInvites(member.guild.id, {
+              from: g.startsAt, to: countsUntil(g), minAccountAgeDays: g.minAccountAgeDays,
+            });
+            const q = scores.find(s => s.inviterId === inviterId)?.qualified ?? 0;
+            contest = `Giveaway: **${q}** counted so far — a new join counts once they verify`;
+          }
+        }
+      } catch { /* not fatal */ }
+
       emitLog(member.guild, 'inviteCreate', [
         title('🎟', 'Joined via invite'),
         `${u(member.user)} was invited by <@${inviterId}>`,
-        `Invite \`${inviteCode}\` · they now have **${total}** invite${total === 1 ? '' : 's'}`,
+        `Invite \`${inviteCode}\` · **${total}** join${total === 1 ? '' : 's'} through their links, all time`,
+        ...(contest ? [contest] : []),
         `-# ${now()}`,
       ].join('\n'), av(member.user));
     } else {

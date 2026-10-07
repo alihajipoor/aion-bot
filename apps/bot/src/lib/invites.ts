@@ -59,6 +59,23 @@ export interface Window {
 
 const DAY = 86_400_000;
 
+/**
+ * The last moment a join can count: the announced end, or the close if that
+ * came first.
+ *
+ * The end date is a promise made in the announcement, so it is the end of the
+ * count — not whenever somebody gets round to `/giveaway close`. Without the
+ * cap every screen counted up to the present, and a run left open over a
+ * weekend kept crediting joins that arrived after the deadline everyone was
+ * told about.
+ */
+export function countsUntil(
+  g: { endsAt: Date; closedAt: Date | null }, now: Date = new Date(),
+): Date {
+  const end = g.closedAt ?? now;
+  return end < g.endsAt ? end : g.endsAt;
+}
+
 export interface JoinRow {
   userId: string;
   inviterId: string | null;

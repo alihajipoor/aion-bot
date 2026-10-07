@@ -3,9 +3,9 @@ import {
   MediaGalleryItemBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ChannelType, type Guild, type TextChannel,
 } from 'discord.js';
-import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, isNull, sql } from 'drizzle-orm';
 import { getDb, giveaways, inviteCache, memberJoins } from '@aion/db';
-import { scoreInvites, REASON_TEXT, type Score } from './invites.js';
+import { scoreInvites, countsUntil, REASON_TEXT, type Score } from './invites.js';
 import { isolate, num } from './text.js';
 
 export const GW = 'gw';
@@ -163,7 +163,7 @@ export function breakdown(guild: Guild, scores: Score[], userId: string): string
   ].join('\n').slice(0, 3900);
 }
 
-export { scoreInvites };
+export { scoreInvites, countsUntil };
 
 /**
  * Joins in the window that carry no inviter at all — a vanity link, a widget,
@@ -171,10 +171,10 @@ export { scoreInvites };
  * nobody, so the honest thing is to show how many there are rather than let
  * the board imply every arrival was attributed.
  */
-export async function unattributedJoins(guildId: string, from: Date): Promise<number> {
+export async function unattributedJoins(guildId: string, from: Date, to: Date = new Date()): Promise<number> {
   const [row] = await getDb().select({ n: sql<number>`count(*)::int` })
     .from(memberJoins)
     .where(and(eq(memberJoins.guildId, guildId), isNull(memberJoins.inviterId),
-      gte(memberJoins.joinedAt, from)));
+      gte(memberJoins.joinedAt, from), lte(memberJoins.joinedAt, to)));
   return row?.n ?? 0;
 }

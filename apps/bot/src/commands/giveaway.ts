@@ -5,7 +5,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { getDb, giveaways } from '@aion/db';
 import {
-  GW, openGiveaway, boardContainer, breakdown, buttons, personalInvite, scoreInvites, stamp,
+  GW, openGiveaway, boardContainer, breakdown, buttons, personalInvite, scoreInvites, countsUntil, stamp,
   unattributedJoins,
 } from '../lib/giveaway.js';
 import { REASON_TEXT, type Reason } from '../lib/invites.js';
@@ -28,7 +28,7 @@ export async function boardReply(guild: import('discord.js').Guild) {
   const g = await openGiveaway(guild.id);
   if (!g) return null;
   const scores = await scoreInvites(guild.id, {
-    from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
+    from: g.startsAt, to: countsUntil(g), minAccountAgeDays: g.minAccountAgeDays,
   });
   const nameOf = (id: string) => guild.members.cache.get(id)?.displayName ?? `<@${id}>`;
   const png = await renderLeaderboardBanner({
@@ -67,7 +67,7 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
     const g = await openGiveaway(guild.id);
     if (!g) { await i.editReply('الان مسابقه‌ای در جریان نیست.'); return; }
     const scores = await scoreInvites(guild.id, {
-      from: g.startsAt, to: new Date(), minAccountAgeDays: g.minAccountAgeDays,
+      from: g.startsAt, to: countsUntil(g), minAccountAgeDays: g.minAccountAgeDays,
     });
     await i.editReply(breakdown(guild, scores, i.user.id));
     return;
@@ -153,7 +153,7 @@ const command: Command = {
     await i.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
 
     const scores = await scoreInvites(guildId, {
-      from: g.startsAt, to: g.closedAt ?? new Date(), minAccountAgeDays: g.minAccountAgeDays,
+      from: g.startsAt, to: countsUntil(g), minAccountAgeDays: g.minAccountAgeDays,
     });
 
     if (sub === 'man' || sub === 'check') {
@@ -165,7 +165,7 @@ const command: Command = {
     if (sub === 'review') {
       const all = scores.flatMap(s => s.invitees.map(v => ({ ...v, inviterId: s.inviterId })));
       const guessed = all.filter(v => v.guessed);
-      const unknown = await unattributedJoins(guildId, g.startsAt);
+      const unknown = await unattributedJoins(guildId, g.startsAt, countsUntil(g));
       const tally = all.reduce<Record<string, number>>((a, v) => {
         a[v.reason] = (a[v.reason] ?? 0) + 1; return a;
       }, {});

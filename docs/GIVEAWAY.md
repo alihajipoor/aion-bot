@@ -40,7 +40,8 @@ $15 USDT
 - **`Λ | Legend`** nickname prefix; `modules/nickguard.ts` already enforces it.
 - A pinned **Hall of Λ** post carrying the final board.
 - Their own permanent voice room in the Mansion.
-- **Recruiter tier at 30 qualified invites**: the `ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•` role and
+- **Recruiter tier at half the lowest floor** (15 qualified invites with floors
+  100/50/30): the `ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•` role and
   icon, granted and removed by the bot automatically. It lasts for the giveaway
   only — the sweep strips it from everyone once nothing is running, so it cannot
   be left behind on someone after the fact.
@@ -76,8 +77,8 @@ server has ~148 members, so 100 invites from one person means adding two-thirds
 of the server single-handed. First place may well go unawarded. Second and third
 are reachable.
 
-Note that third place and the recruiter role now sit at the same number, so
-anyone eligible for third is already wearing the role.
+The recruiter role is derived from the floors rather than fixed, so it always
+sits halfway to the smallest prize of whatever is being run.
 
 `floors` is stored per giveaway rather than compiled in, so the numbers can be
 lowered mid-run if the board stalls:
@@ -103,7 +104,14 @@ place goes unawarded rather than sliding down to whoever is next.
 Admin subcommands are **Dev-only** (plus the guild owner, so the server cannot
 lock itself out). `board` and `man` are open to everyone.
 
-Only joins from that moment count, so start it when you announce it.
+Only joins from that moment count, so start it when you announce it. The count
+stops at the announced end date on its own: a join after the deadline does not
+count even while the giveaway is still open, and `/giveaway close` run late
+freezes the result as it stood at the deadline.
+
+Joins through the vanity link (`discord.gg/iraion`) carry no inviter and count
+for nobody — only a personal link earns credit. They are the bulk of the
+"no inviter" figure in `/giveaway review`.
 
 | Command | Who | What |
 |---|---|---|
@@ -138,6 +146,11 @@ small list and usually correct, but it is the one number worth a human glance.
 every invitee with ✅ or ❌ and says why — `account kheili jadid bood`,
 `hanooz verify nakarde`, `ghablan azaye server bood`. A bare number invites an
 argument; the list settles one.
+
+**The invite log channel's total is not the giveaway count.** Each join line
+there gives the inviter's all-time joins through their links — rejoins, people
+who never verified, joins from before any giveaway — and, while a giveaway is
+running, the qualified count beside it. Only the second one is the board.
 
 ### Known limit
 
