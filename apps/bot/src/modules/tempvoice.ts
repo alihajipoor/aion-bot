@@ -184,14 +184,23 @@ async function createRoom(member: GuildMember, hub: VoiceChannel): Promise<void>
         allow: ['ViewChannel' as const, 'Connect' as const, 'MoveMembers' as const],
         deny: [] as const,
       })),
+      // Activities are granted on the room itself, not left to the hub: the
+      // server gives nothing at role level, so a room that does not say yes
+      // shows no Activities button at all. An Activity is an app, and one the
+      // server has not installed runs as an external app, hence both.
       ...memberRoleIds(guild).map(id => ({
         id,
         allow: ['ViewChannel' as const, 'Connect' as const, 'Speak' as const,
-                'SendMessages' as const, 'UseVAD' as const, 'Stream' as const],
+                'SendMessages' as const, 'UseVAD' as const, 'Stream' as const,
+                'UseEmbeddedActivities' as const, 'UseExternalApps' as const],
       })),
-      { id: member.id, allow: ['ViewChannel', 'Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers'] },
+      { id: member.id, allow: ['ViewChannel', 'Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers',
+                               'UseEmbeddedActivities', 'UseExternalApps'] },
       // Staff keep access to every room, so a private channel is never a blind spot.
-      ...staffRoleIds(guild).map(id => ({ id, allow: ['ViewChannel' as const, 'Connect' as const] })),
+      ...staffRoleIds(guild).map(id => ({
+        id, allow: ['ViewChannel' as const, 'Connect' as const,
+                    'UseEmbeddedActivities' as const, 'UseExternalApps' as const],
+      })),
     ],
   });
 
