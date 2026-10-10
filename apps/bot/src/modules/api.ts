@@ -316,7 +316,18 @@ export function startApi(client: AionClient): void {
 
         if (req.method === 'PUT' && url.pathname === '/settings') {
           const body = await readBody(req);
-          const saved = await saveSettings(body as unknown as AionSettings);
+          // Launch state belongs to /eco launch and /eco pause alone. A form
+          // that does not know about it must not be able to switch it off.
+          const current = await loadSettings(true);
+          const incoming = body as unknown as AionSettings;
+          const saved = await saveSettings({
+            ...incoming,
+            economy: {
+              ...(incoming.economy ?? current.economy),
+              enabled: current.economy.enabled,
+              launchedAt: current.economy.launchedAt,
+            },
+          });
           return json(res, 200, { settings: saved });
         }
 

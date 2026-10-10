@@ -14,6 +14,7 @@ import { welcomeBanner } from '../lib/banner.js';
 import { settings } from '../lib/settings.js';
 import { logger } from '../lib/log.js';
 import { hasRole, findRole } from '../lib/roles.js';
+import { onMemberVerified } from './economy/index.js';
 
 const log = logger('verify');
 export const VF = 'vf';
@@ -298,6 +299,7 @@ export async function decideVerification(
     await member.setNickname(nick, `verified by ${staffTag}`).catch(e =>
       log.warn(`could not set nickname for ${member.user.tag}: ${e.message}`));
     await decide(id, { status: 'approved', reviewerId: staffId, reviewerTag: staffTag, appliedNick: nick });
+    void onMemberVerified(guild, member.id);   // pays their inviter an AION Coin, if they earned one
 
     await logChannel(guild)?.send({
       components: [new ContainerBuilder().setAccentColor(C.ok)
@@ -366,6 +368,7 @@ async function handleDecision(i: ButtonInteraction, step: 'ok' | 'no', id: numbe
       log.warn(`could not set nickname for ${member.user.tag}: ${e.message}`));
 
     await decide(id, { status: 'approved', reviewerId: i.user.id, reviewerTag: i.user.tag, appliedNick: nick });
+    void onMemberVerified(guild, member.id);   // pays their inviter an AION Coin, if they earned one
     await i.message.edit({ components: [resultCard('ok', row, i.user.id, nick)], flags: MessageFlags.IsComponentsV2 });
 
     await logChannel(guild)?.send({

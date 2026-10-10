@@ -6,6 +6,8 @@ import { handleButton as vfButton, handleSelect as vfSelect, handleModal as vfMo
 import { handleButton as tvButton, handleModal as tvModal, handleUserSelect as tvSelect, TV } from '../modules/tempvoice.js';
 import { handleButton as gwButton, GW } from '../commands/giveaway.js';
 import { handleButton as scoreButton, SCORE_ID } from '../modules/mafiaScoreboard.js';
+import { handleButton as ecoButton, handleSelect as ecoSelect, handleModal as ecoModal } from '../modules/economy/interactions.js';
+import { ECO } from '../modules/economy/index.js';
 import type { AionClient } from '../client.js';
 import type { EventHandler } from '../types.js';
 
@@ -48,6 +50,9 @@ const handler: EventHandler = {
       if (i.isStringSelectMenu() && i.customId.startsWith('up|')) { await unpunishComponent(i); return; }
       if (i.isButton() && i.customId.startsWith(`${GW}|`))        { await gwButton(i); return; }
       if (i.isButton() && i.customId.startsWith(`${SCORE_ID}|`))  { await scoreButton(i); return; }
+      if (i.isButton() && i.customId.startsWith(`${ECO}|`))       { await ecoButton(i); return; }
+      if (i.isStringSelectMenu() && i.customId.startsWith(`${ECO}|`)) { await ecoSelect(i); return; }
+      if (i.isModalSubmit() && i.customId.startsWith(`${ECO}|`))  { await ecoModal(i); return; }
     } catch (e) {
       const label = i.isChatInputCommand() ? `/${i.commandName}`
         : 'customId' in i ? String(i.customId) : i.type;

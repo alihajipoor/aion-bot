@@ -1,7 +1,8 @@
 import {
   pgTable, text, bigint, integer, boolean, timestamp, jsonb, date,
-  primaryKey, index, uniqueIndex, serial, pgEnum,
+  primaryKey, index, uniqueIndex, serial, pgEnum, check,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 /** Discord snowflakes exceed JS number range — always store as text. */
 const snowflake = (name: string) => text(name);
@@ -509,4 +510,134 @@ export const mafiaPoints = pgTable('mafia_points', {
 }, t => [
   index('mafia_points_season_idx').on(t.guildId, t.seasonId, t.userId),
   index('mafia_points_when_idx').on(t.guildId, t.awardedAt),
+]);
+
+/* ── economy: AION Coin ────────────────────────────────────────── */
+
+/**
+ * Every way a balance can move. The ledger is append-only: a mistake is
+ * corrected by a new row, never by editing an old one, so any balance can be
+ * explained to the coin from its history.
+ */
+export const ecoKind = pgEnum('eco_kind', [
+  'voice', 'invite', 'invite_revoke', 'purchase', 'refund', 'admin', 'leave', 'expire',
+]);
+export const ecoOrderStatus = pgEnum('eco_order_status', ['pending', 'delivered', 'rejected', 'cancelled']);
+export const ecoInviteStatus = pgEnum('eco_invite_status', ['credited', 'held', 'revoked', 'rejected']);
+
+/**
+ * One row per member: the balance, and the partial hour of voice that has not
+ * yet become a coin.
+ *
+ * `balance` is a cache of the ledger's sum, written in the same transaction as
+ * every ledger row, and the check constraint is the last line of defence
+ * against a double spend: whatever the code gets wrong, Postgres will not
+ * store a negative balance.
+ */
+export const ecoAccounts = pgTable('eco_accounts', {
+  guildId:       snowflake('guild_id').notNull(),
+  userId:        snowflake('user_id').notNull(),
+  balance:       integer('balance').notNull().default(0),
+  /** Eligible voice minutes towards the next coin, 0..minutesPerCoin-1. */
+  voiceMinutes:  integer('voice_minutes').notNull().default(0),
+  /** Coins ever earned (voice + invites), for the board. Never decreases. */
+  earned:        integer('earned').notNull().default(0),
+  /** Last minute spent in any voice channel, eligible or not: the inactivity clock. */
+  lastVoiceAt:   timestamp('last_voice_at', { withTimezone: true }),
+  /** When the inactivity warning DM went out; cleared by the next voice minute. */
+  warnedAt:      timestamp('warned_at', { withTimezone: true }),
+  frozen:        boolean('frozen').notNull().default(false),
+  createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  primaryKey({ columns: [t.guildId, t.userId] }),
+  check('eco_balance_non_negative', sql`${t.balance} >= 0`),
+]);
+
+export const ecoLedger = pgTable('eco_ledger', {
+  id:        serial('id').primaryKey(),
+  guildId:   snowflake('guild_id').notNull(),
+  userId:    snowflake('user_id').notNull(),
+  /** Signed: positive is money in. */
+  delta:     integer('delta').notNull(),
+  kind:      ecoKind('kind').notNull(),
+  /** Free text shown to staff: an admin's reason, the product bought, who was invited. */
+  reason:    text('reason'),
+  /** What the row is about: an order id, an invitee's user id. */
+  refId:     text('ref_id'),
+  /** Who caused it, when it was a person rather than the bot. */
+  actorId:   snowflake('actor_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  index('eco_ledger_user_idx').on(t.guildId, t.userId, t.createdAt),
+  index('eco_ledger_when_idx').on(t.guildId, t.createdAt),
+]);
+
+export const ecoProducts = pgTable('eco_products', {
+  id:            serial('id').primaryKey(),
+  guildId:       snowflake('guild_id').notNull(),
+  name:          text('name').notNull(),
+  description:   text('description'),
+  /** Shown to the buyer before they confirm: region, what to send, how it arrives. */
+  note:          text('note'),
+  price:         integer('price').notNull(),
+  /** How many can be sold per calendar month; null is unlimited. This is the budget. */
+  stockPerMonth: integer('stock_per_month'),
+  /** How many one member can buy per calendar month; null is unlimited. */
+  perUserMonth:  integer('per_user_month'),
+  active:        boolean('active').notNull().default(true),
+  sortOrder:     integer('sort_order').notNull().default(0),
+  createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:     timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  index('eco_products_guild_idx').on(t.guildId, t.active),
+  check('eco_price_positive', sql`${t.price} > 0`),
+]);
+
+/**
+ * An order holds the price from the moment it is placed: the coins leave the
+ * balance then, and come back only on a reject or a cancel. The product's name
+ * and price are copied in, so editing a product later never rewrites what
+ * somebody paid.
+ */
+export const ecoOrders = pgTable('eco_orders', {
+  id:             serial('id').primaryKey(),
+  guildId:        snowflake('guild_id').notNull(),
+  userId:         snowflake('user_id').notNull(),
+  productId:      integer('product_id').notNull(),
+  productName:    text('product_name').notNull(),
+  price:          integer('price').notNull(),
+  status:         ecoOrderStatus('status').notNull().default('pending'),
+  createdAt:      timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  decidedAt:      timestamp('decided_at', { withTimezone: true }),
+  decidedBy:      snowflake('decided_by'),
+  /** Why it was rejected or cancelled. The delivered code itself is never stored. */
+  note:           text('note'),
+  /** The card in the staff orders channel, so it can be edited when decided. */
+  staffMessageId: snowflake('staff_message_id'),
+}, t => [
+  index('eco_orders_status_idx').on(t.guildId, t.status, t.createdAt),
+  index('eco_orders_user_idx').on(t.guildId, t.userId, t.createdAt),
+  index('eco_orders_product_idx').on(t.guildId, t.productId, t.createdAt),
+]);
+
+/**
+ * One row per invited person, ever. The unique key is the whole of "each
+ * person counts once": a rejoin, a second inviter or a race between two
+ * approvals all collide here instead of paying twice.
+ */
+export const ecoInviteCredits = pgTable('eco_invite_credits', {
+  guildId:    snowflake('guild_id').notNull(),
+  inviteeId:  snowflake('invitee_id').notNull(),
+  inviterId:  snowflake('inviter_id').notNull(),
+  status:     ecoInviteStatus('status').notNull(),
+  /** The bot inferred the inviter rather than observing it: held for a Dev. */
+  guessed:    boolean('guessed').notNull().default(false),
+  joinedAt:   timestamp('joined_at', { withTimezone: true }).notNull(),
+  verifiedAt: timestamp('verified_at', { withTimezone: true }).notNull(),
+  decidedAt:  timestamp('decided_at', { withTimezone: true }),
+  decidedBy:  snowflake('decided_by'),
+}, t => [
+  primaryKey({ columns: [t.guildId, t.inviteeId] }),
+  index('eco_invites_inviter_idx').on(t.guildId, t.inviterId),
+  index('eco_invites_status_idx').on(t.guildId, t.status),
 ]);

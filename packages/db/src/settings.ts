@@ -99,6 +99,32 @@ export interface AionSettings {
     soaliHints: number;
     soaliGuesses: number;
   };
+  economy: {
+    /** Off until a Dev runs /eco launch; nothing is earned or sold before. */
+    enabled: boolean;
+    /** Set by /eco launch. Only joins after it can earn an invite coin. */
+    launchedAt: string | null;
+    /** Eligible voice minutes per coin. 60 is the published 1 coin an hour. */
+    minutesPerCoin: number;
+    /** An account younger than this neither earns nor makes its inviter earn. */
+    minAccountAgeDays: number;
+    /** Need at least one other eligible person in the room. */
+    requireCompany: boolean;
+    /** Self-deafened time does not earn. */
+    excludeDeafened: boolean;
+    /** Voice channels that never earn, matched on folded names. AFK always excluded. */
+    excludedChannels: string[];
+    /** Coins per verified invite. */
+    inviteCoins: number;
+    /** The invite coin is taken back if the invitee leaves within this many hours of verifying. */
+    inviteRevokeHours: number;
+    /** No voice for this long and the balance is lost. */
+    inactivityDays: number;
+    /** DM a warning this many days before. */
+    inactivityWarnDays: number;
+    /** Membership needed before buying; 0 is off. */
+    minMemberDaysToBuy: number;
+  };
   backup: {
     enabled: boolean;
     hourUtc: number;
@@ -190,6 +216,20 @@ export const DEFAULT_SETTINGS: AionSettings = {
     soaliQuestions: 20,
     soaliHints: 2,
     soaliGuesses: 3,
+  },
+  economy: {
+    enabled: false,
+    launchedAt: null,
+    minutesPerCoin: 60,
+    minAccountAgeDays: 30,
+    requireCompany: true,
+    excludeDeafened: true,
+    excludedChannels: ['verify'],
+    inviteCoins: 1,
+    inviteRevokeHours: 24,
+    inactivityDays: 90,
+    inactivityWarnDays: 7,
+    minMemberDaysToBuy: 0,
   },
   backup: {
     enabled: true,
@@ -284,6 +324,17 @@ export function sanitise(s: AionSettings): AionSettings {
       soaliHints: clamp(s.events.soaliHints, 0, 10, 2),
       soaliGuesses: clamp(s.events.soaliGuesses, 1, 10, 3),
       optionalRoles: s.events.optionalRoles.slice(0, 10),
+    },
+    economy: {
+      ...s.economy,
+      minutesPerCoin: clamp(s.economy.minutesPerCoin, 1, 1440, 60),
+      minAccountAgeDays: clamp(s.economy.minAccountAgeDays, 0, 365, 30),
+      excludedChannels: s.economy.excludedChannels.map(c => c.trim()).filter(Boolean).slice(0, 30),
+      inviteCoins: clamp(s.economy.inviteCoins, 0, 100, 1),
+      inviteRevokeHours: clamp(s.economy.inviteRevokeHours, 0, 720, 24),
+      inactivityDays: clamp(s.economy.inactivityDays, 7, 3650, 90),
+      inactivityWarnDays: clamp(s.economy.inactivityWarnDays, 0, 30, 7),
+      minMemberDaysToBuy: clamp(s.economy.minMemberDaysToBuy, 0, 365, 0),
     },
     backup: {
       ...s.backup,

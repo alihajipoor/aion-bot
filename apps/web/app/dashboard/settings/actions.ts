@@ -1,7 +1,7 @@
 'use server';
 
 import { requireSession } from '@/lib/auth';
-import { putSettings } from '@/lib/bot';
+import { getSettings, putSettings } from '@/lib/bot';
 import { getDb, panelAudit, DEFAULT_SETTINGS, type AionSettings } from '@aion/db';
 import { env } from '@/lib/env';
 
@@ -19,8 +19,15 @@ export async function saveSettings(_prev: SaveResult | null, form: FormData): Pr
   const session = await requireSession();
   if (!session) return { ok: false, message: 'Session expired — sign in again.' };
 
+  // The economy is run from Discord (/eco), not this form. Whatever it holds
+  // now is sent back unchanged: filling it from defaults would switch a live
+  // economy off every time somebody saved an unrelated setting.
+  const current = await getSettings();
+  if (!current) return { ok: false, message: 'The bot did not answer. Check it is online.' };
+
   const d = DEFAULT_SETTINGS;
   const next: AionSettings = {
+    economy: current.settings.economy,
     moderation: {
       globalCooldownSec: num(form, 'globalCooldownSec', d.moderation.globalCooldownSec),
       durationsMinutes: list(form, 'durationsMinutes').map(Number).filter(n => Number.isFinite(n) && n > 0),
