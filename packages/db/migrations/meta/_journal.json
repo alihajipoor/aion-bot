@@ -71,6 +71,13 @@
       "when": 1791607250970,
       "tag": "0009_calm_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791909743539,
+      "tag": "0010_blue_speed",
+      "breakpoints": true
     }
   ]
 }

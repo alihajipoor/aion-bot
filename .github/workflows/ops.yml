@@ -29,6 +29,7 @@ on:
           - season-refresh
           - giveaway-start
           - giveaway-close
+          - birthdays
       title:
         description: Giveaway title (start only)
         type: string

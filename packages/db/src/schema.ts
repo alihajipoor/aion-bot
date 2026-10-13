@@ -641,3 +641,22 @@ export const ecoInviteCredits = pgTable('eco_invite_credits', {
   index('eco_invites_inviter_idx').on(t.guildId, t.inviterId),
   index('eco_invites_status_idx').on(t.guildId, t.status),
 ]);
+
+/* ── birthdays ─────────────────────────────────────────────────── */
+
+/**
+ * One birthday per member, read from what they posted in the birthday channel.
+ * The latest post wins; `messageId` is that post, so deleting it removes the
+ * birthday. `lastWishedOn` (a Tehran date, YYYY-MM-DD) is what stops a restart
+ * on the day from wishing twice.
+ */
+export const birthdays = pgTable('birthdays', {
+  guildId:      snowflake('guild_id').notNull(),
+  userId:       snowflake('user_id').notNull(),
+  calendar:     text('calendar').$type<'persian' | 'gregorian'>().notNull(),
+  month:        integer('month').notNull(),
+  day:          integer('day').notNull(),
+  messageId:    snowflake('message_id').notNull(),
+  lastWishedOn: text('last_wished_on'),
+  updatedAt:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [primaryKey({ columns: [t.guildId, t.userId] })]);

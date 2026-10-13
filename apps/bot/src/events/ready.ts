@@ -15,6 +15,7 @@ import { installContentRules } from '../modules/contentrules.js';
 import { installSanctionGuard } from '../modules/sanctionguard.js';
 import { installGiveawayPoster } from '../modules/giveawayPoster.js';
 import { installEconomy } from '../modules/economy/index.js';
+import { installBirthdays } from '../modules/birthdays.js';
 import { resealEventAccess } from '../modules/events/lockout.js';
 import { eventsWithStrippedRoles } from '../modules/events/store.js';
 import { installMafiaScoreboard } from '../modules/mafiaScoreboard.js';
@@ -77,6 +78,7 @@ const handler: EventHandler = {
     installSanctionGuard(client);
     installGiveawayPoster(client);
     installEconomy(client);
+    installBirthdays(client);
 
     // A crash between taking an Administrator role off a player and giving it
     // back would otherwise strand them without it. Every event still holding

@@ -15,7 +15,8 @@
  */
 import { Client, GatewayIntentBits } from 'discord.js';
 import { eq } from 'drizzle-orm';
-import { getDb, giveaways, memberJoins } from '@aion/db';
+import { getDb, giveaways, memberJoins, birthdays } from '@aion/db';
+import { isBirthdayToday } from './lib/birthday.js';
 import { config } from './config.js';
 import { openSeason, startSeason } from './lib/mafiaSeason.js';
 import { refreshSeasonBoard, finishSeason } from './modules/mafiaSeasonBoard.js';
@@ -163,6 +164,20 @@ async function start(): Promise<void> {
   // what stops the next tick posting a second copy.
   await withGuild(async g => { await postAnnouncement(g); });
   console.log('announcement posted');
+}
+
+/**
+ * Whether the birthday channel was read. Totals only: these logs are public,
+ * and who was born when is not something to publish there.
+ */
+async function birthdayStatus(): Promise<void> {
+  const rows = await getDb().select().from(birthdays).where(eq(birthdays.guildId, config.guildId));
+  const by = (c: string) => rows.filter(r => r.calendar === c).length;
+  const now = Date.now();
+  const week = [...Array(7)].map((_, i) => rows.filter(r => isBirthdayToday(r, new Date(now + i * 86_400_000))).length);
+  console.log(`birthdays stored: ${rows.length} (persian ${by('persian')}, gregorian ${by('gregorian')})`);
+  console.log(`next 7 days, today first: ${week.join(' ')}`);
+  console.log(`wished at least once: ${rows.filter(r => r.lastWishedOn).length}`);
 }
 
 async function close(): Promise<void> {
@@ -420,6 +435,7 @@ const tasks: Record<string, () => Promise<void>> = {
   'giveaway-window': setWindow,
   'giveaway-start': start,
   'giveaway-close': close,
+  birthdays: birthdayStatus,
 };
 
 const run = task ? tasks[task] : undefined;
