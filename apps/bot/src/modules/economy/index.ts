@@ -371,12 +371,15 @@ export async function richestBody(g: Guild): Promise<MessageCreateOptions> {
     const m = g.members.cache.get(r.userId);
     return `${medals[i] ?? `\`${i + 1}.\``} **${isolate(m?.displayName ?? r.userId)}** — **${r.coins}** coin`;
   });
-  const png = top.length ? await renderLeaderboardBanner({
+  // Drawn even with nobody on it yet: the empty board says so, rather than the
+  // channel showing bare text until the first coin is earned.
+  const png = await renderLeaderboardBanner({
     rtl: true, kicker: 'WEEKLY RICHEST', title: 'پرسکه‌ترین‌ها',
     subtitle: 'سکه‌ی کسب‌شده در ۷ روز گذشته — خرج کردن رتبه‌ات رو کم نمی‌کنه',
     footer: 'سکه‌ی آیون', accent: BRAND.blue,
+    empty: 'هنوز کسی سکه نگرفته — اولین نفر باش',
     rows: top.map(r => ({ name: g.members.cache.get(r.userId)?.displayName ?? r.userId, value: `${fa(r.coins)} سکه`, amount: r.coins })),
-  }) : null;
+  });
   const box = new ContainerBuilder().setAccentColor(ACCENT);
   if (png) {
     const pic = picture(png, 'richest.png');
