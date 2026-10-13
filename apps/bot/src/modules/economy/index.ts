@@ -489,6 +489,11 @@ export function installEconomy(client: AionClient): void {
     // refresh, and left #richest without its board.
     void loadSettings(true).then(() => Promise.all([
       ensureShopPost(g), ensureCoinsPost(g), ensureRichestPost(g), sweepInactive(client),
+      // Server tags arrive only with a full member fetch; most other events
+      // carry a member without one, which leaves the last-known tag in place —
+      // after a restart, none. Waiting for the half-hourly refresh paid tag
+      // wearers 1x for up to 30 minutes after every deploy (2026-10-13).
+      refreshMembers(client),
     ])).catch(e => log.warn('economy start-up posts failed', (e as Error).message));
   }
   log.info(`economy installed — ${eco().enabled ? 'live' : 'not launched yet'}`);

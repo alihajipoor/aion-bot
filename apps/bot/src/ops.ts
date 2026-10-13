@@ -274,7 +274,7 @@ async function ecoLaunch(): Promise<void> {
 }
 
 /**
- * Voice time against coins, per account, since launch: "why has X got so few?"
+ * Coins, progress and last voice credit per account since launch: "why has X got so few?"
  * The workflow's log is public, so members appear only as the last four
  * digits of their id, and nothing else that names them.
  */
@@ -283,28 +283,20 @@ async function ecoAudit(): Promise<void> {
   const since = s.economy.launchedAt ? new Date(s.economy.launchedAt) : null;
   if (!since) { console.log('not launched'); return; }
   const { rows } = await getDb().execute(sql`
-    with v as (
-      select user_id,
-        sum(extract(epoch from (coalesce(left_at, now()) - greatest(joined_at, ${since}))))::int as secs,
-        sum(case when left_at is null then 1 else 0 end)::int as open
-      from voice_sessions
-      where guild_id = ${config.guildId} and coalesce(left_at, now()) > ${since}
-      group by user_id),
-    c as (
-      select user_id, sum(delta)::int as voice_coins, count(*)::int as credits, max(created_at) as last_credit
+    with c as (
+      select user_id, sum(delta)::int as voice_coins, max(created_at) as last_credit
       from eco_ledger where guild_id = ${config.guildId} and kind = 'voice' and created_at >= ${since}
       group by user_id)
-    select coalesce(v.user_id, a.user_id) as uid, v.secs, v.open, c.voice_coins, c.credits, c.last_credit,
-      a.balance, a.earned, a.voice_minutes, a.frozen, a.last_voice_at
-    from v full join eco_accounts a on a.user_id = v.user_id and a.guild_id = ${config.guildId}
-    left join c on c.user_id = coalesce(v.user_id, a.user_id)
-    order by v.secs desc nulls last`);
+    select a.user_id as uid, c.voice_coins, c.last_credit, a.balance, a.earned, a.voice_minutes, a.frozen, a.last_voice_at
+    from eco_accounts a left join c on c.user_id = a.user_id
+    where a.guild_id = ${config.guildId}
+    order by a.balance desc, a.voice_minutes desc`);
   const hhmm = (d: unknown) => d ? new Date(d as string).toISOString().slice(11, 16) : '-';
   console.log(`launched ${since.toISOString()} · now ${new Date().toISOString()} · rules: ${s.economy.minutesPerCoin} min/coin, tag x${s.economy.tagMultiplier}, cap ${s.economy.dailyVoiceCap}/day, company=${s.economy.requireCompany}`);
-  console.log('id    voiceMin  inVoiceNow  voiceCoins  progress  balance  earned  frozen  lastSeenVoice  lastCredit');
+  console.log('id     voiceCoins  progress  balance  earned  frozen  lastSeenVoice  lastCredit');
   for (const r of rows as Record<string, unknown>[]) {
     console.log([
-      `…${String(r.uid).slice(-4)}`, String(Math.round(Number(r.secs ?? 0) / 60)).padStart(8), (Number(r.open) ? 'yes' : 'no').padStart(10),
+      `…${String(r.uid).slice(-4)}`,
       String(r.voice_coins ?? 0).padStart(10), String(r.voice_minutes ?? '-').padStart(8), String(r.balance ?? '-').padStart(7),
       String(r.earned ?? '-').padStart(6), String(r.frozen ?? '-').padStart(6), hhmm(r.last_voice_at).padStart(13), hhmm(r.last_credit).padStart(10),
     ].join('  '));
