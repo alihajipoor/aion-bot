@@ -9,7 +9,9 @@ aion.neoxify.com {
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
-		Content-Security-Policy "default-src 'self'; img-src 'self' https://cdn.discordapp.com data:; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		# Content-Security-Policy is issued by the panel itself (apps/web/middleware.ts),
+		# with a fresh nonce per request. A fixed one here blocked Next's inline
+		# scripts and left every page on its loading skeleton.
 		-Server
 	}
 

@@ -45,6 +45,36 @@ install -m 644 "$APP/deploy/systemd/aion-bot.service" /etc/systemd/system/
 [ -f "$APP/deploy/systemd/aion-web.service" ] && install -m 644 "$APP/deploy/systemd/aion-web.service" /etc/systemd/system/
 install -m 644 "$APP/deploy/systemd/aion-watchdog.service" /etc/systemd/system/
 install -m 644 "$APP/deploy/systemd/aion-watchdog.timer" /etc/systemd/system/
+
+# The Caddyfile was never shipped by deploys, and its location was never
+# written down, so it is replaced only when the live file is byte-for-byte the
+# one this repo last shipped — a Caddyfile serving anything else on this
+# machine is left exactly as it is, and the log says so. Never fatal: a
+# reverse-proxy problem must not stop the bot from being deployed.
+CADDY_LIVE=/etc/caddy/Caddyfile
+# deploy/Caddyfile as of 72cf2cf, before the CSP moved into the panel.
+CADDY_SHIPPED=18dd9992ba158a6ffcc4ff504ca9ef10afa0581a0537ef8db52699b77d780f51
+if [ -f "$APP/deploy/Caddyfile" ] && [ -f "$CADDY_LIVE" ] && command -v caddy >/dev/null 2>&1; then
+  live_sha=$(sha256sum "$CADDY_LIVE" | cut -d' ' -f1)
+  repo_sha=$(sha256sum "$APP/deploy/Caddyfile" | cut -d' ' -f1)
+  if [ "$live_sha" = "$repo_sha" ]; then
+    echo "-- Caddyfile already current"
+  elif [ "$live_sha" = "$CADDY_SHIPPED" ]; then
+    if caddy validate --config "$APP/deploy/Caddyfile" --adapter caddyfile >/dev/null 2>&1; then
+      cp "$CADDY_LIVE" "$CADDY_LIVE.bak"
+      install -m 644 "$APP/deploy/Caddyfile" "$CADDY_LIVE"
+      if systemctl reload caddy; then echo "-- Caddyfile updated and reloaded"
+      else cp "$CADDY_LIVE.bak" "$CADDY_LIVE"; systemctl reload caddy || true; echo "!! caddy reload failed — previous Caddyfile restored"; fi
+    else
+      echo "!! new Caddyfile does not validate — live one left alone"
+    fi
+  else
+    echo "!! live Caddyfile is not the one this repo shipped — left alone (sha ${live_sha:0:12})"
+  fi
+else
+  echo "-- Caddyfile not updated (no caddy, or not at $CADDY_LIVE)"
+fi
+
 # The bot writes its heartbeat here and the watchdog reads it.
 mkdir -p "$APP/run"
 
