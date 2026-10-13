@@ -10,7 +10,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { getDb, memberJoins, ecoInviteCredits } from '@aion/db';
 import * as L from '../../lib/economy/ledger.js';
 import { voiceEarners, inviteDecision, inactivity, nextMonthStart } from '../../lib/economy/rules.js';
-import { settings } from '../../lib/settings.js';
+import { settings, loadSettings } from '../../lib/settings.js';
 import { hasRole } from '../../lib/roles.js';
 import { ELEVATED_ROLES } from '../../lib/sections.js';
 import { asciiFold, isolate } from '../../lib/text.js';
@@ -466,10 +466,13 @@ export function installEconomy(client: AionClient): void {
 
   const g = client.guilds.cache.get(config.guildId);
   if (g) {
-    void ensureShopPost(g);
-    void ensureCoinsPost(g);
-    void ensureRichestPost(g);
-    void sweepInactive(client);
+    // Settings first. installEconomy runs before ready.ts loads them, so these
+    // posts used to be drawn from the defaults — economy off — and every
+    // restart turned a live #shop back into "opening soon" until the hourly
+    // refresh, and left #richest without its board.
+    void loadSettings(true).then(() => Promise.all([
+      ensureShopPost(g), ensureCoinsPost(g), ensureRichestPost(g), sweepInactive(client),
+    ])).catch(e => log.warn('economy start-up posts failed', (e as Error).message));
   }
   log.info(`economy installed — ${eco().enabled ? 'live' : 'not launched yet'}`);
 }
