@@ -292,6 +292,25 @@ test('a member wearing the server tag earns two coins an hour, and the ledger sa
   assert.ok(rows.every(r => r.reason === 'voice · AION tag ×2'));
 });
 
+test('voice stops at the daily cap, tag or not, and starts again the next Tehran day', async () => {
+  const db = await fresh();
+  for (let i = 0; i < 60 * 7; i++) await L.creditVoiceMinute(db, G, [A], 60, 2, 10);
+  assert.equal(await balance(db), 10);
+  // capped: progress is held just short of the next coin, not wrapped round and refilled
+  assert.equal((await L.getAccount(db, G, A)).voiceMinutes, 58);
+  const tomorrow = new Date(Date.now() + 86_400_000);
+  for (let i = 0; i < 30; i++) await L.creditVoiceMinute(db, G, [A], 60, 2, 10, tomorrow);
+  assert.equal(await balance(db), 11);
+  assert.equal(await balance(db), await ledgerSum(db));
+});
+
+test('invite coins do not count towards the daily voice cap', async () => {
+  const db = await fresh();
+  assert.equal(await invite(db), 'credited');
+  for (let i = 0; i < 60 * 11; i++) await L.creditVoiceMinute(db, G, [A], 60, 1, 10);
+  assert.equal(await balance(db, A), 11);
+});
+
 test('the tag does not touch invite coins: still one per invite', async () => {
   const db = await fresh();
   assert.equal(await invite(db), 'credited');

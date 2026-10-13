@@ -3,7 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   schema, ecoAccounts, ecoLedger, ecoProducts, ecoOrders, ecoInviteCredits,
 } from '@aion/db';
-import { addVoiceMinute, monthStart, purchaseRefusal, type Refusal } from './rules.js';
+import { addVoiceMinute, dayStart, monthStart, purchaseRefusal, type Refusal } from './rules.js';
 
 /**
  * AION Coin: every write to a balance, in one place.
@@ -133,7 +133,10 @@ export async function listOrders(db: Db, guildId: string, opts: { status?: Order
  * Credit one eligible minute to each member. Returns who completed a coin.
  * A frozen account neither earns nor carries partial minutes forward.
  */
-export async function creditVoiceMinute(db: Db, guildId: string, userIds: string[], minutesPerCoin: number, weight = 1): Promise<string[]> {
+export async function creditVoiceMinute(
+  db: Db, guildId: string, userIds: string[], minutesPerCoin: number, weight = 1,
+  dailyCap = 0, now = new Date(),
+): Promise<string[]> {
   const minted: string[] = [];
   for (const userId of userIds) {
     await db.transaction(async tx => {
@@ -141,16 +144,32 @@ export async function creditVoiceMinute(db: Db, guildId: string, userIds: string
       if (a.frozen) return;
       // `weight` minutes towards the next coin: 2 for a member wearing the AION server tag.
       const step = addVoiceMinute(a.voiceMinutes, minutesPerCoin, weight);
+      let coins = step.coins;
+      if (coins > 0 && dailyCap > 0) {
+        // Looked up only when a coin is due, so a capped member costs one query a minute at most.
+        coins = Math.min(coins, dailyCap - await voiceToday(tx as unknown as Db, guildId, userId, now));
+        // At the cap the hour's progress stops where it is rather than filling
+        // hours nobody is paid for; it picks up again after midnight.
+        if (coins <= 0) return;
+      }
       await tx.update(ecoAccounts).set({ voiceMinutes: step.minutes })
         .where(and(eq(ecoAccounts.guildId, guildId), eq(ecoAccounts.userId, userId)));
-      if (step.coins > 0) {
-        await post(tx as unknown as Db, { guildId, userId, delta: step.coins, kind: 'voice',
+      if (coins > 0) {
+        await post(tx as unknown as Db, { guildId, userId, delta: coins, kind: 'voice',
           reason: weight > 1 ? `voice · AION tag ×${weight}` : 'voice' });
         minted.push(userId);
       }
     });
   }
   return minted;
+}
+
+/** Voice coins credited since midnight in Tehran. */
+export async function voiceToday(db: Db, guildId: string, userId: string, now = new Date()): Promise<number> {
+  const [r] = await db.select({ n: sql<number>`coalesce(sum(${ecoLedger.delta}), 0)::int` }).from(ecoLedger)
+    .where(and(eq(ecoLedger.guildId, guildId), eq(ecoLedger.userId, userId), eq(ecoLedger.kind, 'voice'),
+      gte(ecoLedger.createdAt, dayStart(now))));
+  return r?.n ?? 0;
 }
 
 /** Anyone in voice at all resets their inactivity clock, earning or not. */

@@ -108,6 +108,8 @@ export interface AionSettings {
     minutesPerCoin: number;
     /** Voice earns this many times faster while wearing the AION server tag (2 = 2 coins an hour). Invites are unaffected. */
     tagMultiplier: number;
+    /** Most voice coins one member can earn in a Tehran day (tag or not). 0 = no cap. Invites are not counted. */
+    dailyVoiceCap: number;
     /** An account younger than this neither earns nor makes its inviter earn. */
     minAccountAgeDays: number;
     /** Need at least one other eligible person in the room. */
@@ -224,6 +226,7 @@ export const DEFAULT_SETTINGS: AionSettings = {
     launchedAt: null,
     minutesPerCoin: 60,
     tagMultiplier: 2,
+    dailyVoiceCap: 10,
     minAccountAgeDays: 30,
     requireCompany: true,
     excludeDeafened: true,
@@ -332,6 +335,7 @@ export function sanitise(s: AionSettings): AionSettings {
       ...s.economy,
       minutesPerCoin: clamp(s.economy.minutesPerCoin, 1, 1440, 60),
       tagMultiplier: clamp(s.economy.tagMultiplier, 1, 10, 2),
+      dailyVoiceCap: clamp(s.economy.dailyVoiceCap, 0, 1440, 10),
       minAccountAgeDays: clamp(s.economy.minAccountAgeDays, 0, 365, 30),
       excludedChannels: s.economy.excludedChannels.map(c => c.trim()).filter(Boolean).slice(0, 30),
       inviteCoins: clamp(s.economy.inviteCoins, 0, 100, 1),

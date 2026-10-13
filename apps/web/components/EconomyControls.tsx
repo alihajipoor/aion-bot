@@ -64,6 +64,7 @@ export function RulesForm({ economy, canEdit }: { economy: Economy; canEdit: boo
     <form action={action} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {num('minutesPerCoin', 'Minutes per coin', '60 = 1 coin an hour')}
       {num('tagMultiplier', 'Server-tag multiplier', 'Voice earns this many times faster while wearing the AION tag; invites unchanged')}
+      {num('dailyVoiceCap', 'Daily voice cap (coins)', 'Most voice coins a member earns per Tehran day, tag included; 0 = no cap; invites not counted')}
       {num('minAccountAgeDays', 'Minimum account age (days)', 'Younger accounts neither earn nor pay their inviter')}
       {num('inviteCoins', 'Coins per verified invite')}
       {num('inviteRevokeHours', 'Take the invite coin back if they leave within (hours)')}

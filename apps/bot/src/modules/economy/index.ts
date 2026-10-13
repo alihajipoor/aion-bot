@@ -110,8 +110,8 @@ async function sample(client: AionClient): Promise<void> {
       excludeDeafened: r.excludeDeafened, now: new Date(),
     });
     await L.touchVoice(db(), g.id, s.present, new Date());
-    await L.creditVoiceMinute(db(), g.id, s.earners, r.minutesPerCoin);
-    await L.creditVoiceMinute(db(), g.id, s.tagged, r.minutesPerCoin, r.tagMultiplier);
+    await L.creditVoiceMinute(db(), g.id, s.earners, r.minutesPerCoin, 1, r.dailyVoiceCap);
+    await L.creditVoiceMinute(db(), g.id, s.tagged, r.minutesPerCoin, r.tagMultiplier, r.dailyVoiceCap);
   } catch (e) {
     log.error('voice sample failed — this minute was not credited', e);
   } finally {
@@ -340,6 +340,7 @@ async function coinsBody(shopId: string | null): Promise<MessageCreateOptions> {
     '## Chetor coin begiram?',
     `🎧 **Voice:** har **${r.minutesPerCoin === 60 ? 'saat' : `${r.minutesPerCoin} daghighe`}** too voice = **1 coin**`,
     ...(r.tagMultiplier > 1 ? [`🏷 **Tag-e AION** roo profile-et bashe: har saat voice = **${r.tagMultiplier} coin** _(davat hamoon ${r.inviteCoins} coin mimoone)_`] : []),
+    ...(r.dailyVoiceCap > 0 ? [`⏳ **Saghf-e rooz:** az voice rooz-i hadaksar **${r.dailyVoiceCap} coin** migiri _(ba tag ham hamin; davat hesab nemishe — 00:00 be vaght-e Tehran reset mishe)_`] : []),
     `-# Bayad verify shode bashi${r.requireCompany ? ', hadeaghal ye nafar-e dige ham too room bashe' : ''}` +
       `${r.excludeDeafened ? ', deafen nabashi' : ''} va too AFK nabashi.`,
     `🎟 **Davat:** har nafari ke ba link-e to biad va **verify beshe** = **${r.inviteCoins} coin**`,

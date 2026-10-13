@@ -18,7 +18,7 @@ the ledger ones against a real Postgres (PGlite).
 | Voice, wearing the AION server tag | **2 per hour** (`tagMultiplier`, default 2) | the same conditions — the tag changes the rate, never whether a minute counts. Read from the member's profile; the member list is re-read every 30 minutes, so putting the tag on or off takes effect within half an hour |
 | Invite | 1 per invitee (the server tag does not change this) | paid when the invitee is **verified**, not when they join · joined through the inviter's link after launch · account 30+ days old when they joined · new to the server · once per person, ever |
 
-No daily cap. Staff earn and buy like everyone else.
+Voice is capped at **10 coins a day** per member (`dailyVoiceCap`; 0 turns it off), tag or not, so a tagged member reaches it in five hours. The day is Tehran's, midnight to midnight. Invite coins do not count towards it. At the cap the hour's progress stops where it is and resumes after midnight. Staff earn and buy like everyone else.
 
 This is a separate count from the activity leaderboard, on purpose: the board
 counts anyone in voice (AFK, alone, deafened), this pays out gift cards.

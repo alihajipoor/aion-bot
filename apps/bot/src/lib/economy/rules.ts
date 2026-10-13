@@ -172,6 +172,11 @@ export function monthStart(now: Date): Date {
   const local = new Date(now.getTime() + TEHRAN_OFFSET_MS);
   return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - TEHRAN_OFFSET_MS);
 }
+/** Midnight in Tehran: when the daily voice cap starts over. */
+export function dayStart(now: Date): Date {
+  const local = new Date(now.getTime() + TEHRAN_OFFSET_MS);
+  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - TEHRAN_OFFSET_MS);
+}
 export function nextMonthStart(now: Date): Date {
   const local = new Date(now.getTime() + TEHRAN_OFFSET_MS);
   return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 1) - TEHRAN_OFFSET_MS);
