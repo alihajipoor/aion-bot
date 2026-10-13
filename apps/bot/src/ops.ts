@@ -17,7 +17,7 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { getDb, giveaways, memberJoins, birthdays } from '@aion/db';
 import { isBirthdayToday } from './lib/birthday.js';
-import { createProduct, updateProduct, setProductImage, type ProductInput } from './modules/economy/service.js';
+import { createProduct, updateProduct, setProductImage, setLaunch, type ProductInput } from './modules/economy/service.js';
 import { listProducts } from './lib/economy/ledger.js';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -256,6 +256,21 @@ async function ecoImages(): Promise<void> {
       console.log(`  ${r.ok ? 'set    ' : 'FAILED '} #${p.id} ${p.name} ← ${art}.png${r.ok ? '' : ` — ${r.message}`}`);
     }
   });
+}
+
+/**
+ * Launch the economy (or pause it with `--old pause`) — the same service as
+ * the panel's button and /eco launch, so the shop, #coins and #richest posts
+ * are redrawn and economy-log records it. The running bot rereads settings
+ * every 30 seconds and starts sampling voice from then.
+ */
+async function ecoLaunch(): Promise<void> {
+  await loadSettings(true);
+  const enabled = flag('old') !== 'pause';
+  const actor = flag('user') ?? '';
+  const r = await withGuild(async g => setLaunch(g, enabled, actor || g.client.user!.id));
+  const s = await loadSettings(true);
+  console.log(`${r.ok ? 'ok' : 'refused'}: ${r.message} enabled=${s.economy.enabled} launchedAt=${s.economy.launchedAt}`);
 }
 
 async function close(): Promise<void> {
@@ -516,6 +531,7 @@ const tasks: Record<string, () => Promise<void>> = {
   birthdays: birthdayStatus,
   'eco-product': ecoProduct,
   'eco-images': ecoImages,
+  'eco-launch': ecoLaunch,
 };
 
 const run = task ? tasks[task] : undefined;
