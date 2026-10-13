@@ -130,11 +130,14 @@ const PICTOGRAPHS = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu;
  * Satori has no Λ — Vazirmatn carries no Greek — so every "Λ | Name" came out
  * as "| Name"; the Λ is drawn from the font's own V, as in the wordmark.
  *
- * Persian it orders correctly by itself, but inside one text node it drops the
- * space between some words ("کیف پول آیون" came out "آیون‌پول کیف"). So a line
- * with Persian in it is set one word per box, in the order it was written, and
- * satori runs the boxes right to left. Reversing them first — the obvious fix —
- * reverses them twice; tools/design/rtl-test.mjs is the proof either way.
+ * Satori shapes Persian letters but lays words out left to right, and inside
+ * one text node it also drops spaces, so "کیف پول آیون" read back to front and
+ * glued. A line with Persian in it is set one word per box, in a row that runs
+ * right to left, so the first word written is the rightmost — where a Persian
+ * reader starts.
+ *
+ * This was got wrong twice by eye; the order is now checked by measurement
+ * (tools/design/rtl-check.mjs, and test/cards.test.mjs), not by looking.
  *
  * Emoji are dropped: the font has none, and they rendered as empty gaps.
  */
@@ -144,7 +147,7 @@ export function say(text: string, style: Record<string, unknown> = {}): unknown 
   const word = (w: string) => el('div', { display: 'flex', alignItems: 'center', whiteSpace: 'pre' },
     w.split('Λ').flatMap((p, i) => [...(i ? [lambda(size)] : []), ...(p ? [p] : [])]));
   if (RTL.test(plain)) {
-    return el('div', { display: 'flex', alignItems: 'center', gap: size * 0.3, ...style },
+    return el('div', { display: 'flex', flexDirection: 'row-reverse', alignItems: 'center', gap: size * 0.3, ...style },
       plain.split(' ').filter(Boolean).map(word));
   }
   return el('div', { display: 'flex', alignItems: 'center', ...style }, [word(plain)]);
