@@ -104,12 +104,14 @@ async function wish(g: Guild): Promise<void> {
     const many = due.length > 1;
     await ch.send({
       content: [
+        '@here',
         `# 🎂 تولد${many ? 'تون' : 'ت'} مبارک! 🎉`,
         tags,
         '',
         `کل آیون به${many ? 'تون' : 'ت'} تبریک می‌گه — امیدواریم سال جدید${many ? 'تون' : 'ت'} پر از شادی و موفقیت باشه 🥳🎈`,
       ].join('\n'),
-      allowedMentions: { users: due.map(r => r.userId) },
+      // @here is asked for: the whole channel is told, as well as the person.
+      allowedMentions: { parse: ['everyone'], users: due.map(r => r.userId) },
     });
     for (const r of due) {
       await getDb().update(birthdays).set({ lastWishedOn: key })
