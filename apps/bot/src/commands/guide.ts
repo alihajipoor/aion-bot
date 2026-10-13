@@ -7,6 +7,7 @@ import {
 import { settings } from '../lib/settings.js';
 import { humanDuration } from '../lib/text.js';
 import { renderHeaderBanner } from '../lib/banner.js';
+import { HEADERS } from '../lib/panelArt.js';
 import type { Command } from '../types.js';
 
 // Λ is the wordmark's A; both spellings must match.
@@ -157,11 +158,7 @@ const command: Command = {
     } catch { /* missing history permission is not fatal */ }
 
     // The cover carries the branding; the pages below it stay dense on purpose.
-    const cover = await renderHeaderBanner({
-      kicker: 'ADMIN · RAHNAMA', title: 'Rahnamaye Admin', accent: '#4aa6ff',
-      subtitle: 'Hameye emkanate bot, ba mesal — khodkar az rooye tanzimate zende.',
-      tags: ['PUNISH', 'VERIFY', 'LEADERBOARD', 'TEMP VOICE', 'PANEL'],
-    });
+    const cover = await renderHeaderBanner(HEADERS.guide);
     if (cover) {
       await target.send({
         components: [new ContainerBuilder().setAccentColor(0x4aa6ff)

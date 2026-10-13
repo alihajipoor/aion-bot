@@ -9,7 +9,7 @@ import {
   unattributedJoins,
 } from '../lib/giveaway.js';
 import { REASON_TEXT, type Reason } from '../lib/invites.js';
-import { renderLeaderboardBanner } from '../lib/banner.js';
+import { contestBanner } from '../lib/panelArt.js';
 import { hasRole } from '../lib/roles.js';
 import type { Command } from '../types.js';
 
@@ -31,13 +31,7 @@ export async function boardReply(guild: import('discord.js').Guild) {
     from: g.startsAt, to: countsUntil(g), minAccountAgeDays: g.minAccountAgeDays,
   });
   const nameOf = (id: string) => guild.members.cache.get(id)?.displayName ?? `<@${id}>`;
-  const png = await renderLeaderboardBanner({
-    title: 'Musabeghe-ye Davat', subtitle: `${guild.name} · ${g.title}`,
-    accent: '#9b6cff', kicker: 'DAVAT',
-    rows: scores.slice(0, 8).filter(s => s.qualified > 0).map(s => ({
-      name: nameOf(s.inviterId), value: `${s.qualified} nafar`, amount: s.qualified,
-    })),
-  }).catch(() => null);
+  const png = await contestBanner(false, scores, nameOf).catch(() => null);
   return {
     components: [boardContainer(g, scores, nameOf, png ? 'giveaway.png' : undefined)],
     ...(png ? { files: [new AttachmentBuilder(png, { name: 'giveaway.png' })] } : {}),
@@ -199,13 +193,7 @@ const command: Command = {
     }
 
     const nameOf = (id: string) => i.guild?.members.cache.get(id)?.displayName ?? `<@${id}>`;
-    const png = await renderLeaderboardBanner({
-      title: g.closedAt ? 'Natije' : 'Musabeghe-ye Davat',
-      subtitle: `${i.guild!.name} · ${g.title}`, accent: '#9b6cff', kicker: 'DAVAT',
-      rows: scores.slice(0, 8).filter(s => s.qualified > 0).map(s => ({
-        name: nameOf(s.inviterId), value: `${s.qualified} nafar`, amount: s.qualified,
-      })),
-    }).catch(() => null);
+    const png = await contestBanner(Boolean(g.closedAt), scores, nameOf).catch(() => null);
 
     await i.editReply({
       components: [boardContainer(g, scores, nameOf, png ? 'giveaway.png' : undefined),

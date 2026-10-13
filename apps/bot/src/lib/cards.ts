@@ -1,5 +1,6 @@
 import type { GuildMember } from 'discord.js';
-import { BRAND, aurora, glass, draw, el, fa, lambda, num, rift, say, WORDMARK } from './banner.js';
+// kicker (the one small English label) and wordmark are shared with the panel headers.
+import { BRAND, aurora, glass, draw, el, fa, kicker, num, rift, say, wordmark } from './banner.js';
 import { Resvg } from '@resvg/resvg-js';
 import { logger } from './log.js';
 
@@ -27,14 +28,6 @@ const abs = { position: 'absolute', display: 'flex' } as const;
 const W = 1200;
 const RTL_ROW = { display: 'flex', flexDirection: 'row-reverse' } as const;
 
-/** The small English label: letter-spaced capitals, the only English on a card. */
-const kicker = (s: string, style: Record<string, unknown> = {}) => el('div', {
-  display: 'flex', fontSize: 15, fontWeight: 700, letterSpacing: 6, color: BRAND.blue, whiteSpace: 'pre', ...style,
-}, s.split('').join(' '));
-const wordmark = (size: number) => el('div', {
-  display: 'flex', alignItems: 'center', fontSize: size, fontWeight: 700, letterSpacing: size * 0.16,
-  color: BRAND.text, textShadow: `0 0 ${Math.round(size * 0.25)}px ${BRAND.blue}f2`,
-}, [lambda(size), el('div', { display: 'flex' }, WORDMARK)]);
 /** Fills from the right, as a Persian reader expects progress to run. */
 const bar = (w: number, fraction: number, h = 12) => el('div', {
   ...RTL_ROW, width: w, height: h, borderRadius: h, background: BRAND.track, border: '1px solid rgba(180,205,235,0.12)',

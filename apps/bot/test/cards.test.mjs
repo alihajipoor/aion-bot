@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as C from '../dist/lib/cards.js';
 import { renderLeaderboardBanner, say, num } from '../dist/lib/banner.js';
+import { measurer, box } from './rtl.mjs';
 
 const PNG = [0x89, 0x50, 0x4e, 0x47];
 const isPng = (b) => b && [...b.subarray(0, 4)].every((x, i) => x === PNG[i]) && b.length > 10_000;
@@ -72,40 +73,9 @@ test('the Λ is drawn, not dropped', () => {
 });
 
 /*
- * Persian word order, measured on the drawn image.
- *
- * Judged by eye this was got wrong twice, in both directions, so it is checked
- * the way a reader would: the word at the RIGHT end of the drawn line must be
- * the first word written. Each word is drawn alone and compared with the right
- * end of the full line; the closest match is what a Persian reader sees first.
+ * Persian word order, measured on the drawn image (see rtl.mjs): the first
+ * word written must be drawn rightmost.
  */
-async function measurer() {
-  const { default: satori } = await import('satori');
-  const { Resvg } = await import('@resvg/resvg-js');
-  const { default: sharp } = await import('sharp');
-  const { readFile } = await import('node:fs/promises');
-  const fonts = [{ name: 'Vazirmatn', data: await readFile(new URL('../assets/fonts/Vazirmatn-Bold.ttf', import.meta.url)), weight: 700 }];
-  const W = 900, H = 120;
-  const raster = async (node) => {
-    const tree = { type: 'div', props: { style: { display: 'flex', width: W, height: H, background: '#fff', color: '#000', fontFamily: 'Vazirmatn', fontSize: 60, alignItems: 'center', paddingLeft: 40 }, children: [node] } };
-    const png = new Resvg(await satori(tree, { width: W, height: H, fonts })).render().asPng();
-    const { data, info } = await sharp(png).greyscale().raw().toBuffer({ resolveWithObject: true });
-    const cols = [];
-    for (let x = 0; x < info.width; x++) for (let y = 0; y < info.height; y++) if (data[y * info.width + x] < 128) { cols.push(x); break; }
-    return { data, info, left: cols[0], right: cols[cols.length - 1] };
-  };
-  const crop = (r, x0, w) => { const o = []; for (let y = 0; y < r.info.height; y++) for (let x = x0; x < x0 + w; x++) o.push(r.data[y * r.info.width + x] < 128); return o; };
-  const diff = (a, b) => a.filter((v, i) => v !== b[i]).length / a.length;
-  /** Which candidate is drawn at the given end of `line`. */
-  const atEnd = (line, candidates, end) => candidates.map(c => {
-    const w = c.img.right - c.img.left + 1;
-    const x0 = end === 'right' ? line.right - w + 1 : line.left;
-    return { label: c.label, d: diff(crop(line, x0, w), crop(c.img, c.img.left, w)) };
-  }).sort((x, y) => x.d - y.d)[0].label;
-  return { raster, atEnd };
-}
-const box = (s) => ({ type: 'div', props: { style: { display: 'flex' }, children: [s] } });
-
 test('Persian reads right to left: the first word written is drawn rightmost', async () => {
   const { raster, atEnd } = await measurer();
   for (const phrase of ['کیف پول آیون', 'تولدتون مبارک', 'علی رضا']) {
