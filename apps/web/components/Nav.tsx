@@ -14,6 +14,7 @@ const ICONS: Record<string, React.ReactNode> = {
   list: <path d="M4 6h16v2H4V6Zm0 5h16v2H4v-2Zm0 5h10v2H4v-2Z" />,
   save: <path d="M5 3h11l3 3v15H5V3Zm2 2v5h8V5H7Zm0 9v5h10v-5H7Z" />,
   dice: <path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm3 3.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm8 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm-8 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm8 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm-4-4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z" />,
+  coin: <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15.9V19h-2v-1.1c-1.6-.3-3-1.3-3.2-3.1h2c.2.8.9 1.4 2.2 1.4 1.4 0 1.9-.7 1.9-1.2 0-.7-.4-1.3-2.4-1.8-2.2-.5-3.6-1.4-3.6-3.2 0-1.5 1.2-2.6 3.1-3V5h2v1.1c1.7.4 2.6 1.6 2.7 3h-2c-.1-.9-.6-1.4-1.9-1.4-1.2 0-1.8.6-1.8 1.2 0 .6.5 1 2.4 1.5 1.9.5 3.6 1.3 3.6 3.4 0 1.6-1.2 2.7-3 3.1Z" />,
   cog: <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm9 4a8.8 8.8 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a8.6 8.6 0 0 0-2.2-1.3L16 3H8l-.3 2.4A8.6 8.6 0 0 0 5.5 6.7l-2.4-1-2 3.4 2 1.6a8.9 8.9 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a8.6 8.6 0 0 0 2.2 1.3L8 21h8l.3-2.4a8.6 8.6 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.07-.43.1-.86.1-1.3Z" />,
 };
 
@@ -32,6 +33,7 @@ const GROUPS: { label: string; items: { href: string; label: string; icon: strin
     items: [
       { href: '/dashboard/announce', label: 'Announcements', icon: 'announce' },
       { href: '/dashboard/events', label: 'Events', icon: 'dice' },
+      { href: '/dashboard/economy', label: 'Economy', icon: 'coin' },
       { href: '/dashboard/cases', label: 'Moderation', icon: 'shield' },
       { href: '/dashboard/verifications', label: 'Verifications', icon: 'check' },
       { href: '/dashboard/logs', label: 'Logs', icon: 'list' },
