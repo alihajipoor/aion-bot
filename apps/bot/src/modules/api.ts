@@ -11,7 +11,8 @@ import { decideVerification } from './verification.js';
 import { liftByTarget, liftSanction, createCase, type PunishAction } from '../lib/cases.js';
 import { resolveSections, type Section } from '../lib/sections.js';
 import { queryActivity, sinceDay, hhmm, staffRows } from '../lib/leaderboard.js';
-import { renderLeaderboardBanner, renderStatsBanner } from '../lib/banner.js';
+import { renderStatsBanner } from '../lib/banner.js';
+import { activityBanner } from '../lib/panelArt.js';
 import { panelList, panelAction, panelCreate } from './events/index.js';
 import { ecoRoute } from './economy/http.js';
 import { releaseVoiceMute, syncVoiceMute, ejectFromSection, resealSection } from '../lib/enforce.js';
@@ -444,9 +445,6 @@ export function startApi(client: AionClient): void {
           const days = kind === 'staff' ? 'week' : 'day';
           const rows = await queryActivity(guild.id, sinceDay(days));
           const named = (id: string) => guild.members.cache.get(id)?.displayName ?? id;
-          const subtitle = `${guild.name} · ${new Date().toUTCString().slice(5, 16)}`;
-          const top = (pick: (r: { voice: number; chat: number }) => number) =>
-            [...rows].filter(r => pick(r) > 0).sort((a, b) => pick(b) - pick(a)).slice(0, 8);
 
           let buf: Buffer | null = null;
           if (kind === 'staff') {
@@ -463,18 +461,8 @@ export function startApi(client: AionClient): void {
                   hint: `az ${staff.length} admin` },
               ],
             });
-          } else if (kind === 'chat') {
-            buf = await renderLeaderboardBanner({
-              title: 'Top Chatters — 24 saat', subtitle, accent: '#fee75c',
-              kicker: 'DAILY · CHAT', footer: 'TOP ACTIVE',
-              rows: top(r => r.chat).map(r => ({ name: named(r.userId), value: `${r.chat} pm`, amount: r.chat })),
-            });
           } else {
-            buf = await renderLeaderboardBanner({
-              title: 'Top Voice — 24 saat', subtitle, accent: '#4aa6ff',
-              kicker: 'DAILY · VOICE', footer: 'TOP ACTIVE',
-              rows: top(r => r.voice).map(r => ({ name: named(r.userId), value: hhmm(r.voice), amount: r.voice })),
-            });
+            buf = await activityBanner(kind === 'chat' ? 'chat' : 'voice', 'day', rows, named);
           }
 
           if (!buf) return json(res, 503, { error: 'render failed' });

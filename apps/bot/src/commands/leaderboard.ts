@@ -4,36 +4,19 @@ import {
   queryActivity, renderBoard, renderCombined, renderStaffBoard, staffRows, sinceDay,
   hhmm, type Period, type Row,
 } from '../lib/leaderboard.js';
-import { renderLeaderboardBanner, renderStatsBanner } from '../lib/banner.js';
+import { renderStatsBanner } from '../lib/banner.js';
+import { activityBanner } from '../lib/panelArt.js';
 import { postDailyNow, postWeeklyNow } from '../modules/leaderboardPoster.js';
 import type { Command } from '../types.js';
 import { hasRole } from '../lib/roles.js';
 
 /** Every board gets the same branded header, whichever slice was asked for. */
-async function banner(guild: Guild, kind: string, window: string, rows: Row[]): Promise<Buffer | null> {
+async function banner(guild: Guild, kind: string, period: Period, window: string, rows: Row[]): Promise<Buffer | null> {
   const subtitle = `${guild.name} · ${window}`;
-  const named = (r: Row) => guild.members.cache.get(r.userId)?.displayName ?? r.userId;
-  const top = (pick: (r: Row) => number) =>
-    [...rows].filter(r => pick(r) > 0).sort((a, b) => pick(b) - pick(a)).slice(0, 8);
+  const nameOf = (id: string) => guild.members.cache.get(id)?.displayName ?? id;
 
-  if (kind === 'voice') {
-    return renderLeaderboardBanner({
-      title: 'Top Voice', subtitle, accent: '#4aa6ff', kicker: `VOICE · ${window.toUpperCase()}`,
-      rows: top(r => r.voice).map(r => ({ name: named(r), value: hhmm(r.voice), amount: r.voice })),
-    });
-  }
-  if (kind === 'invites') {
-    return renderLeaderboardBanner({
-      title: 'Top Inviters', subtitle, accent: '#9b6cff', kicker: `INVITES · ${window.toUpperCase()}`,
-      rows: top(r => r.invites).map(r => ({ name: named(r), value: `${r.invites} nafar`, amount: r.invites })),
-    });
-  }
-  if (kind === 'chat') {
-    return renderLeaderboardBanner({
-      title: 'Top Chatters', subtitle, accent: '#fee75c', kicker: `CHAT · ${window.toUpperCase()}`,
-      rows: top(r => r.chat).map(r => ({ name: named(r), value: `${r.chat} pm`, amount: r.chat })),
-    });
-  }
+  // Member-facing boards are Persian (lib/panelArt.ts); the staff tiles below stay English.
+  if (kind === 'voice' || kind === 'invites' || kind === 'chat') return activityBanner(kind, period, rows, nameOf);
   if (kind === 'admin') {
     const staff = staffRows(guild, rows);
     const sum = (pick: (r: Row) => number) => staff.reduce((a, r) => a + pick(r), 0);
@@ -51,12 +34,7 @@ async function banner(guild: Guild, kind: string, window: string, rows: Row[]): 
     });
   }
   // Combined view ranks on voice weighted by messages, so the banner mirrors it.
-  return renderLeaderboardBanner({
-    title: 'Top Active', subtitle, accent: '#ffd76a', kicker: `ACTIVE · ${window.toUpperCase()}`,
-    rows: top(r => r.voice + r.chat * 60).map(r => ({
-      name: named(r), value: `${hhmm(r.voice)} · ${r.chat} pm`, amount: r.voice + r.chat * 60,
-    })),
-  });
+  return activityBanner('active', period, rows, nameOf);
 }
 
 const command: Command = {
@@ -106,7 +84,7 @@ const command: Command = {
     const window = period === 'today' ? 'emrooz' : period === 'week' ? '7 rooz'
       : period === 'month' ? '30 rooz' : 'hamishe';
 
-    const png = await banner(i.guild!, kind, window, rows);
+    const png = await banner(i.guild!, kind, period, window, rows);
     const file = png ? 'leaderboard.png' : undefined;
 
     const container =

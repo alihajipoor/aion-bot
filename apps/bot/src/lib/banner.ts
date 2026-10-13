@@ -65,31 +65,48 @@ export const WORDMARK = 'ION';
  * glyph or hand-drawing bars that never quite match. The weight, the stroke
  * contrast and the glow are the typeface's, because it is the typeface.
  */
-export const lambda = (size: number) => el('div', {
+export const lambda = (size: number, spacing = 0) => el('div', {
   display: 'flex', transform: 'rotate(180deg)',
   // A rotated V carries its baseline at the top and its apex where the
   // descender space was, so it lands low against the rest of the word. The
   // margins lift it back onto the same line.
-  marginTop: -size * 0.30, marginBottom: size * 0.06, marginRight: size * 0.06,
+  //
+  // Turning it over also turns over its letter-spacing, which then sits on the
+  // V's left instead of between it and the I: "ΛI O N". `spacing` puts that
+  // gap back on the right, where the other letters carry it.
+  marginTop: -size * 0.30, marginBottom: size * 0.06, marginRight: size * 0.06 + spacing,
 }, 'V');
+
+/** The ΛION wordmark, lit in the image's accent, every letter evenly spaced. */
+export const wordmark = (size: number, accent: string = BRAND.blue, glow = 0.25) => {
+  const spacing = Math.round(size * 0.16);
+  return el('div', {
+    display: 'flex', alignItems: 'center', fontSize: size, fontWeight: 700, letterSpacing: spacing,
+    color: BRAND.text, textShadow: `0 0 ${Math.round(size * glow)}px ${accent}f2`,
+  }, [lambda(size, spacing), el('div', { display: 'flex' }, WORDMARK)]);
+};
+
+/**
+ * The one small English label an image carries: letter-spaced capitals above
+ * the Persian title. The letters are spaced by hand as well as by
+ * letterSpacing, because satori swallows the space between letter-spaced
+ * words — "WELCOME TO" was drawn "WELCOMETO".
+ */
+export const kicker = (s: string, style: Record<string, unknown> = {}) => el('div', {
+  display: 'flex', fontSize: 15, fontWeight: 700, letterSpacing: 6, color: BRAND.blue, whiteSpace: 'pre', ...style,
+}, s.split('').join(' '));
+
+/** A small rounded chip: a Persian word or two, for the features a panel offers. */
+export const chip = (s: string, accent: string = BRAND.blue) => el('div', {
+  display: 'flex', alignItems: 'center', padding: '7px 18px', borderRadius: 30,
+  background: 'rgba(255,255,255,0.07)', border: `1px solid ${accent}66`,
+}, [say(s, { fontSize: 17, fontWeight: 700, color: '#dbe4f2' })]);
 
 const WIDTH = 1200;
 const PAD = 56;
 const CONTENT = WIDTH - PAD * 2;
 
 const absolute = { position: 'absolute', display: 'flex' } as const;
-
-/** The light source that every AION image is lit by. */
-const glows = (accent: string) => [
-  el('div', {
-    ...absolute, top: -300, right: -260, width: 820, height: 820, borderRadius: 410,
-    backgroundImage: `radial-gradient(circle, ${accent}3d 0%, ${accent}12 42%, rgba(5,6,12,0) 68%)`,
-  }),
-  el('div', {
-    ...absolute, bottom: -320, left: -220, width: 700, height: 700, borderRadius: 350,
-    backgroundImage: `radial-gradient(circle, ${accent}1f 0%, rgba(5,6,12,0) 66%)`,
-  }),
-];
 
 /** The signature lit rift, used as a divider wherever a rule is needed. */
 export const rift = (width: number, accent: string, strong = true) => el('div', {
@@ -205,11 +222,8 @@ const header = (opts: { kicker: string; title: string; subtitle: string; accent:
       el('div', { display: 'flex', fontSize: 46, fontWeight: 700, color: BRAND.text }, opts.title),
       el('div', { display: 'flex', fontSize: 20, color: BRAND.dim }, opts.subtitle),
     ]),
-    el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 7 }, [
-      el('div', {
-        display: 'flex', alignItems: 'center', fontSize: 38, fontWeight: 700,
-        letterSpacing: 11, color: BRAND.text, textShadow: `0 0 30px ${opts.accent}e6`,
-      }, [lambda(38), el('div', { display: 'flex' }, WORDMARK)]),
+    el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }, [
+      wordmark(36, opts.accent, 0.8),
       rift(148, opts.accent),
     ]),
   ]);
@@ -248,12 +262,11 @@ async function frame(opts: {
         : el('div', { display: 'flex', fontSize: 15, letterSpacing: 4, color: BRAND.faint }, opts.footer),
       el('div', {
         display: 'flex', alignItems: 'center', fontSize: 15, letterSpacing: 5, color: BRAND.faint,
-      }, [lambda(15), el('div', { display: 'flex' }, WORDMARK)]),
+      }, [lambda(15, 5), el('div', { display: 'flex' }, WORDMARK)]),
     ]),
   ]);
 
-  const svg = await satori(tree as never, { width: WIDTH, height: opts.height, fonts: await loadFonts() });
-  return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } }).render().asPng());
+  return draw(tree, WIDTH, opts.height);
 }
 
 /* ── leaderboards ──────────────────────────────────────────────── */
@@ -408,13 +421,6 @@ export async function renderStatsBanner(opts: {
 
 /* ── panel headers ─────────────────────────────────────────────── */
 
-const HEAD_H = 330;
-
-/**
- * A hero strip for any panel that is posted once and lived with — the temp
- * voice interface, the admin guide. Same ground as the leaderboards, so a
- * member meets one server rather than a set of unrelated cards.
- */
 /**
  * Header banners already drawn, keyed by what they are drawn from.
  *
@@ -436,60 +442,82 @@ const HEAD_H = 330;
 const headerCache = new Map<string, Buffer>();
 const HEADER_CACHE_MAX = 24;
 
-export async function renderHeaderBanner(opts: {
+/** What a panel header is drawn from. Exported so the panels' own text and the tests share one shape. */
+export interface HeaderSpec {
+  /** The one small English label, letter-spaced, above the title. */
   kicker: string;
   title: string;
   subtitle: string;
   accent?: string;
+  /** Up to five short features, drawn as chips along the bottom. */
   tags?: string[];
-}): Promise<Buffer | null> {
-  const key = JSON.stringify([opts.kicker, opts.title, opts.subtitle, opts.accent, opts.tags]);
+  /** Read from the right. Left out, it follows the title: a Persian title makes a Persian header. */
+  rtl?: boolean;
+}
+
+/**
+ * A hero strip for a panel that is posted once and lived with — the temp
+ * voice interface, the admin guide, the events console.
+ *
+ * In the cards' look (option C): the aurora in the panel's own accent, the
+ * frosted glass, the lit rift. A Persian header is mirrored like the cards —
+ * title block on the right, the wordmark on the left, chips running from the
+ * right — and carries one small English label above its Persian title.
+ */
+export async function renderHeaderBanner(opts: HeaderSpec): Promise<Buffer | null> {
+  const rtl = opts.rtl ?? RTL.test(opts.title);
+  const key = JSON.stringify([opts.kicker, opts.title, opts.subtitle, opts.accent, opts.tags, rtl]);
   const hit = headerCache.get(key);
   if (hit) return hit;
   try {
     const accent = opts.accent ?? BRAND.blue;
+    const tags = (opts.tags ?? []).slice(0, 5);
+    const H = tags.length ? 340 : 280;
+    const dir = rtl ? 'row-reverse' : 'row';
+    // Latin text is set as it is; anything Persian goes through say(), one box per word.
+    const text = (s: string, style: Record<string, unknown>) =>
+      rtl || RTL.test(s) ? say(s, style) : el('div', { display: 'flex', ...style }, s);
+
     const tree = el('div', {
-      display: 'flex', position: 'relative', width: WIDTH, height: HEAD_H,
-      background: BRAND.ink, fontFamily: 'Vazirmatn',
+      display: 'flex', position: 'relative', width: WIDTH, height: H,
+      background: BRAND.ink, fontFamily: 'Vazirmatn', color: BRAND.text, overflow: 'hidden',
     }, [
-      ...glows(accent),
+      ...aurora(WIDTH, H, accent),
+      glass(WIDTH, H, 22),
       el('div', {
-        ...absolute, top: 56, left: PAD, width: CONTENT,
+        ...absolute, top: 54, left: PAD, width: CONTENT, flexDirection: dir,
         justifyContent: 'space-between', alignItems: 'flex-start',
       }, [
-        el('div', { display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 820 }, [
-          el('div', {
-            display: 'flex', fontSize: 17, fontWeight: 700, letterSpacing: 7, color: accent,
-          }, opts.kicker),
-          el('div', {
-            display: 'flex', fontSize: 62, fontWeight: 700, color: BRAND.text,
-            textShadow: `0 0 38px ${accent}59`,
-          }, opts.title),
-          el('div', { display: 'flex', fontSize: 21, color: BRAND.dim }, opts.subtitle),
+        el('div', {
+          display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 860,
+          alignItems: rtl ? 'flex-end' : 'flex-start',
+        }, [
+          RTL.test(opts.kicker)
+            ? say(opts.kicker, { fontSize: 19, fontWeight: 700, color: accent })
+            : kicker(opts.kicker, { fontSize: 16, color: accent }),
+          text(opts.title, { fontSize: 56, fontWeight: 700, color: BRAND.text, textShadow: `0 0 36px ${accent}99` }),
+          text(opts.subtitle, { fontSize: 21, color: BRAND.dim, maxWidth: 860 }),
         ]),
-        el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 7 }, [
-          el('div', {
-            display: 'flex', alignItems: 'center', fontSize: 38, fontWeight: 700,
-            letterSpacing: 11, color: BRAND.text, textShadow: `0 0 30px ${accent}e6`,
-          }, [lambda(38), el('div', { display: 'flex' }, WORDMARK)]),
+        el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, marginTop: 8 }, [
+          wordmark(36, accent, 0.8),
           rift(148, accent),
         ]),
       ]),
-      el('div', { ...absolute, bottom: 62, left: PAD }, [rift(CONTENT, accent)]),
-      el('div', {
-        ...absolute, bottom: 26, left: PAD, width: CONTENT,
-        justifyContent: 'space-between', alignItems: 'center',
-      }, [
-        el('div', { display: 'flex', gap: 26 }, (opts.tags ?? []).slice(0, 5).map(t =>
-          el('div', { display: 'flex', fontSize: 15, letterSpacing: 4, color: BRAND.faint }, t))),
+      ...(tags.length ? [
+        el('div', { ...absolute, top: H - 112, left: PAD }, [rift(CONTENT, accent, false)]),
         el('div', {
-          display: 'flex', alignItems: 'center', fontSize: 15, letterSpacing: 5, color: BRAND.faint,
-        }, [lambda(15), el('div', { display: 'flex' }, WORDMARK)]),
-      ]),
+          ...absolute, top: H - 90, left: PAD, width: CONTENT, flexDirection: dir, gap: 12, alignItems: 'center',
+        }, tags.map(t => rtl || RTL.test(t)
+          ? chip(t, accent)
+          : el('div', {
+              display: 'flex', alignItems: 'center', padding: '7px 18px', borderRadius: 30,
+              background: 'rgba(255,255,255,0.07)', border: `1px solid ${accent}66`,
+              fontSize: 14, fontWeight: 700, letterSpacing: 4, color: '#dbe4f2',
+            }, t))),
+      ] : []),
     ]);
 
-    const svg = await satori(tree as never, { width: WIDTH, height: HEAD_H, fonts: await loadFonts() });
-    const png = Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } }).render().asPng());
+    const png = await draw(tree, WIDTH, H);
     // Oldest out first. Insertion order is Map's own, so the first key is it.
     if (headerCache.size >= HEADER_CACHE_MAX) {
       const oldest = headerCache.keys().next().value;
@@ -655,36 +683,41 @@ export async function welcomeBanner(): Promise<Art | null> {
   return data ? { data, name: 'welcome.png' } : null;
 }
 
-const HERO_H = 400;
+const HERO_H = 420;
 
-/** Fallback art: the AION wordmark split by a lit rift. */
+/** The welcome line under the wordmark. Exported so the right-to-left test reads the same words. */
+export const WELCOME_LINE = 'یک بار تأیید شو — بعدش همه‌ی سرور برات بازه';
+
+/*
+ * Drawn from constants, so drawn once. The file lookup above still runs on
+ * every call — dropping in new art needs no restart — only the fallback render
+ * is kept.
+ */
+let welcomeDrawn: Buffer | null = null;
+
+/** Fallback art, in the cards' look: the wordmark on glass over the aurora, one English label, one Persian line. */
 async function renderWelcomeBanner(): Promise<Buffer | null> {
+  if (welcomeDrawn) return welcomeDrawn;
   try {
     const tree = el('div', {
       display: 'flex', position: 'relative', width: WIDTH, height: HERO_H,
-      background: BRAND.ink, fontFamily: 'Vazirmatn',
+      background: BRAND.ink, fontFamily: 'Vazirmatn', color: BRAND.text, overflow: 'hidden',
     }, [
-      ...glows(BRAND.blue),
+      ...aurora(WIDTH, HERO_H, BRAND.blue),
+      glass(WIDTH, HERO_H, 22),
       el('div', {
-        ...absolute, top: 96, left: 0, width: WIDTH, justifyContent: 'center',
-        alignItems: 'center', fontSize: 168, fontWeight: 700, letterSpacing: 26,
-        color: BRAND.text, textShadow: `0 0 46px ${BRAND.blue}f2`,
-      }, [lambda(168), el('div', { display: 'flex' }, WORDMARK)]),
-      el('div', { ...absolute, top: 198, left: 40 }, [rift(WIDTH - 80, BRAND.blue)]),
-      el('div', { ...absolute, top: 176, left: 0, width: WIDTH, justifyContent: 'center' }, [
-        el('div', {
-          display: 'flex', alignItems: 'center', height: 46, paddingLeft: 26, paddingRight: 26,
-          background: BRAND.ink, fontSize: 24, fontWeight: 700, letterSpacing: 14, color: '#e7f3ff',
-        }, 'WELCOME TO'),
+        ...absolute, top: 0, left: 0, width: WIDTH, height: HERO_H, flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 16,
+      }, [
+        kicker('WELCOME TO', { fontSize: 19, letterSpacing: 8, color: '#a9d4ff' }),
+        // The line box of a 150px word is far taller than its capitals; the margins take the slack back.
+        el('div', { display: 'flex', marginTop: -22, marginBottom: -34 }, [wordmark(150, BRAND.blue, 0.3)]),
+        rift(720, BRAND.blue),
+        say(WELCOME_LINE, { fontSize: 27, fontWeight: 700, color: 'rgba(214,234,255,0.80)', marginTop: 6 }),
       ]),
-      el('div', {
-        ...absolute, bottom: 40, left: 0, width: WIDTH, justifyContent: 'center',
-        fontSize: 22, letterSpacing: 8, color: BRAND.dim,
-      }, 'VERIFY  ·  JOIN  ·  BELONG'),
     ]);
-
-    const svg = await satori(tree as never, { width: WIDTH, height: HERO_H, fonts: await loadFonts() });
-    return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } }).render().asPng());
+    welcomeDrawn = await draw(tree, WIDTH, HERO_H);
+    return welcomeDrawn;
   } catch (e) {
     log.error('welcome banner render failed', e);
     return null;

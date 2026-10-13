@@ -3,8 +3,9 @@ import {
 } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { getDb, guilds } from '@aion/db';
-import { queryActivity, renderBoard, renderStaffBoard, staffRows, sinceDay, hhmm, type Row } from '../lib/leaderboard.js';
-import { renderLeaderboardBanner, renderStatsBanner } from '../lib/banner.js';
+import { queryActivity, renderBoard, renderStaffBoard, staffRows, sinceDay, hhmm } from '../lib/leaderboard.js';
+import { renderStatsBanner } from '../lib/banner.js';
+import { activityBanner } from '../lib/panelArt.js';
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
 import { settings } from '../lib/settings.js';
@@ -102,31 +103,15 @@ async function postDaily(guild: Guild): Promise<void> {
   const rows = await queryActivity(guild.id, sinceDay('all'));
   const stamp = `<t:${Math.floor(Date.now() / 1000)}:D>`;
   const footer = `Rotbe bandi e kolli — az avval ta hala · ${stamp}`;
-  const subtitle = `${guild.name} · ${new Date().toUTCString().slice(5, 16)}`;
+  const invites = rows.filter(r => r.invites > 0);
 
-  const named = (r: Row) => guild.members.cache.get(r.userId)?.displayName ?? r.userId;
-
-  const voice = [...rows].filter(r => r.voice > 0).sort((a, b) => b.voice - a.voice).slice(0, 8);
-  const chat = [...rows].filter(r => r.chat > 0).sort((a, b) => b.chat - a.chat).slice(0, 8);
-  const invites = [...rows].filter(r => r.invites > 0).sort((a, b) => b.invites - a.invites).slice(0, 8);
-
-  const voiceBanner = await renderLeaderboardBanner({
-    title: 'Top Voice — koll', subtitle, accent: '#4aa6ff',
-    kicker: 'OVERALL · VOICE', footer: 'TOP ACTIVE',
-    rows: voice.map(r => ({ name: named(r), value: hhmm(r.voice), amount: r.voice })),
-  });
+  // The images are Persian (lib/panelArt.ts); the text cards under them are unchanged.
+  const nameOf = (id: string) => guild.members.cache.get(id)?.displayName ?? id;
+  const voiceBanner = await activityBanner('voice', 'all', rows, nameOf);
   // Only posted when somebody has actually invited someone; an empty third
   // board every night is noise.
-  const inviteBanner = invites.length ? await renderLeaderboardBanner({
-    title: 'Top Inviters — koll', subtitle, accent: '#9b6cff',
-    kicker: 'OVERALL · INVITES', footer: 'TOP ACTIVE',
-    rows: invites.map(r => ({ name: named(r), value: `${r.invites} nafar`, amount: r.invites })),
-  }) : null;
-  const chatBanner = await renderLeaderboardBanner({
-    title: 'Top Chatters — koll', subtitle, accent: '#fee75c',
-    kicker: 'OVERALL · CHAT', footer: 'TOP ACTIVE',
-    rows: chat.map(r => ({ name: named(r), value: `${r.chat} pm`, amount: r.chat })),
-  });
+  const inviteBanner = invites.length ? await activityBanner('invites', 'all', rows, nameOf) : null;
+  const chatBanner = await activityBanner('chat', 'all', rows, nameOf);
 
   const before = await readMarks(guild.id, guild.name);
   await retire(channel, before.dailyIds);

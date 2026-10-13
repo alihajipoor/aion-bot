@@ -9,6 +9,7 @@ import {
   type MessageCreateOptions, type Collection, type Message,
 } from 'discord.js';
 import { renderHeaderBanner } from '../../lib/banner.js';
+import { HEADERS } from '../../lib/panelArt.js';
 import { CATALOGUE, SCENARIOS, scenarioOf, distribution, explicitDistribution,
   type GameKey } from './games.js';
 import {
@@ -82,11 +83,7 @@ const isStaff = (m: GuildMember): boolean =>
 /* ── the staff panel ───────────────────────────────────────────── */
 
 export async function interfacePanel(guild: Guild): Promise<MessageCreateOptions> {
-  const banner = await renderHeaderBanner({
-    kicker: 'STAFF · EVENT CONTROL', title: 'Event Control', accent: '#9b6cff',
-    subtitle: 'Baazi ro tanzim kon, elan kon, begardoon — hamash az hamin ja.',
-    tags: ['MAFIA', 'ESM FAMIL', '20 SOALI', 'CUSTOM'],
-  });
+  const banner = await renderHeaderBanner(HEADERS.events);
 
   const live = await liveEvents(guild.id).catch(() => []);
   const hall = hallChannel(guild);

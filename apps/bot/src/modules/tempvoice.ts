@@ -11,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, tempChannels, tempPrefs } from '@aion/db';
 import { isolate } from '../lib/text.js';
 import { renderHeaderBanner } from '../lib/banner.js';
+import { HEADERS } from '../lib/panelArt.js';
 import { logger } from '../lib/log.js';
 import type { AionClient } from '../client.js';
 import { hasRole, roleId } from '../lib/roles.js';
@@ -90,11 +91,7 @@ function panel(ownerId: string, name: string): MessageCreateOptions {
 
 /** Shared panel for the interface channel; acts on whichever room you own. */
 export async function interfacePanel(): Promise<MessageCreateOptions> {
-  const banner = await renderHeaderBanner({
-    kicker: 'PRIVATE VOICE', title: 'Room e Khodet', accent: '#9b6cff',
-    subtitle: 'Room e shakhsiye khodet — esm, zarfiat va dastresi dast e toe.',
-    tags: ['ESM', 'ZARFIAT', 'GHOFL', 'KICK', 'CLAIM'],
-  });
+  const banner = await renderHeaderBanner(HEADERS.voice);
 
   const box = new ContainerBuilder().setAccentColor(0x9b6cff);
   if (banner) {
