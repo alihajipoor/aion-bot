@@ -3,7 +3,9 @@ import {
 } from 'discord.js';
 import { and, eq } from 'drizzle-orm';
 import { getDb, ecoProducts } from '@aion/db';
-import { productImage } from '../lib/cards.js';
+import {
+  setLaunch, adjustCoins, createProduct, updateProduct, removeProduct, setProductImage, setFreeze, type ProductInput,
+} from '../modules/economy/service.js';
 import * as L from '../lib/economy/ledger.js';
 import { settings, saveSettings, loadSettings } from '../lib/settings.js';
 import {
@@ -126,30 +128,22 @@ const command: Command = {
     await i.deferReply({ flags: MessageFlags.Ephemeral });
     const say = (content: string, extra = {}) => i.editReply({ content: content.slice(0, 1990), allowedMentions: { parse: [] }, ...extra });
 
+    // The operations themselves live in modules/economy/service.ts, shared with the web panel.
+    const done = (r: { ok: boolean; message: string }) => say(`${r.ok ? '✅' : '❌'} ${r.message}`);
+
     if (sub === 'launch' || sub === 'pause') {
-      const s = settings();
-      const launching = sub === 'launch';
-      const launchedAt = s.economy.launchedAt ?? (launching ? new Date().toISOString() : null);
-      await saveSettings({ ...s, economy: { ...s.economy, enabled: launching, launchedAt } });
-      await loadSettings(true);
-      await Promise.all([ensureShopPost(g), ensureCoinsPost(g), ensureRichestPost(g)]);
-      await ecoLog(g, launching
-        ? `🚀 Economy ${s.economy.launchedAt ? 'dobare faal' : 'shoru'} shod tavassote <@${member.id}>`
-        : `⏸ Economy motevaghef shod tavassote <@${member.id}> — kasb va kharid khamoosh`);
-      await say(launching
-        ? `🚀 Economy faal-e. Shoru: ${t(new Date(launchedAt!))} — faghat davat-haye baad az in lahze coin dare.`
-        : '⏸ Motevaghef shod. Kasb-e coin va kharid khamoosh-e; mojoodi-ha sar-e jashoon mimoonan.');
+      const r = await setLaunch(g, sub === 'launch', member.id);
+      const at = settings().economy.launchedAt;
+      await say(sub === 'launch' && at
+        ? `🚀 ${r.message} Shoru: ${t(new Date(at))} — faghat davat-haye baad az in lahze coin dare.`
+        : `⏸ ${r.message}`);
       return;
     }
 
     if (sub === 'give' || sub === 'take') {
-      const user = i.options.getUser('user', true);
       const amount = i.options.getInteger('amount', true);
-      const reason = i.options.getString('reason', true);
-      const r = await L.adjust(db(), g.id, user.id, sub === 'give' ? amount : -amount, reason, member.id);
-      if (!r.ok) { await say(`❌ <@${user.id}> faghat **${r.balance}** coin dare — nemishe ${amount} ta gereft.`); return; }
-      await ecoLog(g, `${sub === 'give' ? '➕' : '➖'} **${amount} coin** ${sub === 'give' ? 'be' : 'az'} <@${user.id}> tavassote <@${member.id}> — ${reason} · mojoodi: ${r.balance}`);
-      await say(`✅ Anjam shod. Mojoodi-e <@${user.id}>: **${r.balance}** coin.`);
+      await done(await adjustCoins(g, i.options.getUser('user', true).id, sub === 'give' ? amount : -amount,
+        i.options.getString('reason', true), member.id));
       return;
     }
 
@@ -190,74 +184,50 @@ const command: Command = {
     }
 
     if (sub === 'add') {
-      const stock = i.options.getInteger('stock');
-      const [p] = await getDb().insert(ecoProducts).values({
-        guildId: g.id, name: i.options.getString('name', true), price: i.options.getInteger('price', true),
-        stockPerMonth: stock, perUserMonth: i.options.getInteger('peruser'),
+      await done(await createProduct(g, {
+        name: i.options.getString('name', true), price: i.options.getInteger('price', true),
+        stockPerMonth: i.options.getInteger('stock'), perUserMonth: i.options.getInteger('peruser'),
         description: i.options.getString('description'), note: i.options.getString('note'),
         sortOrder: i.options.getInteger('order') ?? 100,
-      }).returning();
-      await ensureShopPost(g);
-      await ecoLog(g, `🆕 Mahsool \`#${p!.id}\` **${p!.name}** — ${p!.price} coin${stock !== null ? ` · ${stock}/mah` : ''} (tavassote <@${member.id}>)`);
-      await say(`✅ Ezafe shod: \`#${p!.id}\` **${p!.name}** — ${p!.price} coin.`);
+      }, member.id));
       return;
     }
 
-    if (sub === 'edit' || sub === 'remove') {
-      const id = i.options.getInteger('id', true);
-      const before = await L.getProduct(db(), g.id, id);
-      if (!before) { await say(`Mahsool \`#${id}\` peyda nashod.`); return; }
-      const patch: Partial<typeof ecoProducts.$inferInsert> = { updatedAt: new Date() };
-      if (sub === 'remove') patch.active = false;
-      else {
-        const o = i.options;
-        const clear = (v: string | null) => v === null ? undefined : v === '-' ? null : v;
-        const limit = (v: number | null) => v === null ? undefined : v < 0 ? null : v;
-        if (o.getString('name') !== null) patch.name = o.getString('name')!;
-        if (o.getInteger('price') !== null) patch.price = o.getInteger('price')!;
-        if (limit(o.getInteger('stock')) !== undefined) patch.stockPerMonth = limit(o.getInteger('stock'));
-        if (limit(o.getInteger('peruser')) !== undefined) patch.perUserMonth = limit(o.getInteger('peruser')) || null;
-        if (clear(o.getString('description')) !== undefined) patch.description = clear(o.getString('description'));
-        if (clear(o.getString('note')) !== undefined) patch.note = clear(o.getString('note'));
-        if (o.getBoolean('active') !== null) patch.active = o.getBoolean('active')!;
-        if (o.getInteger('order') !== null) patch.sortOrder = o.getInteger('order')!;
-      }
-      const [after] = await getDb().update(ecoProducts).set(patch)
-        .where(and(eq(ecoProducts.guildId, g.id), eq(ecoProducts.id, id))).returning();
-      const changes = (['name', 'price', 'stockPerMonth', 'perUserMonth', 'active', 'sortOrder'] as const)
-        .filter(k => before[k] !== after![k]).map(k => `${k}: ${before[k] ?? '∞'} → ${after![k] ?? '∞'}`);
-      if (before.description !== after!.description) changes.push('description');
-      if (before.note !== after!.note) changes.push('note');
-      await ensureShopPost(g);
-      await ecoLog(g, `✏️ Mahsool \`#${id}\` **${after!.name}** ${sub === 'remove' ? 'az shop bardashte shod' : 'taghir kard'}` +
-        `${changes.length ? ` — ${changes.join(', ')}` : ''} (tavassote <@${member.id}>)`);
-      await say(`✅ \`#${id}\` **${after!.name}** — ${changes.length ? changes.join(', ') : 'taghiri nabood'}.`);
+    if (sub === 'remove') {
+      await done(await removeProduct(g, i.options.getInteger('id', true), member.id));
+      return;
+    }
+
+    if (sub === 'edit') {
+      const o = i.options;
+      // Discord options cannot say "clear": "-" clears a text field, a negative number lifts a limit.
+      const text = (v: string | null) => v === null ? undefined : v === '-' ? null : v;
+      const limit = (v: number | null) => v === null ? undefined : v < 0 ? null : v;
+      const patch: ProductInput = {};
+      if (o.getString('name') !== null) patch.name = o.getString('name')!;
+      if (o.getInteger('price') !== null) patch.price = o.getInteger('price')!;
+      if (limit(o.getInteger('stock')) !== undefined) patch.stockPerMonth = limit(o.getInteger('stock'))!;
+      if (limit(o.getInteger('peruser')) !== undefined) patch.perUserMonth = limit(o.getInteger('peruser')) || null;
+      if (text(o.getString('description')) !== undefined) patch.description = text(o.getString('description'))!;
+      if (text(o.getString('note')) !== undefined) patch.note = text(o.getString('note'))!;
+      if (o.getBoolean('active') !== null) patch.active = o.getBoolean('active')!;
+      if (o.getInteger('order') !== null) patch.sortOrder = o.getInteger('order')!;
+      await done(await updateProduct(g, o.getInteger('id', true), patch, member.id));
       return;
     }
 
     if (sub === 'image') {
-      const id = i.options.getInteger('id', true);
-      const product = await L.getProduct(db(), g.id, id);
-      if (!product) { await say(`Mahsool \`#${id}\` peyda nashod.`); return; }
       const file = i.options.getAttachment('file');
       const clear = i.options.getBoolean('clear') ?? false;
       if (!file && !clear) { await say('Ya ye aks attach kon (`file`), ya `clear: True` baraye pak kardan.'); return; }
-
-      let image: string | null = null;
+      let bytes: Buffer | null = null;
       if (!clear && file) {
-        if (file.size > 8 * 1024 * 1024) { await say('Aks kheili bozorge — hadde-aksar 8MB.'); return; }
+        if (file.size > 8 * 1024 * 1024) { await say('❌ Aks kheili bozorge — hadde-aksar 8MB.'); return; }
         const res = await fetch(file.url, { signal: AbortSignal.timeout(10_000) }).catch(() => null);
-        if (!res?.ok) { await say('Natoonestam aks ro begiram — dobare emtehan kon.'); return; }
-        image = productImage(Buffer.from(await res.arrayBuffer()), file.contentType ?? '');
-        if (!image) { await say('In file ro nemitoonam bekhoonam — PNG, JPG, GIF ya WEBP befrest.'); return; }
+        if (!res?.ok) { await say('❌ Natoonestam aks ro begiram — dobare emtehan kon.'); return; }
+        bytes = Buffer.from(await res.arrayBuffer());
       }
-      await getDb().update(ecoProducts).set({ image, updatedAt: new Date() })
-        .where(and(eq(ecoProducts.guildId, g.id), eq(ecoProducts.id, id)));
-      await ensureShopPost(g);
-      await ecoLog(g, `🖼 Aks-e mahsool \`#${id}\` **${product.name}** ${image ? 'avaz shod' : 'pak shod'} (tavassote <@${member.id}>)`);
-      await say(image
-        ? `🖼 Aks-e **${product.name}** sabt shod — too shop be soorat-e moraba neshoon dade mishe.`
-        : `🧹 Aks-e **${product.name}** pak shod — harf-e rangi bargasht.`);
+      await done(await setProductImage(g, i.options.getInteger('id', true), bytes, file?.contentType ?? '', member.id));
       return;
     }
 
@@ -278,10 +248,7 @@ const command: Command = {
     }
 
     if (sub === 'freeze' || sub === 'unfreeze') {
-      const user = i.options.getUser('user', true);
-      await L.setFrozen(db(), g.id, user.id, sub === 'freeze');
-      await ecoLog(g, `${sub === 'freeze' ? '🧊 Freeze' : '🔓 Unfreeze'}: <@${user.id}> tavassote <@${member.id}>`);
-      await say(sub === 'freeze' ? `🧊 <@${user.id}> freeze shod — na coin migire na kharid mikone.` : `🔓 <@${user.id}> az freeze dar oomad.`);
+      await done(await setFreeze(g, i.options.getUser('user', true).id, sub === 'freeze', member.id));
       return;
     }
 

@@ -152,24 +152,11 @@ const FROM_SMALL_CAPS: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * Fold decorated channel names down to plain ASCII for matching.
- * NFKC handles mathematical alphanumerics (𝙲𝙷𝙰𝚃 -> CHAT) but NOT small
- * capitals (U+1D00-U+1D2B have no compatibility decomposition), so those are
- * mapped explicitly.
+ * Folding names to plain words lives in @aion/db (packages/db/src/fold.ts),
+ * shared with the web panel so the bot and the panel cannot disagree about
+ * which role a styled name is.
  */
-/**
- * The wordmark writes its A as a lambda, so names carry it where code says A.
- * Three glyphs, because Discord forces text channel names to lowercase and
- * turns Λ into the curly λ, which sits badly beside small caps — ʌ is the
- * lowercase-category form that survives untouched and matches the styling.
- */
-const LAMBDA = /[\u039B\u03BB\u028C]/g;
-
-export function asciiFold(input: string): string {
-  input = input.replace(LAMBDA, 'A');
-  const mapped = [...input].map(c => FROM_SMALL_CAPS[c] ?? c).join('');
-  return mapped.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-}
+export { asciiFold } from '@aion/db';
 
 /**
  * Fold a styled nickname back to plain readable text for image rendering.

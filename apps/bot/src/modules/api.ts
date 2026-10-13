@@ -13,6 +13,7 @@ import { resolveSections, type Section } from '../lib/sections.js';
 import { queryActivity, sinceDay, hhmm, staffRows } from '../lib/leaderboard.js';
 import { renderLeaderboardBanner, renderStatsBanner } from '../lib/banner.js';
 import { panelList, panelAction, panelCreate } from './events/index.js';
+import { ecoRoute } from './economy/http.js';
 import { releaseVoiceMute, syncVoiceMute, ejectFromSection, resealSection } from '../lib/enforce.js';
 import type { AionSettings } from '@aion/db';
 import type { AionClient } from '../client.js';
@@ -81,6 +82,9 @@ export function startApi(client: AionClient): void {
         const url = new URL(req.url ?? '/', 'http://localhost');
         const guild = client.guilds.cache.get(config.guildId);
         if (!guild) return json(res, 503, { error: 'guild not ready' });
+
+        // AION Coin's routes live with the economy (modules/economy/http.ts).
+        if (await ecoRoute(req, res, url, guild, json, readBody)) return;
 
         if (req.method === 'GET' && url.pathname === '/health') {
           const mem = process.memoryUsage();

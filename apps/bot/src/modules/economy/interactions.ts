@@ -8,6 +8,7 @@ import * as L from '../../lib/economy/ledger.js';
 import { REFUSAL_TEXT } from '../../lib/economy/rules.js';
 import { settings } from '../../lib/settings.js';
 import { renderWallet, renderReceipt, avatarOf } from '../../lib/cards.js';
+import { decideOrder, cancelOwnOrder, decideInvite, type Act } from './service.js';
 import {
   ECO, isDev, isVerified, isEcoStaff, memberDays, ecoLog, postOrderCard, refreshOrderCard,
   ensureShopPost, stockLine,
@@ -150,18 +151,8 @@ async function buy(i: ButtonInteraction, productId: number, price: number): Prom
   await ensureShopPost(g);
 }
 
-/* ── the staff side of an order ────────────────────────────────── */
-
-async function settleAndTell(g: Guild, orderId: number, to: 'delivered' | 'rejected' | 'cancelled', actorId: string, note: string | null, refund: boolean) {
-  const res = await L.settleOrder(db(), g.id, orderId, to, { actorId, note, refund });
-  if (res.ok) {
-    await refreshOrderCard(g, res.order);
-    if (to !== 'delivered') await ensureShopPost(g);     // the stock is back
-  }
-  return res;
-}
-
 const already = (o?: L.Order) => `Sefaresh ${o ? `ghablan **${o.status}** shode` : 'peyda nashod'}.`;
+const tell = (r: Act) => eph(`${r.ok ? '✅' : '⚠️'} ${r.message}`);
 
 /* ── routing ───────────────────────────────────────────────────── */
 
@@ -187,12 +178,8 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
   if (action === 'buy')    { await buy(i, Number(a1), Number(a2)); return; }
 
   if (action === 'cancel') {
-    const o = await L.getOrder(db(), g.id, Number(a1));
-    if (!o || o.userId !== member.id) { await i.reply(eph('In sefaresh male to nist.')); return; }
-    const res = await settleAndTell(g, o.id, 'cancelled', member.id, 'kharidar laghv kard', true);
-    if (!res.ok) { await i.reply(eph(already(res.order))); return; }
-    await i.reply(eph(`🚫 Sefaresh #${o.id} laghv shod va **${o.price} coin** bargasht.`));
-    await ecoLog(g, `🚫 <@${member.id}> sefaresh #${o.id} (${o.productName}) ro laghv kard — ${o.price} coin bargasht`);
+    const r = await cancelOwnOrder(g, Number(a1), member.id);
+    await i.reply(eph(r.ok ? r.message : `⚠️ ${r.message}`));
     return;
   }
 
@@ -214,23 +201,14 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
   }
 
   if (action === 'done') {
-    const res = await settleAndTell(g, Number(a1), 'delivered', member.id, 'tahvil-e dasti', false);
-    if (!res.ok) { await i.reply(eph(already(res.order))); return; }
-    const buyer = await g.members.fetch(res.order.userId).catch(() => null);
-    await buyer?.send(`✅ Sefaresh-e **#${res.order.id}** (${res.order.productName}) tahvil dade shod. Mersi az kharidet! 🎁`).catch(() => {});
-    await i.reply(eph(`✅ #${res.order.id} tahvil shod.`));
-    await ecoLog(g, `✅ Sefaresh #${res.order.id} (${res.order.productName}) baraye <@${res.order.userId}> tahvil shod — dasti, tavassote <@${member.id}>`);
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    const r = await decideOrder(g, Number(a1), 'done', '', member.id);
+    await i.editReply({ content: `${r.ok ? '✅' : '⚠️'} ${r.message}` });
     return;
   }
 
   if (action === 'iok' || action === 'ino') {
-    const approve = action === 'iok';
-    const c = await L.decideHeldInvite(db(), g.id, a1!, approve, member.id, settings().economy.inviteCoins);
-    if (!c) { await i.reply(eph('In davat ghablan barresi shode.')); return; }
-    await i.reply(eph(approve ? `✅ Taeed shod — <@${c.inviterId}> coin gereft.` : '❌ Rad shod.'));
-    await ecoLog(g, approve
-      ? `✅ Davat-e hadsi taeed shod: <@${a1}> → <@${c.inviterId}> **+${settings().economy.inviteCoins} coin** (tavassote <@${member.id}>)`
-      : `❌ Davat-e hadsi rad shod: <@${a1}> → <@${c.inviterId}> (tavassote <@${member.id}>)`);
+    await i.reply(tell(await decideInvite(g, a1!, action === 'iok', member.id)));
   }
 }
 
@@ -239,33 +217,10 @@ export async function handleModal(i: ModalSubmitInteraction): Promise<void> {
   const g = i.guild!;
   const member = i.member as GuildMember;
   if (!isDev(member)) { await i.reply(eph('In kar faghat baraye Dev-e.')); return; }
-  const text = i.fields.getTextInputValue('text').trim();
-  const o = await L.getOrder(db(), g.id, Number(a1));
-  if (!o || o.status !== 'pending') { await i.reply(eph(already(o ?? undefined))); return; }
-  const buyer = await g.members.fetch(o.userId).catch(() => null);
-
-  if (action === 'sendm') {
-    // The code goes only to the buyer's DMs and is never stored. If the DM
-    // fails, the order stays pending — reporting it delivered would be a lie.
-    const sent = await buyer?.send(`🎁 Sefaresh-e **#${o.id}** — **${o.productName}** amade-ast:\n\n${text}\n\n-# Mersi az kharidet!`)
-      .then(() => true).catch(() => false);
-    if (!sent) {
-      await i.reply(eph(`⚠️ DM-e <@${o.userId}> baste-ast ya too server nist — **chizi ersal nashod** va sefaresh hanooz montazer-e.\n` +
-        'Az ye rah-e dige befrest va baad dokme-ye **Tahvil shod (dasti)** ro bezan.'));
-      return;
-    }
-    const res = await settleAndTell(g, o.id, 'delivered', member.id, 'code DM shod', false);
-    await i.reply(eph(res.ok ? `✅ Code be <@${o.userId}> DM shod va #${o.id} tahvil shod.` : already(res.order)));
-    if (res.ok) await ecoLog(g, `📨 Sefaresh #${o.id} (${o.productName}) baraye <@${o.userId}> tahvil shod — code DM shod, tavassote <@${member.id}>`);
-    return;
-  }
-
-  if (action === 'rejm') {
-    const res = await settleAndTell(g, o.id, 'rejected', member.id, text, true);
-    if (!res.ok) { await i.reply(eph(already(res.order))); return; }
-    await buyer?.send(`❌ Sefaresh-e **#${o.id}** (${o.productName}) rad shod va **${o.price} coin** bargasht.\nDalil: ${text}`).catch(() => {});
-    await i.reply(eph(`❌ #${o.id} rad shod va ${o.price} coin be <@${o.userId}> bargasht.`));
-    await ecoLog(g, `❌ Sefaresh #${o.id} (${o.productName}) rad shod — ${o.price} coin be <@${o.userId}> bargasht. Dalil: ${text} (tavassote <@${member.id}>)`);
-  }
+  if (action !== 'sendm' && action !== 'rejm') return;
+  // Acknowledged first: a DM to the buyer can be slow.
+  await i.deferReply({ flags: MessageFlags.Ephemeral });
+  const r = await decideOrder(g, Number(a1), action === 'sendm' ? 'send' : 'reject', i.fields.getTextInputValue('text'), member.id);
+  await i.editReply({ content: `${r.ok ? '✅' : '⚠️'} ${r.message}` });
 }
 

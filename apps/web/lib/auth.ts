@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import { foldRole } from '@aion/db';
 import { env, GATE_ROLES } from './env';
 
 const COOKIE = 'aion_session';
@@ -97,8 +98,19 @@ export async function fetchMemberRoles(userId: string): Promise<string[] | null>
   return names;
 }
 
+/**
+ * Compared by folded name, the way the bot compares roles. The roles are named
+ * in the server's font — the Dev role is "ᴅᴇᴠ│•" — and an exact match against
+ * "Dev" stopped matching when they were restyled on 2026-09-10, which locked
+ * every Dev and Consultant out of the panel until 2026-10-13.
+ */
+const GATE = new Set(GATE_ROLES.map(foldRole));
 export const isAllowed = (roles: string[]): boolean =>
-  roles.some(r => GATE_ROLES.includes(r));
+  roles.some(r => GATE.has(foldRole(r)));
+
+/** Dev, or the guild owner: the only ones who may change the economy from the panel. */
+export const isDev = (s: { roles: string[]; owner?: boolean } | null): boolean =>
+  Boolean(s && (s.owner || s.roles.some(r => foldRole(r) === 'dev')));
 
 let ownerId: string | null = null;
 let ownerFetchedAt = 0;

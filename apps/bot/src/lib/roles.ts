@@ -13,14 +13,9 @@ import { asciiFold } from './text.js';
  * So both sides are folded to their bare words: "ᴘ│𝙼𝙾𝙳𝙴𝚁𝙰𝚃𝙾𝚁│•" and
  * "P . MODERATOR" both reduce to "p moderator" and match.
  */
-export function foldRole(name: string): string {
-  return asciiFold(name)
-    .toLowerCase()
-    .replace(/[│|╱/·•∙⏋⎯─—–_.]+/g, ' ')   // decoration is not part of the name
-    .replace(/[^a-z0-9 ]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+// Shared with the web panel, which gates on these same folded names.
+export { foldRole } from '@aion/db';
+import { foldRole } from '@aion/db';
 
 export const sameRole = (a: string, b: string): boolean => foldRole(a) === foldRole(b);
 
