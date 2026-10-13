@@ -1,6 +1,6 @@
 import type { GuildMember } from 'discord.js';
 // kicker (the one small English label) and wordmark are shared with the panel headers.
-import { BRAND, aurora, glass, draw, el, fa, kicker, num, rift, say, wordmark } from './banner.js';
+import { BRAND, aurora, glass, draw, el, fa, kicker, num, rift, RTL, say, wordmark } from './banner.js';
 import { Resvg } from '@resvg/resvg-js';
 import { logger } from './log.js';
 
@@ -186,6 +186,32 @@ const markTile = (name: string, size: number, image?: string | null) => {
   }, t.mark);
 };
 
+/**
+ * A product name that fits its tile: one line at full size when it is short,
+ * otherwise smaller and wrapped onto a second line at word breaks. One line
+ * cut off "Discord Nitro (in app pu" and "Internet Irancell - 1 mah" (owner,
+ * 2026-10-13). Each word is its own box, so a Persian name wraps from the
+ * right and keeps its word order.
+ */
+function wrapName(name: string, width: number): unknown {
+  // A dash or a bare number never ends a line: "— 1 mah" wraps as one piece.
+  const words: string[] = [];
+  let glue = '';
+  for (const w of name.replace(/\s+/g, ' ').trim().split(' ')) {
+    if (/^[-–—]$|^\$?[0-9۰-۹]+$/.test(w)) { glue += `${w} `; continue; }
+    words.push(glue + w); glue = '';
+  }
+  if (glue.trim()) words.push(glue.trim());
+  const len = name.length;
+  const size = len <= 18 ? 20 : len <= 40 ? 17 : 15;
+  const line = Math.round(size * 1.25);
+  return el('div', {
+    display: 'flex', flexDirection: RTL.test(name) ? 'row-reverse' : 'row', flexWrap: 'wrap',
+    justifyContent: RTL.test(name) ? 'flex-start' : 'flex-end', alignContent: 'flex-start',
+    columnGap: size * 0.3, width, maxHeight: line * 2, overflow: 'hidden', lineHeight: `${line}px`,
+  }, words.map(w => say(w, { fontSize: size, fontWeight: 700, height: line })));
+}
+
 export async function renderShop(items: ShopItem[]): Promise<Buffer | null> {
   try {
     // The whole catalogue fits (17 active products on 2026-10-13); past 18 the rest are in the menu.
@@ -205,7 +231,7 @@ export async function renderShop(items: ShopItem[]): Promise<Buffer | null> {
       }, [
         markTile(p.name, 64, p.image),
         el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, width: textW }, [
-          say(p.name, { fontSize: 20, fontWeight: 700, maxWidth: textW, overflow: 'hidden' }),
+          wrapName(p.name, textW),
           el('div', { ...RTL_ROW, alignItems: 'center', justifyContent: 'space-between', width: textW }, [
             say(`${fa(p.price)} سکه`, { fontSize: 22, fontWeight: 700, color: '#d6eaff', textShadow: `0 0 14px ${BRAND.blue}aa` }),
             say(soldOut ? 'تمام شد' : p.left === null ? 'نامحدود' : `${fa(p.left)} عدد مانده`,

@@ -138,7 +138,7 @@ export const glass = (w: number, h: number, inset = 24) => el('div', {
   background: 'rgba(255,255,255,0.055)', border: '2px solid rgba(214,234,255,0.18)',
 });
 
-const RTL = /[؀-ۿﭐ-﷿ﹰ-﻿]/;
+export const RTL = /[؀-ۿﭐ-﷿ﹰ-﻿]/;
 const PICTOGRAPHS = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu;
 
 /**
