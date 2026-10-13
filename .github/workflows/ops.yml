@@ -33,6 +33,7 @@ on:
           - eco-product
           - eco-images
           - eco-launch
+          - eco-audit
       product:
         description: 'eco-product only — JSON: {"name","price","stockPerMonth","perUserMonth","description","note","sortOrder"}; add "id" to edit an existing one'
         type: string
