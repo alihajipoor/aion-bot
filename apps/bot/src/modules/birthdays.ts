@@ -1,8 +1,9 @@
-import { ChannelType, Events, type Guild, type Message, type PartialMessage, type TextChannel } from 'discord.js';
+import { AttachmentBuilder, ChannelType, Events, type Guild, type Message, type PartialMessage, type TextChannel } from 'discord.js';
 import { and, eq } from 'drizzle-orm';
 import { getDb, birthdays } from '@aion/db';
 import { parseBirthday, isBirthdayToday, tehranToday, tehranHour, type Birthday } from '../lib/birthday.js';
 import { asciiFold } from '../lib/text.js';
+import { renderBirthday, avatarOf } from '../lib/cards.js';
 import { logger } from '../lib/log.js';
 import { config } from '../config.js';
 import type { AionClient } from '../client.js';
@@ -102,7 +103,13 @@ async function wish(g: Guild): Promise<void> {
 
     const tags = due.map(r => `<@${r.userId}>`).join(' ');
     const many = due.length > 1;
+    // The card is a gift on top of the wish, never a condition of it.
+    const card = await renderBirthday(await Promise.all(due.map(async r => {
+      const m = g.members.cache.get(r.userId);
+      return { name: m?.displayName ?? r.userId, avatar: await avatarOf(m) };
+    })));
     await ch.send({
+      ...(card ? { files: [new AttachmentBuilder(card, { name: 'birthday.png' })] } : {}),
       content: [
         '@here',
         `# 🎂 تولد${many ? 'تون' : 'ت'} مبارک! 🎉`,

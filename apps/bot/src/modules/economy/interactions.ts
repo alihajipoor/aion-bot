@@ -1,5 +1,5 @@
 import {
-  ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle,
+  ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle,
   type ButtonInteraction, type Guild, type GuildMember, type ModalSubmitInteraction,
   type StringSelectMenuInteraction, type InteractionReplyOptions,
 } from 'discord.js';
@@ -7,6 +7,7 @@ import { getDb } from '@aion/db';
 import * as L from '../../lib/economy/ledger.js';
 import { REFUSAL_TEXT } from '../../lib/economy/rules.js';
 import { settings } from '../../lib/settings.js';
+import { renderWallet, renderReceipt, avatarOf } from '../../lib/cards.js';
 import {
   ECO, isDev, isVerified, isEcoStaff, memberDays, ecoLog, postOrderCard, refreshOrderCard,
   ensureShopPost, stockLine,
@@ -42,6 +43,37 @@ export async function coinsSummary(g: Guild, userId: string, self: boolean): Pro
   }
   if (!r.enabled) lines.push('-# Economy hanooz shoru nashode.');
   return lines.join('\n');
+}
+
+/**
+ * /coins as a wallet card. The card carries the numbers; the text beside it
+ * keeps only what a picture cannot do well — a live expiry countdown, a
+ * frozen notice. If the card cannot be drawn, the full text summary goes
+ * instead, so the answer is never missing.
+ */
+export async function walletReply(g: Guild, userId: string, self: boolean): Promise<InteractionReplyOptions> {
+  const r = settings().economy;
+  const a = await L.getAccount(db(), g.id, userId);
+  const member = g.members.cache.get(userId) ?? await g.members.fetch(userId).catch(() => null);
+  const top = await L.topEarners(db(), g.id, new Date(Date.now() - 7 * 86_400_000), 1000);
+  const at = top.findIndex(x => x.userId === userId);
+  const png = await renderWallet({
+    name: member?.displayName ?? userId, avatar: await avatarOf(member),
+    balance: a?.balance ?? 0, minutes: a?.voiceMinutes ?? 0, perCoin: r.minutesPerCoin,
+    earned: a?.earned ?? 0, invites: await L.inviteEarnings(db(), g.id, userId),
+    rank: at >= 0 ? at + 1 : null, frozen: Boolean(a?.frozen),
+    pending: (await L.listOrders(db(), g.id, { userId, status: 'pending', limit: 50 })).length,
+  });
+  if (!png) return eph(await coinsSummary(g, userId, self));
+  const notes: string[] = [];
+  if (!self) notes.push(`<@${userId}>`);
+  if (a?.frozen) notes.push('🧊 **Freeze shode** — na coin migire na mitoone kharid kone.');
+  if ((a?.balance ?? 0) > 0) {
+    const since = a?.lastVoiceAt ?? a?.createdAt ?? new Date();
+    notes.push(`-# Bedoon-e voice ${t(new Date(since.getTime() + r.inactivityDays * 86_400_000))} monghazi mishe`);
+  }
+  if (!r.enabled) notes.push('-# Economy hanooz shoru nashode.');
+  return eph(notes.join('\n') || '​', { files: [new AttachmentBuilder(png, { name: 'wallet.png' })] });
 }
 
 /** The buyer's own orders, with a cancel button on each one still pending. */
@@ -102,9 +134,14 @@ async function buy(i: ButtonInteraction, productId: number, price: number): Prom
     await i.editReply({ content: `❌ ${msg}`, components: [] });
     return;
   }
+  const receipt = await renderReceipt({
+    orderId: res.order.id, product: res.order.productName, price: res.order.price, balance: res.balance,
+    name: member.displayName, avatar: await avatarOf(member), at: res.order.createdAt,
+  });
   await i.editReply({
     content: `✅ Sefaresh **#${res.order.id}** sabt shod — **${res.order.productName}** · ${res.order.price} coin kam shod, mojoodi: **${res.balance}**.\n` +
       'Dev be zoodi barresi mikone va code ro DM mifreste. Vaziat: `/orders`',
+    ...(receipt ? { files: [new AttachmentBuilder(receipt, { name: 'receipt.png' })] } : {}),
     components: [],
   });
   await postOrderCard(g, res.order);
@@ -138,7 +175,13 @@ export async function handleButton(i: ButtonInteraction): Promise<void> {
   const g = i.guild!;
   const member = i.member as GuildMember;
 
-  if (action === 'me')     { await i.reply(eph(await coinsSummary(g, member.id, true))); return; }
+  if (action === 'me') {
+    // Acknowledged first: drawing the card and fetching an avatar can outlast Discord's three seconds.
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    const { flags: _f, ...reply } = await walletReply(g, member.id, true);
+    await i.editReply(reply as never);
+    return;
+  }
   if (action === 'orders') { await i.reply(await myOrders(g, member.id)); return; }
   if (action === 'buy')    { await buy(i, Number(a1), Number(a2)); return; }
 

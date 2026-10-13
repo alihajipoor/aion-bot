@@ -16,7 +16,7 @@ const ART = join(ASSETS, 'banners');
 let fonts: { name: string; data: Buffer; weight: 400 | 700; style: 'normal' }[] | null = null;
 
 /** Vazirmatn covers Latin and Persian, so one family renders every name. */
-async function loadFonts() {
+export async function loadFonts() {
   if (fonts) return fonts;
   const [regular, bold] = await Promise.all([
     readFile(join(FONTS, 'Vazirmatn-Regular.ttf')),
@@ -30,7 +30,7 @@ async function loadFonts() {
 }
 
 /* Satori takes plain objects, so no JSX build step is needed. */
-const el = (type: string, style: Record<string, unknown>, children?: unknown): unknown =>
+export const el = (type: string, style: Record<string, unknown>, children?: unknown): unknown =>
   ({ type, props: { style, ...(children === undefined ? {} : { children }) } });
 
 /* ── shared AION identity ──────────────────────────────────────── */
@@ -40,7 +40,7 @@ const el = (type: string, style: Record<string, unknown>, children?: unknown): u
  * a welcome banner and a staff report read as the same server rather than as
  * three unrelated pictures.
  */
-const BRAND = {
+export const BRAND = {
   ink: '#05060c',
   text: '#f2f8ff',
   dim: 'rgba(180,205,235,0.62)',
@@ -54,7 +54,7 @@ const BRAND = {
  * the same mark that fronts every verified nickname, so the server header, the
  * banners and the member list all carry one glyph.
  */
-const WORDMARK = 'ION';
+export const WORDMARK = 'ION';
 
 /**
  * Vazirmatn carries no Greek, so U+039B renders as nothing and "ΛION" comes
@@ -65,7 +65,7 @@ const WORDMARK = 'ION';
  * glyph or hand-drawing bars that never quite match. The weight, the stroke
  * contrast and the glow are the typeface's, because it is the typeface.
  */
-const lambda = (size: number) => el('div', {
+export const lambda = (size: number) => el('div', {
   display: 'flex', transform: 'rotate(180deg)',
   // A rotated V carries its baseline at the top and its apex where the
   // descender space was, so it lands low against the rest of the word. The
@@ -92,11 +92,69 @@ const glows = (accent: string) => [
 ];
 
 /** The signature lit rift, used as a divider wherever a rule is needed. */
-const rift = (width: number, accent: string, strong = true) => el('div', {
+export const rift = (width: number, accent: string, strong = true) => el('div', {
   display: 'flex', width, height: strong ? 2 : 1,
   backgroundImage: `linear-gradient(90deg, ${accent}00 0%, ${accent} 22%, #ffffff 50%, ${accent} 78%, ${accent}00 100%)`,
   ...(strong ? { boxShadow: `0 0 18px 2px ${accent}80` } : {}),
 });
+
+/**
+ * The aurora: the header's light from the upper right in the image's accent,
+ * a deep indigo answering it from the lower left, and a faint ice bloom between
+ * them. Chosen by the owner on 2026-10-13 ("option C") over the flatter glows.
+ */
+export const aurora = (w: number, h: number, accent: string) => [
+  el('div', { ...absolute, top: -h * 0.5, right: -w * 0.13, width: w * 0.64, height: w * 0.64, borderRadius: w,
+    backgroundImage: `radial-gradient(circle, ${accent}88 0%, rgba(5,6,12,0) 68%)` }),
+  el('div', { ...absolute, bottom: -h * 0.58, left: -w * 0.12, width: w * 0.57, height: w * 0.57, borderRadius: w,
+    backgroundImage: 'radial-gradient(circle, rgba(60,90,255,0.45) 0%, rgba(5,6,12,0) 68%)' }),
+  el('div', { ...absolute, top: h * 0.3, left: w * 0.35, width: w * 0.32, height: w * 0.32, borderRadius: w,
+    backgroundImage: 'radial-gradient(circle, rgba(120,220,255,0.20) 0%, rgba(5,6,12,0) 70%)' }),
+];
+
+/**
+ * The frosted panel the content sits on. No drop shadow: resvg panics on a
+ * blurred shadow under a translucent fill, which takes the whole bot with it.
+ */
+export const glass = (w: number, h: number, inset = 24) => el('div', {
+  ...absolute, top: inset, left: inset, width: w - inset * 2, height: h - inset * 2, borderRadius: 30,
+  background: 'rgba(255,255,255,0.055)', border: '2px solid rgba(214,234,255,0.18)',
+});
+
+const RTL = /[؀-ۿﭐ-﷿ﹰ-﻿]/;
+const PICTOGRAPHS = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu;
+
+/**
+ * A line of text the way a member wrote it.
+ *
+ * Satori has no Λ — Vazirmatn carries no Greek — so every "Λ | Name" came out
+ * as "| Name"; the Λ is drawn from the font's own V, as in the wordmark.
+ *
+ * Persian it orders correctly by itself, but inside one text node it drops the
+ * space between some words ("کیف پول آیون" came out "آیون‌پول کیف"). So a line
+ * with Persian in it is set one word per box, in the order it was written, and
+ * satori runs the boxes right to left. Reversing them first — the obvious fix —
+ * reverses them twice; tools/design/rtl-test.mjs is the proof either way.
+ *
+ * Emoji are dropped: the font has none, and they rendered as empty gaps.
+ */
+export function say(text: string, style: Record<string, unknown> = {}): unknown {
+  const plain = (plainName(text) || text).replace(PICTOGRAPHS, '').replace(/\s+/g, ' ').trim();
+  const size = Number(style.fontSize ?? 20);
+  const word = (w: string) => el('div', { display: 'flex', alignItems: 'center', whiteSpace: 'pre' },
+    w.split('Λ').flatMap((p, i) => [...(i ? [lambda(size)] : []), ...(p ? [p] : [])]));
+  if (RTL.test(plain)) {
+    return el('div', { display: 'flex', alignItems: 'center', gap: size * 0.3, ...style },
+      plain.split(' ').filter(Boolean).map(word));
+  }
+  return el('div', { display: 'flex', alignItems: 'center', ...style }, [word(plain)]);
+}
+
+/** Render a tree. Shared so every card is drawn with the same fonts the same way. */
+export async function draw(tree: unknown, w: number, h: number): Promise<Buffer> {
+  const svg = await satori(tree as never, { width: w, height: h, fonts: await loadFonts() });
+  return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: w } }).render().asPng());
+}
 
 /** Title block on the left, AION lockup on the right. */
 const header = (opts: { kicker: string; title: string; subtitle: string; accent: string }) =>
@@ -137,7 +195,8 @@ async function frame(opts: {
     width: WIDTH, height: opts.height, padding: PAD,
     background: BRAND.ink, fontFamily: 'Vazirmatn', gap: 26,
   }, [
-    ...glows(opts.accent),
+    ...aurora(WIDTH, opts.height, opts.accent),
+    glass(WIDTH, opts.height, 22),
     header(opts),
     rift(CONTENT, opts.accent),
     el('div', { display: 'flex', flexDirection: 'column', gap: 14, width: CONTENT }, opts.body),
@@ -207,10 +266,10 @@ export async function renderLeaderboardBanner(opts: {
               el('div', {
                 display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', width: col,
               }, [
-                el('div', {
-                  display: 'flex', fontSize: 25, fontWeight: 700, maxWidth: col - 190,
+                say(r.name || '—', {
+                  fontSize: 25, fontWeight: 700, maxWidth: col - 190,
                   overflow: 'hidden', color: i === 0 ? BRAND.text : '#dbe4f2',
-                }, plainName(r.name) || '—'),
+                }),
                 el('div', {
                   display: 'flex', fontSize: 21, fontWeight: 700, color: opts.accent,
                 }, r.value),

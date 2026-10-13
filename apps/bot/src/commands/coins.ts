@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, MessageFlags, type GuildMember } from 'discord.js';
-import { coinsSummary } from '../modules/economy/interactions.js';
+import { walletReply } from '../modules/economy/interactions.js';
 import { isEcoStaff } from '../modules/economy/index.js';
 import type { Command } from '../types.js';
 
@@ -15,10 +15,10 @@ const command: Command = {
       return;
     }
     const id = target?.id ?? i.user.id;
-    await i.reply({
-      content: await coinsSummary(i.guild!, id, id === i.user.id),
-      flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] },
-    });
+    // Acknowledged first: drawing the wallet card can outlast Discord's three seconds.
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    const { flags: _f, ...reply } = await walletReply(i.guild!, id, id === i.user.id);
+    await i.editReply(reply as never);
   },
 };
 export default command;

@@ -1,8 +1,10 @@
 import {
-  ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, ContainerBuilder, Events, MessageFlags,
-  SeparatorBuilder, StringSelectMenuBuilder, TextDisplayBuilder,
+  ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, ChannelType, ContainerBuilder, Events,
+  MediaGalleryBuilder, MediaGalleryItemBuilder, MessageFlags, SeparatorBuilder, StringSelectMenuBuilder, TextDisplayBuilder,
   type Guild, type GuildMember, type MessageCreateOptions, type PartialGuildMember, type TextChannel,
 } from 'discord.js';
+import { renderShop } from '../../lib/cards.js';
+import { renderLeaderboardBanner, BRAND } from '../../lib/banner.js';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { getDb, memberJoins, ecoInviteCredits } from '@aion/db';
 import * as L from '../../lib/economy/ledger.js';
@@ -215,8 +217,35 @@ async function upsertPost(ch: TextChannel, body: MessageCreateOptions): Promise<
   const mine = [...(recent?.values() ?? [])].filter(m => m.author.id === ch.client.user?.id);
   const [keep, ...extra] = mine;
   for (const m of extra) await m.delete().catch(() => {});
-  if (keep) await keep.edit(body as never).catch(async () => { await keep.delete().catch(() => {}); await ch.send(body); });
+  // An edit adds files to the ones already there; `attachments: []` replaces them,
+  // so the card is swapped rather than piling up a new copy each time.
+  const edit = body.files ? { ...body, attachments: [] } : body;
+  if (keep) await keep.edit(edit as never).catch(async () => { await keep.delete().catch(() => {}); await ch.send(body); });
   else await ch.send(body);
+}
+
+/** A rendered card as a file and the gallery that shows it inside a container. */
+const picture = (png: Buffer, name: string) => ({
+  file: new AttachmentBuilder(png, { name }),
+  gallery: new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${name}`)),
+});
+
+/**
+ * The shop card is drawn once per change, not once per post: rendering blocks
+ * the event loop for a few hundred milliseconds, and the hourly refresh would
+ * otherwise redraw an identical picture every time.
+ */
+let shopCard: { key: string; png: Buffer } | null = null;
+async function shopPicture(products: L.ProductView[]): Promise<Buffer | null> {
+  const items = products.map(p => ({
+    id: p.id, name: p.name, price: p.price, stock: p.stockPerMonth,
+    left: p.stockPerMonth === null ? null : Math.max(0, p.stockPerMonth - p.soldThisMonth),
+  }));
+  const key = JSON.stringify(items);
+  if (shopCard?.key === key) return shopCard.png;
+  const png = await renderShop(items);
+  if (png) shopCard = { key, png };
+  return png;
 }
 
 export const shopButtons = () => new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -241,11 +270,20 @@ export async function shopBody(g: Guild): Promise<MessageCreateOptions> {
     box.addTextDisplayComponents(new TextDisplayBuilder().setContent('_Shop be zoodi baz mishe._'));
     return { components: [box], flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } };
   }
+  let file: AttachmentBuilder | null = null;
   if (!products.length) {
     box.addTextDisplayComponents(new TextDisplayBuilder().setContent('_Felan mahsooli too shop nist._'));
   } else {
-    box.addTextDisplayComponents(new TextDisplayBuilder().setContent(products.map(p =>
-      `**${p.name}** — **${p.price}** coin${stockLine(p)}` + (p.description ? `\n-# ${p.description}` : '')).join('\n')));
+    // The card shows the catalogue; the text list stays as the fallback when it cannot be drawn.
+    const png = await shopPicture(products);
+    if (png) {
+      const pic = picture(png, 'shop.png');
+      file = pic.file;
+      box.addMediaGalleryComponents(pic.gallery);
+    } else {
+      box.addTextDisplayComponents(new TextDisplayBuilder().setContent(products.map(p =>
+        `**${p.name}** — **${p.price}** coin${stockLine(p)}` + (p.description ? `\n-# ${p.description}` : '')).join('\n')));
+    }
     box.addSeparatorComponents(new SeparatorBuilder());
     box.addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
       new StringSelectMenuBuilder().setCustomId(`${ECO}|pick`).setPlaceholder('🛍 Entekhab-e mahsool baraye kharid')
@@ -257,7 +295,7 @@ export async function shopBody(g: Guild): Promise<MessageCreateOptions> {
   box.addTextDisplayComponents(new TextDisplayBuilder().setContent(
     `-# Mojoodi-ha avval-e har mah por mishe — mah-e baad ${t(nextMonthStart(new Date()), 'D')}`));
   box.addActionRowComponents(shopButtons());
-  return { components: [box], flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } };
+  return { components: [box], ...(file ? { files: [file] } : {}), flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } };
 }
 
 export async function ensureShopPost(g: Guild): Promise<void> {
@@ -302,7 +340,19 @@ export async function richestBody(g: Guild): Promise<MessageCreateOptions> {
     const m = g.members.cache.get(r.userId);
     return `${medals[i] ?? `\`${i + 1}.\``} **${isolate(m?.displayName ?? r.userId)}** — **${r.coins}** coin`;
   });
-  const box = new ContainerBuilder().setAccentColor(ACCENT).addTextDisplayComponents(new TextDisplayBuilder().setContent([
+  const png = top.length ? await renderLeaderboardBanner({
+    kicker: 'AION COIN', title: 'RICHEST', subtitle: 'Coin earned in the last 7 days — spending does not lower your rank',
+    footer: 'WEEKLY', accent: BRAND.blue,
+    rows: top.map(r => ({ name: g.members.cache.get(r.userId)?.displayName ?? r.userId, value: `${r.coins} coin`, amount: r.coins })),
+  }) : null;
+  const box = new ContainerBuilder().setAccentColor(ACCENT);
+  if (png) {
+    const pic = picture(png, 'richest.png');
+    box.addMediaGalleryComponents(pic.gallery)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(`-# Be-rooz shode ${t(new Date())}`));
+    return { components: [box], files: [pic.file], flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } };
+  }
+  box.addTextDisplayComponents(new TextDisplayBuilder().setContent([
     '# 🏆 Por-coin-tarin-ha',
     '-# Coin-e kasb shode too 7 rooz-e akhir (voice + davat) — kharj kardan rotbe-at ro kam nemikone',
     '',
