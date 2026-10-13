@@ -28,6 +28,22 @@ test('the shop draws empty, full, and past twelve items', async () => {
   assert.ok(isPng(await C.renderShop(items)));
 });
 
+test('a product picture is shrunk to a 192px square PNG; anything unreadable is refused', async () => {
+  const { Resvg } = await import('@resvg/resvg-js');
+  // A real 800x400 PNG, made here so the test needs no fixture.
+  const upload = Buffer.from(new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"><rect width="800" height="400" fill="#5865f2"/><circle cx="400" cy="200" r="150" fill="#fff"/></svg>').render().asPng());
+  const uri = C.productImage(upload, 'image/png');
+  assert.ok(uri?.startsWith('data:image/png;base64,'));
+  const png = Buffer.from(uri.split(',')[1], 'base64');
+  assert.equal(png.readUInt32BE(16), 192);   // width, from the PNG header
+  assert.equal(png.readUInt32BE(20), 192);   // height: cropped to a square
+  assert.ok(png.length < upload.length);
+  assert.equal(C.productImage(upload, 'application/pdf'), null);
+  assert.equal(C.productImage(Buffer.from('not an image at all'), 'image/png'), null);
+  // And the shop draws with it on a tile.
+  assert.ok(isPng(await C.renderShop([{ id: 1, name: 'Discord Nitro', price: 180, left: 1, stock: 3, image: uri }])));
+});
+
 test('a receipt draws', async () => {
   assert.ok(isPng(await C.renderReceipt({ orderId: 4321, product: 'Spotify Gift Card — $10', price: 180, balance: 0, name: NAMES[1], avatar: null, at: new Date() })));
 });

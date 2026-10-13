@@ -3,6 +3,7 @@ import {
 } from 'discord.js';
 import { and, eq } from 'drizzle-orm';
 import { getDb, ecoProducts } from '@aion/db';
+import { productImage } from '../lib/cards.js';
 import * as L from '../lib/economy/ledger.js';
 import { settings, saveSettings, loadSettings } from '../lib/settings.js';
 import {
@@ -93,6 +94,10 @@ const command: Command = {
       .addStringOption(o => o.setName('note').setDescription('Nokte (- = pak kardan)').setMaxLength(400))
       .addBooleanOption(o => o.setName('active').setDescription('Too shop bashe?'))
       .addIntegerOption(o => o.setName('order').setDescription('Tartib too shop')))
+    .addSubcommand(s => s.setName('image').setDescription('Aks-e mahsool (Dev) — aks ro attach kon, ya clear baraye pak kardan')
+      .addIntegerOption(o => o.setName('id').setDescription('ID-e mahsool (az /eco products)').setRequired(true))
+      .addAttachmentOption(o => o.setName('file').setDescription('Aks: PNG, JPG, GIF ya WEBP — moraba behtare'))
+      .addBooleanOption(o => o.setName('clear').setDescription('Aks ro pak kon va harf-e rangi bargarde')))
     .addSubcommand(s => s.setName('remove').setDescription('Bardashtan-e mahsool az shop (Dev)')
       .addIntegerOption(o => o.setName('id').setDescription('ID-e mahsool').setRequired(true)))
     .addSubcommand(s => s.setName('products').setDescription('Hame-ye mahsool-ha ba ID va forooshe in mah (staff)'))
@@ -227,6 +232,32 @@ const command: Command = {
       await ecoLog(g, `✏️ Mahsool \`#${id}\` **${after!.name}** ${sub === 'remove' ? 'az shop bardashte shod' : 'taghir kard'}` +
         `${changes.length ? ` — ${changes.join(', ')}` : ''} (tavassote <@${member.id}>)`);
       await say(`✅ \`#${id}\` **${after!.name}** — ${changes.length ? changes.join(', ') : 'taghiri nabood'}.`);
+      return;
+    }
+
+    if (sub === 'image') {
+      const id = i.options.getInteger('id', true);
+      const product = await L.getProduct(db(), g.id, id);
+      if (!product) { await say(`Mahsool \`#${id}\` peyda nashod.`); return; }
+      const file = i.options.getAttachment('file');
+      const clear = i.options.getBoolean('clear') ?? false;
+      if (!file && !clear) { await say('Ya ye aks attach kon (`file`), ya `clear: True` baraye pak kardan.'); return; }
+
+      let image: string | null = null;
+      if (!clear && file) {
+        if (file.size > 8 * 1024 * 1024) { await say('Aks kheili bozorge — hadde-aksar 8MB.'); return; }
+        const res = await fetch(file.url, { signal: AbortSignal.timeout(10_000) }).catch(() => null);
+        if (!res?.ok) { await say('Natoonestam aks ro begiram — dobare emtehan kon.'); return; }
+        image = productImage(Buffer.from(await res.arrayBuffer()), file.contentType ?? '');
+        if (!image) { await say('In file ro nemitoonam bekhoonam — PNG, JPG, GIF ya WEBP befrest.'); return; }
+      }
+      await getDb().update(ecoProducts).set({ image, updatedAt: new Date() })
+        .where(and(eq(ecoProducts.guildId, g.id), eq(ecoProducts.id, id)));
+      await ensureShopPost(g);
+      await ecoLog(g, `🖼 Aks-e mahsool \`#${id}\` **${product.name}** ${image ? 'avaz shod' : 'pak shod'} (tavassote <@${member.id}>)`);
+      await say(image
+        ? `🖼 Aks-e **${product.name}** sabt shod — too shop be soorat-e moraba neshoon dade mishe.`
+        : `🧹 Aks-e **${product.name}** pak shod — harf-e rangi bargasht.`);
       return;
     }
 

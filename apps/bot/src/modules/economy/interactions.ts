@@ -137,6 +137,7 @@ async function buy(i: ButtonInteraction, productId: number, price: number): Prom
   const receipt = await renderReceipt({
     orderId: res.order.id, product: res.order.productName, price: res.order.price, balance: res.balance,
     name: member.displayName, avatar: await avatarOf(member), at: res.order.createdAt,
+    image: (await L.getProduct(db(), g.id, res.order.productId))?.image ?? null,
   });
   await i.editReply({
     content: `✅ Sefaresh **#${res.order.id}** sabt shod — **${res.order.productName}** · ${res.order.price} coin kam shod, mojoodi: **${res.balance}**.\n` +

@@ -586,6 +586,12 @@ export const ecoProducts = pgTable('eco_products', {
   perUserMonth:  integer('per_user_month'),
   active:        boolean('active').notNull().default(true),
   sortOrder:     integer('sort_order').notNull().default(0),
+  /**
+   * The product's picture, as a small PNG data URI (192px square), set with
+   * /eco image. Stored here rather than linked: Discord attachment URLs are
+   * signed and expire within a day, so a link would break by tomorrow.
+   */
+  image:         text('image'),
   createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:     timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [

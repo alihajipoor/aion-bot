@@ -78,6 +78,13 @@
       "when": 1791909743539,
       "tag": "0010_blue_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791914136777,
+      "tag": "0011_fast_bishop",
+      "breakpoints": true
     }
   ]
 }

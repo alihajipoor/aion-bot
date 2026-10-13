@@ -1,0 +1,1 @@
+ALTER TABLE "eco_products" ADD COLUMN "image" text;

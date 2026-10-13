@@ -1,5 +1,6 @@
 import type { GuildMember } from 'discord.js';
 import { BRAND, aurora, glass, draw, el, fa, lambda, num, rift, say, WORDMARK } from './banner.js';
+import { Resvg } from '@resvg/resvg-js';
 import { logger } from './log.js';
 
 /**
@@ -134,7 +135,7 @@ export async function renderWallet(d: WalletData): Promise<Buffer | null> {
 
 /* ── the shop ──────────────────────────────────────────────────── */
 
-export interface ShopItem { id: number; name: string; price: number; left: number | null; stock: number | null; description?: string | null }
+export interface ShopItem { id: number; name: string; price: number; left: number | null; stock: number | null; description?: string | null; image?: string | null }
 
 /**
  * A colour and a letter per kind of prize. No brand logos — they are not ours
@@ -153,7 +154,32 @@ function tone(name: string): { color: string; mark: string } {
   return { color: '#9b7cff', mark: (name.replace(/[^\p{L}]/gu, '')[0] ?? 'A').toUpperCase() };
 }
 
-const markTile = (name: string, size: number) => {
+/**
+ * An uploaded product picture, made into the 192px square PNG that is stored.
+ *
+ * The upload is drawn into an SVG and rendered by resvg — the renderer the bot
+ * already ships — which crops it to a centred square and shrinks it in one
+ * step. sharp would be the usual tool, but it is a development dependency and
+ * is not on the server. Returns null for anything resvg cannot read.
+ */
+export function productImage(bytes: Buffer, mime: string): string | null {
+  if (!/^image\/(png|jpe?g|gif|webp)$/.test(mime)) return null;
+  try {
+    const href = `data:${mime};base64,${bytes.toString('base64')}`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192">`
+      + `<image href="${href}" width="192" height="192" preserveAspectRatio="xMidYMid slice"/></svg>`;
+    const png = new Resvg(svg, { fitTo: { mode: 'width', value: 192 } }).render().asPng();
+    // An image resvg could not decode renders as nothing: an empty transparent square.
+    if (png.length < 1200) return null;
+    return `data:image/png;base64,${Buffer.from(png).toString('base64')}`;
+  } catch { return null; }
+}
+
+/** The product's own picture when it has one; otherwise its colour and initial. */
+const markTile = (name: string, size: number, image?: string | null) => {
+  if (image) return { type: 'img', props: { src: image, style: {
+    width: size, height: size, minWidth: size, borderRadius: size * 0.28, border: '1px solid rgba(214,234,255,0.22)',
+  } } };
   const t = tone(name);
   return el('div', {
     display: 'flex', width: size, height: size, minWidth: size, borderRadius: size * 0.28, alignItems: 'center', justifyContent: 'center',
@@ -176,7 +202,7 @@ export async function renderShop(items: ShopItem[]): Promise<Buffer | null> {
         background: 'rgba(255,255,255,0.05)', border: `1px solid ${soldOut ? 'rgba(180,205,235,0.10)' : 'rgba(214,234,255,0.16)'}`,
         opacity: soldOut ? 0.55 : 1,
       }, [
-        markTile(p.name, 64),
+        markTile(p.name, 64, p.image),
         el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, width: textW }, [
           say(p.name, { fontSize: 20, fontWeight: 700, maxWidth: textW, overflow: 'hidden' }),
           el('div', { ...RTL_ROW, alignItems: 'center', justifyContent: 'space-between', width: textW }, [
@@ -212,7 +238,7 @@ export async function renderShop(items: ShopItem[]): Promise<Buffer | null> {
 /* ── a receipt ─────────────────────────────────────────────────── */
 
 export async function renderReceipt(d: {
-  orderId: number; product: string; price: number; balance: number; name: string; avatar: string | null; at: Date;
+  orderId: number; product: string; price: number; balance: number; name: string; avatar: string | null; at: Date; image?: string | null;
 }): Promise<Buffer | null> {
   try {
     const H = 450, inner = W - 172;
@@ -227,10 +253,11 @@ export async function renderReceipt(d: {
         el('div', { display: 'flex', marginRight: 'auto' }, [pill(`سفارش شماره‌ی ${fa(d.orderId)}`)]),
       ]),
       el('div', { ...RTL_ROW, alignItems: 'center', gap: 22 }, [
-        markTile(d.product, 84),
+        markTile(d.product, 84, d.image),
         el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }, [
           say(d.product, { fontSize: 34, fontWeight: 700, maxWidth: 680, overflow: 'hidden' }),
-          say('در انتظار تحویل — کد رو یکی از Devها برات DM می‌کنه', { fontSize: 19, color: BRAND.dim }),
+          // No Latin words inside Persian sentences: "Devها" and "DM" read badly (owner, 2026-10-13).
+          say('در انتظار تحویل — کد رو مدیر برات دایرکت می‌کنه', { fontSize: 19, color: BRAND.dim }),
         ]),
         el('div', { display: 'flex', marginRight: 'auto', flexDirection: 'column', alignItems: 'center' }, [
           el('div', { display: 'flex', fontSize: 54, fontWeight: 700, textShadow: `0 0 26px ${BRAND.blue}aa` }, [num(fa(d.price))]),

@@ -238,10 +238,12 @@ const picture = (png: Buffer, name: string) => ({
 let shopCard: { key: string; png: Buffer } | null = null;
 async function shopPicture(products: L.ProductView[]): Promise<Buffer | null> {
   const items = products.map(p => ({
-    id: p.id, name: p.name, price: p.price, stock: p.stockPerMonth,
+    id: p.id, name: p.name, price: p.price, stock: p.stockPerMonth, image: p.image,
     left: p.stockPerMonth === null ? null : Math.max(0, p.stockPerMonth - p.soldThisMonth),
   }));
-  const key = JSON.stringify(items);
+  // Keyed on when each product last changed rather than on the pictures themselves,
+  // which would make every key tens of kilobytes long.
+  const key = JSON.stringify(items.map(({ image: _i, ...rest }, n) => ({ ...rest, at: products[n]!.updatedAt.getTime() })));
   if (shopCard?.key === key) return shopCard.png;
   const png = await renderShop(items);
   if (png) shopCard = { key, png };
