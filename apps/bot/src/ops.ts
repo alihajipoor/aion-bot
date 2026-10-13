@@ -17,7 +17,12 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { getDb, giveaways, memberJoins, birthdays } from '@aion/db';
 import { isBirthdayToday } from './lib/birthday.js';
-import { createProduct, updateProduct, type ProductInput } from './modules/economy/service.js';
+import { createProduct, updateProduct, setProductImage, type ProductInput } from './modules/economy/service.js';
+import { listProducts } from './lib/economy/ledger.js';
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadSettings } from './lib/settings.js';
 import { config } from './config.js';
 import { openSeason, startSeason } from './lib/mafiaSeason.js';
@@ -214,6 +219,43 @@ async function ecoProduct(): Promise<void> {
   });
   console.log(`${r.ok ? 'ok' : 'refused'}: ${r.message}`);
   if (!r.ok) process.exitCode = 1;
+}
+
+/**
+ * Give the catalogue its pictures, from apps/bot/assets/products, matched by
+ * product name. Only products with no picture yet are touched, unless
+ * `--old replace` asks to overwrite — so a picture a Dev set by hand on the
+ * panel is never silently replaced. Same service as the panel: the shop card
+ * is redrawn and economy-log records each one.
+ */
+const PRODUCT_ART: [RegExp, string][] = [
+  [/nitro/i, 'nitro'],          // both Nitro products
+  [/steam/i, 'steam'],
+  [/spotify/i, 'spotify'],
+  [/telegram/i, 'telegram'],
+  [/neoxify|vpn/i, 'neoxify'],
+  [/voice\s*room/i, 'voice-room'],
+  [/emoji/i, 'emoji'],
+  [/irancell/i, 'irancell'],
+  [/hamrah/i, 'hamrah-aval'],
+];
+
+async function ecoImages(): Promise<void> {
+  await loadSettings(true);   // the shop post reads launch state from settings
+  const replace = flag('old') === 'replace';
+  const actor = flag('user') ?? '';
+  const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'products');
+  await withGuild(async g => {
+    const products = await listProducts(getDb() as never, config.guildId, { activeOnly: false });
+    for (const p of products) {
+      const art = PRODUCT_ART.find(([re]) => re.test(p.name))?.[1];
+      if (!art) { console.log(`  -       #${p.id} ${p.name} — no picture for this one`); continue; }
+      if (p.image && !replace) { console.log(`  kept    #${p.id} ${p.name} — already has a picture`); continue; }
+      if (!existsSync(join(dir, `${art}.png`))) { console.log(`  -       #${p.id} ${p.name} — ${art}.png not in assets yet`); continue; }
+      const r = await setProductImage(g, p.id, await readFile(join(dir, `${art}.png`)), 'image/png', actor || g.client.user!.id);
+      console.log(`  ${r.ok ? 'set    ' : 'FAILED '} #${p.id} ${p.name} ← ${art}.png${r.ok ? '' : ` — ${r.message}`}`);
+    }
+  });
 }
 
 async function close(): Promise<void> {
@@ -473,6 +515,7 @@ const tasks: Record<string, () => Promise<void>> = {
   'giveaway-close': close,
   birthdays: birthdayStatus,
   'eco-product': ecoProduct,
+  'eco-images': ecoImages,
 };
 
 const run = task ? tasks[task] : undefined;

@@ -188,11 +188,14 @@ const markTile = (name: string, size: number, image?: string | null) => {
 
 export async function renderShop(items: ShopItem[]): Promise<Buffer | null> {
   try {
-    const shown = items.slice(0, 12);
+    // The whole catalogue fits (17 active products on 2026-10-13); past 18 the rest are in the menu.
+    const shown = items.slice(0, 18);
     const cols = 3, gap = 18;
     const rows = Math.max(1, Math.ceil(shown.length / cols));
     const tileW = Math.floor((W - 172 - gap * (cols - 1)) / cols), tileH = 128, textW = tileW - 36 - 80;
-    const H = 236 + rows * tileH + (rows - 1) * gap + (items.length > shown.length ? 40 : 0) + 70;
+    // Header block (label, title, subtitle, rift) ≈ 290px inside the glass; the
+    // first version allowed 236 and the last row of tiles hung off the panel.
+    const H = 290 + rows * tileH + (rows - 1) * gap + (items.length > shown.length ? 40 : 0) + 76;
     const tile = (p: ShopItem) => {
       const soldOut = p.left !== null && p.left <= 0;
       return el('div', {
