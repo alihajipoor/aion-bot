@@ -12,6 +12,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
         ...(init?.headers ?? {}),
       },
       cache: 'no-store',
+      // A bot that is restarting or stuck must not hang the page on its skeleton:
+      // after this the page renders its "bot offline" state instead.
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
     return await res.json() as T;
@@ -27,6 +30,9 @@ export async function callBinary(path: string): Promise<ArrayBuffer | null> {
     const res = await fetch(`${env.botApi()}${path}`, {
       headers: { Authorization: `Bearer ${env.botApiSecret()}` },
       cache: 'no-store',
+      // A bot that is restarting or stuck must not hang the page on its skeleton:
+      // after this the page renders its "bot offline" state instead.
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
     return await res.arrayBuffer();

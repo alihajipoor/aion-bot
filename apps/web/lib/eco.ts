@@ -14,6 +14,8 @@ async function eco<T>(path: string, init?: RequestInit): Promise<T | null> {
       ...init,
       headers: { 'content-type': 'application/json', Authorization: `Bearer ${env.botApiSecret()}`, ...(init?.headers ?? {}) },
       cache: 'no-store',
+      // Longer than bot.ts: a picture upload and a DM to the buyer take a moment.
+      signal: AbortSignal.timeout(15000),
     });
     if (res.status >= 500 || res.status === 401 || res.status === 404 && !path.startsWith('/eco/member')) return null;
     return await res.json() as T;
