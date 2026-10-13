@@ -283,3 +283,17 @@ test('weekly board counts coins earned, not coins held: spending does not drop y
   const top = await L.topEarners(db, G, new Date(0));
   assert.deepEqual(top.map(t => [t.userId, t.coins]), [[A, 2], [B, 1]]);
 });
+
+test('a member wearing the server tag earns two coins an hour, and the ledger says why', async () => {
+  const db = await fresh();
+  for (let i = 0; i < 60; i++) await L.creditVoiceMinute(db, G, [A], 60, 2);
+  assert.equal(await balance(db), 2);
+  const rows = await L.history(db, G, A, 10);
+  assert.ok(rows.every(r => r.reason === 'voice · AION tag ×2'));
+});
+
+test('the tag does not touch invite coins: still one per invite', async () => {
+  const db = await fresh();
+  assert.equal(await invite(db), 'credited');
+  assert.equal(await balance(db, A), 1);
+});

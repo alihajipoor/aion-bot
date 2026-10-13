@@ -10,7 +10,7 @@ import { settings } from '../../lib/settings.js';
 import { renderWallet, renderReceipt, avatarOf } from '../../lib/cards.js';
 import { decideOrder, cancelOwnOrder, decideInvite, type Act } from './service.js';
 import {
-  ECO, isDev, isVerified, isEcoStaff, memberDays, ecoLog, postOrderCard, refreshOrderCard,
+  ECO, isDev, isVerified, isEcoStaff, memberDays, ecoLog, postOrderCard, refreshOrderCard, wearsTag,
   ensureShopPost, stockLine,
 } from './index.js';
 
@@ -63,6 +63,7 @@ export async function walletReply(g: Guild, userId: string, self: boolean): Prom
     balance: a?.balance ?? 0, minutes: a?.voiceMinutes ?? 0, perCoin: r.minutesPerCoin,
     earned: a?.earned ?? 0, invites: await L.inviteEarnings(db(), g.id, userId),
     rank: at >= 0 ? at + 1 : null, frozen: Boolean(a?.frozen),
+    tagMultiplier: member && wearsTag(g, member) ? r.tagMultiplier : 1,
     pending: (await L.listOrders(db(), g.id, { userId, status: 'pending', limit: 50 })).length,
   });
   if (!png) return eph(await coinsSummary(g, userId, self));

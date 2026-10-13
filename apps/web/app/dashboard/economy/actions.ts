@@ -51,7 +51,7 @@ export async function rulesAction(_p: EcoResult | null, f: FormData): Promise<Ec
   const who = await asDev(); if ('ok' in who) return who;
   const n = (k: string) => Math.round(Number(str(f, k)));
   const rules: Partial<Economy> = {
-    minutesPerCoin: n('minutesPerCoin'), minAccountAgeDays: n('minAccountAgeDays'),
+    minutesPerCoin: n('minutesPerCoin'), tagMultiplier: n('tagMultiplier'), minAccountAgeDays: n('minAccountAgeDays'),
     requireCompany: f.get('requireCompany') === 'on', excludeDeafened: f.get('excludeDeafened') === 'on',
     excludedChannels: str(f, 'excludedChannels').split(',').map(s => s.trim()).filter(Boolean),
     inviteCoins: n('inviteCoins'), inviteRevokeHours: n('inviteRevokeHours'),

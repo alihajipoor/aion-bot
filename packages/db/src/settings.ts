@@ -106,6 +106,8 @@ export interface AionSettings {
     launchedAt: string | null;
     /** Eligible voice minutes per coin. 60 is the published 1 coin an hour. */
     minutesPerCoin: number;
+    /** Voice earns this many times faster while wearing the AION server tag (2 = 2 coins an hour). Invites are unaffected. */
+    tagMultiplier: number;
     /** An account younger than this neither earns nor makes its inviter earn. */
     minAccountAgeDays: number;
     /** Need at least one other eligible person in the room. */
@@ -221,6 +223,7 @@ export const DEFAULT_SETTINGS: AionSettings = {
     enabled: false,
     launchedAt: null,
     minutesPerCoin: 60,
+    tagMultiplier: 2,
     minAccountAgeDays: 30,
     requireCompany: true,
     excludeDeafened: true,
@@ -328,6 +331,7 @@ export function sanitise(s: AionSettings): AionSettings {
     economy: {
       ...s.economy,
       minutesPerCoin: clamp(s.economy.minutesPerCoin, 1, 1440, 60),
+      tagMultiplier: clamp(s.economy.tagMultiplier, 1, 10, 2),
       minAccountAgeDays: clamp(s.economy.minAccountAgeDays, 0, 365, 30),
       excludedChannels: s.economy.excludedChannels.map(c => c.trim()).filter(Boolean).slice(0, 30),
       inviteCoins: clamp(s.economy.inviteCoins, 0, 100, 1),

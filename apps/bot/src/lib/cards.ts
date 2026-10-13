@@ -85,12 +85,17 @@ export interface WalletData {
   balance: number; minutes: number; perCoin: number;
   earned: number; invites: number; rank: number | null;
   frozen: boolean; pending: number;
+  /** Wearing the AION server tag: voice earns `tagMultiplier` times faster. */
+  tagMultiplier?: number;
 }
 
 export async function renderWallet(d: WalletData): Promise<Buffer | null> {
   try {
     const H = 520, inner = W - 172;
-    const facts = [`کسب‌شده ${fa(d.earned)}`, `دعوت ${fa(d.invites)}`, ...(d.pending ? [`${fa(d.pending)} سفارش باز`] : [])];
+    const facts = [
+      ...(d.tagMultiplier && d.tagMultiplier > 1 ? [`تگ آیون: ${fa(d.tagMultiplier)} برابر`] : []),
+      `کسب‌شده ${fa(d.earned)}`, `دعوت ${fa(d.invites)}`, ...(d.pending ? [`${fa(d.pending)} سفارش باز`] : []),
+    ];
     return await draw(ground(H, [inside(H, { justifyContent: 'space-between' }, [
       // avatar, name and title on the right; the rank on the left
       el('div', { ...RTL_ROW, alignItems: 'center', gap: 22 }, [

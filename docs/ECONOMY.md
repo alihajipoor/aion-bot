@@ -15,7 +15,8 @@ the ledger ones against a real Postgres (PGlite).
 | How | Coins | Conditions |
 |---|---|---|
 | Voice | 1 per hour, credited by the minute | verified · not in AFK or an excluded room · not deafened · account 30+ days old · at least one other person who also qualifies in the room |
-| Invite | 1 per invitee | paid when the invitee is **verified**, not when they join · joined through the inviter's link after launch · account 30+ days old when they joined · new to the server · once per person, ever |
+| Voice, wearing the AION server tag | **2 per hour** (`tagMultiplier`, default 2) | the same conditions — the tag changes the rate, never whether a minute counts. Read from the member's profile; the member list is re-read every 30 minutes, so putting the tag on or off takes effect within half an hour |
+| Invite | 1 per invitee (the server tag does not change this) | paid when the invitee is **verified**, not when they join · joined through the inviter's link after launch · account 30+ days old when they joined · new to the server · once per person, ever |
 
 No daily cap. Staff earn and buy like everyone else.
 

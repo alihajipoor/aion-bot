@@ -65,6 +65,25 @@ const who = (g: Guild, id: string) => {
 
 /* ── earning: one sample a minute ──────────────────────────────── */
 
+/**
+ * Wearing the AION server tag: the profile's primary guild is this one and it
+ * is switched on. Read from the member cache, which refreshMembers keeps
+ * current — a tag put on or taken off counts within half an hour.
+ */
+export const wearsTag = (g: Guild, m: GuildMember): boolean =>
+  m.user.primaryGuild?.identityGuildId === g.id && m.user.primaryGuild.identityEnabled !== false;
+
+/**
+ * Discord does not tell a bot when a member changes their server tag, so the
+ * member list — which carries every member's tag — is re-read every half hour.
+ * One chunked gateway request for the whole server, not one call per member.
+ */
+async function refreshMembers(client: AionClient): Promise<void> {
+  const g = client.guilds.cache.get(config.guildId);
+  if (!g || !eco().enabled) return;
+  await g.members.fetch({ time: 60_000 }).catch(e => log.warn('member refresh for server tags failed', (e as Error).message));
+}
+
 let sampling = false;
 
 async function sample(client: AionClient): Promise<void> {
@@ -82,6 +101,7 @@ async function sample(client: AionClient): Promise<void> {
       .map(vs => ({
         userId: vs.id, channelId: vs.channelId!, bot: vs.member!.user.bot,
         verified: isVerified(vs.member!), deafened: Boolean(vs.selfDeaf || vs.serverDeaf),
+        tagged: wearsTag(g, vs.member!),
       }));
     const s = voiceEarners(people, {
       afkChannelId: g.afkChannelId, excludedChannelIds: excluded,
@@ -90,6 +110,7 @@ async function sample(client: AionClient): Promise<void> {
     });
     await L.touchVoice(db(), g.id, s.present, new Date());
     await L.creditVoiceMinute(db(), g.id, s.earners, r.minutesPerCoin);
+    await L.creditVoiceMinute(db(), g.id, s.tagged, r.minutesPerCoin, r.tagMultiplier);
   } catch (e) {
     log.error('voice sample failed — this minute was not credited', e);
   } finally {
@@ -312,6 +333,7 @@ function coinsBody(shopId: string | null): MessageCreateOptions {
     '# 💰 AION Coin',
     '## Chetor coin begiram?',
     `🎧 **Voice:** har **${r.minutesPerCoin === 60 ? 'saat' : `${r.minutesPerCoin} daghighe`}** too voice = **1 coin**`,
+    ...(r.tagMultiplier > 1 ? [`🏷 **Tag-e AION** roo profile-et bashe: har saat voice = **${r.tagMultiplier} coin** _(davat hamoon ${r.inviteCoins} coin mimoone)_`] : []),
     `-# Bayad verify shode bashi${r.requireCompany ? ', hadeaghal ye nafar-e dige ham too room bashe' : ''}` +
       `${r.excludeDeafened ? ', deafen nabashi' : ''} va too AFK nabashi.`,
     `🎟 **Davat:** har nafari ke ba link-e to biad va **verify beshe** = **${r.inviteCoins} coin**`,
@@ -419,6 +441,8 @@ export async function refreshOrderCard(g: Guild, o: L.Order): Promise<void> {
 
 export function installEconomy(client: AionClient): void {
   const sampler = setInterval(() => void sample(client), 60_000);
+  const tags = setInterval(() => void refreshMembers(client), 30 * 60_000);
+  tags.unref?.();
   const hourly = setInterval(() => {
     const g = client.guilds.cache.get(config.guildId);
     void sweepInactive(client);

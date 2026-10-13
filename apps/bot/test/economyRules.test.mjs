@@ -155,3 +155,25 @@ test('purchase refusals, most useful first', () => {
   assert.equal(purchaseRefusal(f({ stockPerMonth: 2, soldThisMonth: 2, balance: 0 })), 'sold-out');   // sold out says so, not "too poor"
   assert.equal(purchaseRefusal(f({ minMemberDays: 14, memberDays: 3 })), 'too-new');
 });
+
+/* ── the AION server tag ───────────────────────────────────────── */
+
+test('wearing the server tag moves a member to the tag rate, and never into both lists', () => {
+  const r = voiceEarners([person(OLD1, 'room', { tagged: true }), person(OLD2)], rules());
+  assert.deepEqual(r.tagged, [OLD1]);
+  assert.deepEqual(r.earners, [OLD2]);
+});
+
+test('the tag changes the rate, not the rules: alone with a tag still earns nothing', () => {
+  assert.deepEqual(voiceEarners([person(OLD1, 'room', { tagged: true })], rules()).tagged, []);
+  assert.deepEqual(voiceEarners([person(OLD1, 'afk', { tagged: true }), person(OLD2, 'afk')], rules()).tagged, []);
+  assert.deepEqual(voiceEarners([person(NEW, 'room', { tagged: true }), person(OLD2)], rules()).tagged, []);
+});
+
+test('a tagged minute is worth two towards the next coin: two coins an hour', () => {
+  assert.deepEqual(addVoiceMinute(58, 60, 2), { coins: 1, minutes: 0 });
+  assert.deepEqual(addVoiceMinute(59, 60, 2), { coins: 1, minutes: 1 });   // the odd minute carries over
+  let m = 0, coins = 0;
+  for (let i = 0; i < 60; i++) { const s = addVoiceMinute(m, 60, 2); m = s.minutes; coins += s.coins; }
+  assert.equal(coins, 2);
+});

@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import * as C from '../../apps/bot/dist/lib/cards.js';
 const icon = `data:image/png;base64,${(await readFile('out/design/icon.png')).toString('base64')}`;
 const out = (n, b) => b ? writeFile(`out/design/card-${n}.png`, b).then(() => console.log(`out/design/card-${n}.png`)) : console.log(`${n}: FAILED`);
-await out('wallet', await C.renderWallet({ name: 'Λ | 𝗡𝗶𝗺𝗮', avatar: icon, balance: 342, minutes: 37, perCoin: 60, earned: 512, invites: 14, rank: 3, frozen: false, pending: 1 }));
+await out('wallet', await C.renderWallet({ name: 'Λ | 𝗡𝗶𝗺𝗮', avatar: icon, balance: 342, minutes: 37, perCoin: 60, earned: 512, invites: 14, rank: 3, frozen: false, pending: 1, tagMultiplier: 2 }));
 await out('shop', await C.renderShop([
   { id: 1, name: 'Discord Nitro — 1 mah', price: 180, left: 2, stock: 3 }, { id: 2, name: 'Nitro Basic — 1 mah', price: 55, left: 4, stock: 4 },
   { id: 3, name: 'Steam Gift Card — $10', price: 180, left: 0, stock: 2 }, { id: 4, name: 'Spotify Gift Card — $10', price: 180, left: 1, stock: 1 },

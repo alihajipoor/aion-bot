@@ -133,17 +133,19 @@ export async function listOrders(db: Db, guildId: string, opts: { status?: Order
  * Credit one eligible minute to each member. Returns who completed a coin.
  * A frozen account neither earns nor carries partial minutes forward.
  */
-export async function creditVoiceMinute(db: Db, guildId: string, userIds: string[], minutesPerCoin: number): Promise<string[]> {
+export async function creditVoiceMinute(db: Db, guildId: string, userIds: string[], minutesPerCoin: number, weight = 1): Promise<string[]> {
   const minted: string[] = [];
   for (const userId of userIds) {
     await db.transaction(async tx => {
       const a = await lockAccount(tx as unknown as Db, guildId, userId);
       if (a.frozen) return;
-      const step = addVoiceMinute(a.voiceMinutes, minutesPerCoin);
+      // `weight` minutes towards the next coin: 2 for a member wearing the AION server tag.
+      const step = addVoiceMinute(a.voiceMinutes, minutesPerCoin, weight);
       await tx.update(ecoAccounts).set({ voiceMinutes: step.minutes })
         .where(and(eq(ecoAccounts.guildId, guildId), eq(ecoAccounts.userId, userId)));
       if (step.coins > 0) {
-        await post(tx as unknown as Db, { guildId, userId, delta: step.coins, kind: 'voice', reason: 'voice' });
+        await post(tx as unknown as Db, { guildId, userId, delta: step.coins, kind: 'voice',
+          reason: weight > 1 ? `voice · AION tag ×${weight}` : 'voice' });
         minted.push(userId);
       }
     });

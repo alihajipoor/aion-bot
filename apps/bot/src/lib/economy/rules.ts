@@ -27,6 +27,8 @@ export interface VoicePresence {
   verified: boolean;
   /** Self- or server-deafened. */
   deafened: boolean;
+  /** Wearing the AION server tag on their profile. Optional: absent is not wearing it. */
+  tagged?: boolean;
 }
 
 export interface VoiceRules {
@@ -42,8 +44,10 @@ export interface VoiceRules {
 export interface VoiceSample {
   /** Everyone human in voice: the inactivity clock is reset for all of them. */
   present: string[];
-  /** Those whose minute earns. */
+  /** Those whose minute earns at the normal rate. */
   earners: string[];
+  /** Those whose minute earns at the server-tag rate. Never also in `earners`. */
+  tagged: string[];
 }
 
 /**
@@ -70,15 +74,23 @@ export function voiceEarners(people: VoicePresence[], r: VoiceRules): VoiceSampl
   const perRoom = new Map<string, number>();
   for (const p of ok) perRoom.set(p.channelId, (perRoom.get(p.channelId) ?? 0) + 1);
 
+  // Wearing the tag changes the rate, never whether the minute earns: the
+  // tagged still need company, verification and everything else above.
+  const earning = ok.filter(p => !r.requireCompany || (perRoom.get(p.channelId) ?? 0) >= 2);
   return {
     present: humans.map(p => p.userId),
-    earners: ok.filter(p => !r.requireCompany || (perRoom.get(p.channelId) ?? 0) >= 2).map(p => p.userId),
+    earners: earning.filter(p => !p.tagged).map(p => p.userId),
+    tagged: earning.filter(p => p.tagged).map(p => p.userId),
   };
 }
 
-/** One more eligible minute: how many whole coins it completes, and what is left over. */
-export function addVoiceMinute(minutesSoFar: number, minutesPerCoin: number): { coins: number; minutes: number } {
-  const total = minutesSoFar + 1;
+/**
+ * One more eligible minute, worth `weight` minutes towards a coin — 2 for a
+ * member wearing the server tag, so they earn 2 coins an hour. Returns how many
+ * whole coins it completes and what is left over.
+ */
+export function addVoiceMinute(minutesSoFar: number, minutesPerCoin: number, weight = 1): { coins: number; minutes: number } {
+  const total = minutesSoFar + weight;
   return { coins: Math.floor(total / minutesPerCoin), minutes: total % minutesPerCoin };
 }
 
