@@ -4,7 +4,8 @@ import {
   type Guild, type GuildMember, type MessageCreateOptions, type PartialGuildMember, type TextChannel,
 } from 'discord.js';
 import { renderShop } from '../../lib/cards.js';
-import { renderLeaderboardBanner, BRAND, fa } from '../../lib/banner.js';
+import { renderLeaderboardBanner, renderHeaderBanner, BRAND, fa } from '../../lib/banner.js';
+import { HEADERS } from '../../lib/panelArt.js';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { getDb, memberJoins, ecoInviteCredits } from '@aion/db';
 import * as L from '../../lib/economy/ledger.js';
@@ -327,10 +328,15 @@ export async function ensureShopPost(g: Guild): Promise<void> {
   try { await upsertPost(ch, await shopBody(g)); } catch (e) { log.warn('shop post failed', (e as Error).message); }
 }
 
-function coinsBody(shopId: string | null): MessageCreateOptions {
+async function coinsBody(shopId: string | null): Promise<MessageCreateOptions> {
   const r = eco();
-  const box = new ContainerBuilder().setAccentColor(ACCENT).addTextDisplayComponents(new TextDisplayBuilder().setContent([
-    '# 💰 AION Coin',
+  // The header, as on the other panels; the text title stands in if it cannot be drawn.
+  const png = await renderHeaderBanner(HEADERS.coins);
+  const pic = png ? picture(png, 'coins.png') : null;
+  const box = new ContainerBuilder().setAccentColor(ACCENT);
+  if (pic) box.addMediaGalleryComponents(pic.gallery);
+  box.addTextDisplayComponents(new TextDisplayBuilder().setContent([
+    ...(pic ? [] : ['# 💰 AION Coin']),
     '## Chetor coin begiram?',
     `🎧 **Voice:** har **${r.minutesPerCoin === 60 ? 'saat' : `${r.minutesPerCoin} daghighe`}** too voice = **1 coin**`,
     ...(r.tagMultiplier > 1 ? [`🏷 **Tag-e AION** roo profile-et bashe: har saat voice = **${r.tagMultiplier} coin** _(davat hamoon ${r.inviteCoins} coin mimoone)_`] : []),
@@ -346,14 +352,15 @@ function coinsBody(shopId: string | null): MessageCreateOptions {
     '',
     `Kharid az ${shopId ? `<#${shopId}>` : '#shop'} — dastoor-ha: \`/coins\` · \`/shop\` · \`/orders\``,
   ].join('\n')))
-    .addActionRowComponents(shopButtons());
-  return { components: [box], flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } };
+    ;
+  box.addActionRowComponents(shopButtons());
+  return { components: [box], ...(pic ? { files: [pic.file] } : {}), flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } };
 }
 
 export async function ensureCoinsPost(g: Guild): Promise<void> {
   const ch = ecoChannel(g, 'coins');
   if (!ch) return;
-  try { await upsertPost(ch, coinsBody(ecoChannel(g, 'shop')?.id ?? null)); } catch (e) { log.warn('coins post failed', (e as Error).message); }
+  try { await upsertPost(ch, await coinsBody(ecoChannel(g, 'shop')?.id ?? null)); } catch (e) { log.warn('coins post failed', (e as Error).message); }
 }
 
 export async function richestBody(g: Guild): Promise<MessageCreateOptions> {

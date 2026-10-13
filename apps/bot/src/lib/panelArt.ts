@@ -30,6 +30,12 @@ export const HEADERS = {
     subtitle: 'همه‌ی امکانات ربات با مثال — خودکار از روی تنظیمات زنده',
     tags: ['مجازات', 'تأیید هویت', 'جدول‌ها', 'اتاق شخصی', 'پنل'],
   },
+  /** The #coins instructions in AION BANK. */
+  coins: {
+    kicker: 'AION COIN', title: 'سکه‌ی آیون', accent: '#4aa6ff',
+    subtitle: 'تو ویس باش، دوستاتو دعوت کن، از فروشگاه جایزه بگیر',
+    tags: ['ویس', 'تگ آیون دو برابر', 'دعوت', 'فروشگاه'],
+  },
   /** The staff events console. */
   events: {
     kicker: 'EVENT CONTROL', title: 'کنترل ایونت‌ها', accent: '#9b6cff',
