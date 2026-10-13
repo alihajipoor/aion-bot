@@ -11,7 +11,7 @@ import { renderWallet, renderReceipt, avatarOf } from '../../lib/cards.js';
 import { decideOrder, cancelOwnOrder, decideInvite, type Act } from './service.js';
 import {
   ECO, isDev, isVerified, isEcoStaff, memberDays, ecoLog, postOrderCard, refreshOrderCard, wearsTag,
-  ensureShopPost, stockLine,
+  ensureShopPost, richestSoon, stockLine,
 } from './index.js';
 
 const db = () => getDb() as unknown as L.Db;
@@ -56,7 +56,7 @@ export async function walletReply(g: Guild, userId: string, self: boolean): Prom
   const r = settings().economy;
   const a = await L.getAccount(db(), g.id, userId);
   const member = g.members.cache.get(userId) ?? await g.members.fetch(userId).catch(() => null);
-  const top = await L.topEarners(db(), g.id, new Date(Date.now() - 7 * 86_400_000), 1000);
+  const top = await L.topBalances(db(), g.id, 1000);
   const at = top.findIndex(x => x.userId === userId);
   const png = await renderWallet({
     name: member?.displayName ?? userId, avatar: await avatarOf(member),
@@ -150,6 +150,7 @@ async function buy(i: ButtonInteraction, productId: number, price: number): Prom
   await postOrderCard(g, res.order);
   await ecoLog(g, `🛒 <@${member.id}> **${res.order.productName}** ro kharid (#${res.order.id}, ${res.order.price} coin) — mojoodi: ${res.balance}`);
   await ensureShopPost(g);
+  richestSoon(g);
 }
 
 const already = (o?: L.Order) => `Sefaresh ${o ? `ghablan **${o.status}** shode` : 'peyda nashod'}.`;

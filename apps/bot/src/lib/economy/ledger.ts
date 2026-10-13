@@ -78,6 +78,17 @@ export async function inviteEarnings(db: Db, guildId: string, userId: string): P
 }
 
 /** Most coins earned (voice + invites) since a moment: the weekly board. Spending does not lower it. */
+/**
+ * The richest board: who holds the most right now. Spending drops you down it
+ * (owner, 2026-10-13); a frozen account is left off.
+ */
+export async function topBalances(db: Db, guildId: string, limit = 10) {
+  return db.select({ userId: ecoAccounts.userId, coins: ecoAccounts.balance }).from(ecoAccounts)
+    .where(and(eq(ecoAccounts.guildId, guildId), eq(ecoAccounts.frozen, false), sql`${ecoAccounts.balance} > 0`))
+    .orderBy(desc(ecoAccounts.balance), asc(ecoAccounts.userId))
+    .limit(limit);
+}
+
 export async function topEarners(db: Db, guildId: string, since: Date, limit = 10) {
   return db.select({ userId: ecoLedger.userId, coins: sql<number>`sum(${ecoLedger.delta})::int` })
     .from(ecoLedger)

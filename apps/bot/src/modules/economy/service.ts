@@ -6,7 +6,7 @@ import { settings, saveSettings, loadSettings } from '../../lib/settings.js';
 import { productImage } from '../../lib/cards.js';
 import { isolate } from '../../lib/text.js';
 import {
-  ecoLog, ensureShopPost, ensureCoinsPost, ensureRichestPost, refreshOrderCard,
+  ecoLog, ensureShopPost, ensureCoinsPost, ensureRichestPost, richestSoon, refreshOrderCard,
 } from './index.js';
 
 /**
@@ -38,7 +38,7 @@ async function settle(g: Guild, orderId: number, to: 'delivered' | 'rejected' | 
   const res = await L.settleOrder(db(), g.id, orderId, to, { actorId, note, refund });
   if (res.ok) {
     await refreshOrderCard(g, res.order);
-    if (to !== 'delivered') await ensureShopPost(g);     // the stock is back
+    if (to !== 'delivered') { await ensureShopPost(g); richestSoon(g); }   // the stock and the coins are back
   }
   return res;
 }
@@ -106,11 +106,13 @@ export async function adjustCoins(g: Guild, userId: string, delta: number, reaso
   const r = await L.adjust(db(), g.id, userId, delta, reason.trim().slice(0, 200), actorId);
   if (!r.ok) return no(`Faghat ${r.balance} coin dare — nemishe ${-delta} ta gereft.`);
   await ecoLog(g, `${delta > 0 ? '➕' : '➖'} **${Math.abs(delta)} coin** ${delta > 0 ? 'be' : 'az'} ${who(g, userId)} tavassote <@${actorId}> — ${reason.trim()} · mojoodi: ${r.balance}`);
+  richestSoon(g);
   return ok(`Anjam shod. Mojoodi: ${r.balance} coin.`);
 }
 
 export async function setFreeze(g: Guild, userId: string, frozen: boolean, actorId: string): Promise<Act> {
   await L.setFrozen(db(), g.id, userId, frozen);
+  richestSoon(g);
   await ecoLog(g, `${frozen ? '🧊 Freeze' : '🔓 Unfreeze'}: ${who(g, userId)} tavassote <@${actorId}>`);
   return ok(frozen ? 'Freeze shod — na coin migire na kharid mikone.' : 'Az freeze dar oomad.');
 }

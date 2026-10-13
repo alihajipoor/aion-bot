@@ -274,7 +274,19 @@ test('a take-back the inviter has already spent takes what is there and says so'
   assert.equal(await balance(db, A), 0);
 });
 
-test('weekly board counts coins earned, not coins held: spending does not drop you off it', async () => {
+test('the richest board ranks by balance: spending drops you down it, frozen accounts are left off', async () => {
+  const db = await fresh();
+  const p = await product(db, { price: 5 });
+  await L.adjust(db, G, A, 8, 'start', B);
+  await L.adjust(db, G, B, 6, 'start', A);
+  assert.deepEqual((await L.topBalances(db, G)).map(t => [t.userId, t.coins]), [[A, 8], [B, 6]]);
+  await buy(db, p, A);
+  assert.deepEqual((await L.topBalances(db, G)).map(t => [t.userId, t.coins]), [[B, 6], [A, 3]]);
+  await L.setFrozen(db, G, B, true);
+  assert.deepEqual((await L.topBalances(db, G)).map(t => t.userId), [A]);
+});
+
+test('weekly earnings count coins earned, not coins held', async () => {
   const db = await fresh();
   const p = await product(db, { price: 1 });
   for (let i = 0; i < 120; i++) await L.creditVoiceMinute(db, G, [A], 60);

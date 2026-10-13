@@ -106,7 +106,7 @@ export async function renderWallet(d: WalletData): Promise<Buffer | null> {
           say(d.name, { fontSize: 36, fontWeight: 700, maxWidth: 640, overflow: 'hidden' }),
         ]),
         el('div', { display: 'flex', marginRight: 'auto' }, [
-          pill(d.frozen ? 'مسدود شده' : d.rank ? `رتبه‌ی ${fa(d.rank)} این هفته` : 'سکه‌ی آیون'),
+          pill(d.frozen ? 'مسدود شده' : d.rank ? `رتبه‌ی ${fa(d.rank)}` : 'سکه‌ی آیون'),
         ]),
       ]),
       // the balance, read from the right; the wordmark on the left

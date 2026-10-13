@@ -23,6 +23,10 @@ Voice is capped at **10 coins a day** per member (`dailyVoiceCap`; 0 turns it of
 This is a separate count from the activity leaderboard, on purpose: the board
 counts anyone in voice (AFK, alone, deafened), this pays out gift cards.
 
+#richest ranks members by **current balance**, so spending moves you down it;
+frozen accounts are left off. It redraws every 15 minutes and within seconds
+of a purchase, refund, staff give/take, freeze, leave or expiry.
+
 - **Invitee leaves within 24h of verifying** → the coin is taken back from the
   inviter. If they already spent it, only what is left is taken, and the log
   says how much could not be.

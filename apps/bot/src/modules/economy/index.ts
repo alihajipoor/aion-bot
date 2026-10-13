@@ -184,6 +184,7 @@ async function onLeave(member: GuildMember | PartialGuildMember): Promise<void> 
     if (!(await L.getAccount(db(), g.id, member.id))) return;
     const f = await L.forfeit(db(), g.id, member.id, 'leave', 'left the server');
     if (f.lost > 0 || f.cancelled.length) {
+      richestSoon(g);
       const held = f.cancelled.reduce((s, o) => s + o.price, 0);
       await ecoLog(g, [
         `📤 **${name}** (<@${member.id}>) server ro tark kard — **${f.lost} coin** az dast raft` +
@@ -221,6 +222,7 @@ async function sweepInactive(client: AionClient): Promise<void> {
       } else if (verdict === 'expire') {
         const f = await L.forfeit(db(), g.id, a.userId, 'expire', `no voice for ${r.inactivityDays} days`);
         if (f.lost > 0) {
+          richestSoon(g);
           await ecoLog(g, `⌛ ${who(g, a.userId)} — **${f.lost} coin** monghazi shod (${r.inactivityDays} rooz bedoon-e voice)`);
           const m = await g.members.fetch(a.userId).catch(() => null);
           await m?.send(`⌛ ${f.lost} AION Coin-et monghazi shod, chon ${r.inactivityDays} rooz voice nayoomadi.`).catch(() => {});
@@ -365,8 +367,7 @@ export async function ensureCoinsPost(g: Guild): Promise<void> {
 }
 
 export async function richestBody(g: Guild): Promise<MessageCreateOptions> {
-  const since = new Date(Date.now() - 7 * DAY);
-  const top = await L.topEarners(db(), g.id, since, 10);
+  const top = await L.topBalances(db(), g.id, 10);
   const medals = ['🥇', '🥈', '🥉'];
   const lines = top.map((r, i) => {
     const m = g.members.cache.get(r.userId);
@@ -375,8 +376,8 @@ export async function richestBody(g: Guild): Promise<MessageCreateOptions> {
   // Drawn even with nobody on it yet: the empty board says so, rather than the
   // channel showing bare text until the first coin is earned.
   const png = await renderLeaderboardBanner({
-    rtl: true, kicker: 'WEEKLY RICHEST', title: 'پرسکه‌ترین‌ها',
-    subtitle: 'سکه‌ی کسب‌شده در ۷ روز گذشته — خرج کردن رتبه‌ات رو کم نمی‌کنه',
+    rtl: true, kicker: 'RICHEST', title: 'پرسکه‌ترین‌ها',
+    subtitle: 'موجودی همین الان — هر چی خرج کنی، رتبه‌ات پایین میاد',
     footer: 'سکه‌ی آیون', accent: BRAND.blue,
     empty: 'هنوز کسی سکه نگرفته — اولین نفر باش',
     rows: top.map(r => ({ name: g.members.cache.get(r.userId)?.displayName ?? r.userId, value: `${fa(r.coins)} سکه`, amount: r.coins })),
@@ -390,13 +391,21 @@ export async function richestBody(g: Guild): Promise<MessageCreateOptions> {
   }
   box.addTextDisplayComponents(new TextDisplayBuilder().setContent([
     '# 🏆 Por-coin-tarin-ha',
-    '-# Coin-e kasb shode too 7 rooz-e akhir (voice + davat) — kharj kardan rotbe-at ro kam nemikone',
+    '-# Mojoodi-e hamin alan — kharj koni, rotbe-at miad paeen',
     '',
     lines.length ? lines.join('\n') : '_Hanooz kasi coin nagerefte._',
     '',
     `-# Be-rooz shode ${t(new Date())}`,
   ].join('\n')));
   return { components: [box], flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } };
+}
+
+let richestTimer: NodeJS.Timeout | null = null;
+/** Redraw #richest shortly: several changes in a few seconds share one redraw. */
+export function richestSoon(g: Guild): void {
+  if (richestTimer) return;
+  richestTimer = setTimeout(() => { richestTimer = null; void ensureRichestPost(g); }, 5_000);
+  richestTimer.unref?.();
 }
 
 export async function ensureRichestPost(g: Guild): Promise<void> {
@@ -457,9 +466,16 @@ export function installEconomy(client: AionClient): void {
   const hourly = setInterval(() => {
     const g = client.guilds.cache.get(config.guildId);
     void sweepInactive(client);
-    if (g) { void ensureRichestPost(g); void ensureShopPost(g); }
+    if (g) void ensureShopPost(g);
   }, 60 * 60_000);
-  sampler.unref?.(); hourly.unref?.();
+  // Balances move every minute someone earns; a quarter of an hour keeps the
+  // board close without re-uploading its picture every minute. Spending,
+  // refunds and staff changes redraw it at once (richestSoon).
+  const richest = setInterval(() => {
+    const g = client.guilds.cache.get(config.guildId);
+    if (g) void ensureRichestPost(g);
+  }, 15 * 60_000);
+  sampler.unref?.(); hourly.unref?.(); richest.unref?.();
 
   client.on(Events.GuildMemberRemove, m => {
     if (m.guild.id === config.guildId) void onLeave(m);
