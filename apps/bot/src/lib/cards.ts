@@ -1,5 +1,5 @@
 import type { GuildMember } from 'discord.js';
-import { BRAND, aurora, glass, draw, el, lambda, rift, say, WORDMARK } from './banner.js';
+import { BRAND, aurora, glass, draw, el, fa, lambda, num, rift, say, WORDMARK } from './banner.js';
 import { logger } from './log.js';
 
 /**
@@ -11,6 +11,12 @@ import { logger } from './log.js';
  * blue aurora. Every piece comes from banner.ts so a card, a leaderboard and the
  * header read as one server.
  *
+ * In Persian, read from the right: the layouts are mirrored, digits are
+ * Persian, and bars fill from the right. Each card carries one small English
+ * label above its Persian title — the owner's call, so the cards stay
+ * bilingual without getting crowded. Persian is never letter-spaced (it is a
+ * joined script); only those English labels are.
+ *
  * Each renderer returns null rather than throwing. A card is decoration on a
  * reply that must still be sent: the callers post their text either way.
  */
@@ -18,23 +24,27 @@ import { logger } from './log.js';
 const log = logger('cards');
 const abs = { position: 'absolute', display: 'flex' } as const;
 const W = 1200;
+const RTL_ROW = { display: 'flex', flexDirection: 'row-reverse' } as const;
 
-const label = (s: string, style: Record<string, unknown> = {}) =>
-  el('div', { display: 'flex', fontSize: 17, letterSpacing: 6, color: BRAND.dim, whiteSpace: 'pre', ...style }, s);
+/** The small English label: letter-spaced capitals, the only English on a card. */
+const kicker = (s: string, style: Record<string, unknown> = {}) => el('div', {
+  display: 'flex', fontSize: 15, fontWeight: 700, letterSpacing: 6, color: BRAND.blue, whiteSpace: 'pre', ...style,
+}, s.split('').join(' '));
 const wordmark = (size: number) => el('div', {
   display: 'flex', alignItems: 'center', fontSize: size, fontWeight: 700, letterSpacing: size * 0.16,
   color: BRAND.text, textShadow: `0 0 ${Math.round(size * 0.25)}px ${BRAND.blue}f2`,
 }, [lambda(size), el('div', { display: 'flex' }, WORDMARK)]);
+/** Fills from the right, as a Persian reader expects progress to run. */
 const bar = (w: number, fraction: number, h = 12) => el('div', {
-  display: 'flex', width: w, height: h, borderRadius: h, background: BRAND.track, border: '1px solid rgba(180,205,235,0.12)',
+  ...RTL_ROW, width: w, height: h, borderRadius: h, background: BRAND.track, border: '1px solid rgba(180,205,235,0.12)',
 }, [el('div', {
   display: 'flex', width: Math.max(h, Math.round(w * Math.min(1, Math.max(0, fraction)))), height: h, borderRadius: h,
-  backgroundImage: `linear-gradient(90deg, ${BRAND.blue}55, ${BRAND.blue} 70%, #d6eaff)`, boxShadow: `0 0 14px ${BRAND.blue}aa`,
+  backgroundImage: `linear-gradient(270deg, ${BRAND.blue}55, ${BRAND.blue} 70%, #d6eaff)`, boxShadow: `0 0 14px ${BRAND.blue}aa`,
 })]);
 const pill = (s: string) => el('div', {
   display: 'flex', padding: '10px 24px', borderRadius: 40, background: 'rgba(255,255,255,0.10)',
-  border: '1px solid rgba(214,234,255,0.22)', fontSize: 22, fontWeight: 700, color: BRAND.text,
-}, s);
+  border: '1px solid rgba(214,234,255,0.22)',
+}, [say(s, { fontSize: 22, fontWeight: 700, color: BRAND.text })]);
 
 /* ── avatars ───────────────────────────────────────────────────── */
 
@@ -60,15 +70,19 @@ export async function avatarOf(m: GuildMember | null | undefined): Promise<strin
 const avatar = (src: string | null, name: string, size: number) => src
   ? { type: 'img', props: { src, style: { width: size, height: size, borderRadius: size, border: `2px solid ${BRAND.blue}aa`, boxShadow: `0 0 28px ${BRAND.blue}66` } } }
   : el('div', {
-      display: 'flex', width: size, height: size, borderRadius: size, alignItems: 'center', justifyContent: 'center',
+      display: 'flex', width: size, height: size, minWidth: size, borderRadius: size, alignItems: 'center', justifyContent: 'center',
       fontSize: size * 0.42, fontWeight: 700, color: BRAND.text, border: `2px solid ${BRAND.blue}aa`,
       backgroundImage: `linear-gradient(140deg, ${BRAND.blue}66, rgba(60,90,255,0.35))`,
-    }, (name.replace(/[^\p{L}\p{N}]/gu, '')[0] ?? '?').toUpperCase());
+    }, (name.replace(/Λ/g, '').replace(/[^\p{L}\p{N}]/gu, '')[0] ?? '?').toUpperCase());
 
 const ground = (h: number, children: unknown[]) => el('div', {
   display: 'flex', position: 'relative', width: W, height: h, background: BRAND.ink, fontFamily: 'Vazirmatn',
   color: BRAND.text, overflow: 'hidden',
 }, [...aurora(W, h, BRAND.blue), glass(W, h, 40), ...children]);
+
+/** The content box inside the glass. */
+const inside = (h: number, style: Record<string, unknown>, children: unknown[]) =>
+  el('div', { ...abs, top: 40, left: 40, width: W - 80, height: h - 80, padding: 46, flexDirection: 'column', ...style }, children);
 
 /* ── the wallet: /coins ────────────────────────────────────────── */
 
@@ -81,35 +95,36 @@ export interface WalletData {
 
 export async function renderWallet(d: WalletData): Promise<Buffer | null> {
   try {
-    const H = 520;
-    const inner = W - 172;
-    return await draw(ground(H, [el('div', {
-      ...abs, top: 40, left: 40, width: W - 80, height: H - 80, padding: 46, flexDirection: 'column', justifyContent: 'space-between',
-    }, [
-      el('div', { display: 'flex', alignItems: 'center', gap: 22 }, [
+    const H = 520, inner = W - 172;
+    const facts = [`کسب‌شده ${fa(d.earned)}`, `دعوت ${fa(d.invites)}`, ...(d.pending ? [`${fa(d.pending)} سفارش باز`] : [])];
+    return await draw(ground(H, [inside(H, { justifyContent: 'space-between' }, [
+      // avatar, name and title on the right; the rank on the left
+      el('div', { ...RTL_ROW, alignItems: 'center', gap: 22 }, [
         avatar(d.avatar, d.name, 88),
-        el('div', { display: 'flex', flexDirection: 'column', gap: 6 }, [
-          say(d.name, { fontSize: 38, fontWeight: 700, maxWidth: 640, overflow: 'hidden' }),
-          el('div', { display: 'flex', gap: 14, alignItems: 'center' }, [
-            label('W A L L E T', { fontSize: 16 }), el('div', { display: 'flex', color: BRAND.faint }, '·'),
-            say('کیف پول آیون', { fontSize: 19, color: BRAND.dim }),
-          ]),
+        el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }, [
+          kicker('WALLET'),
+          say('کیف پول آیون', { fontSize: 22, fontWeight: 700, color: BRAND.dim }),
+          say(d.name, { fontSize: 36, fontWeight: 700, maxWidth: 640, overflow: 'hidden' }),
         ]),
-        el('div', { display: 'flex', marginLeft: 'auto' }, [
-          pill(d.frozen ? 'FROZEN' : d.rank ? `#${d.rank} this week` : 'AION COIN'),
+        el('div', { display: 'flex', marginRight: 'auto' }, [
+          pill(d.frozen ? 'مسدود شده' : d.rank ? `رتبه‌ی ${fa(d.rank)} این هفته` : 'سکه‌ی آیون'),
         ]),
       ]),
-      el('div', { display: 'flex', alignItems: 'flex-end', gap: 18 }, [
-        el('div', { display: 'flex', fontSize: 118, fontWeight: 700, lineHeight: 1, textShadow: `0 0 34px ${BRAND.blue}aa` }, String(d.balance)),
-        label('A I O N   C O I N', { marginBottom: 18, fontSize: 20, color: 'rgba(214,234,255,0.75)' }),
-        el('div', { display: 'flex', marginLeft: 'auto', marginBottom: 12 }, [wordmark(34)]),
+      // the balance, read from the right; the wordmark on the left
+      el('div', { ...RTL_ROW, alignItems: 'flex-end', gap: 18 }, [
+        el('div', { display: 'flex', fontSize: 118, fontWeight: 700, lineHeight: 1, textShadow: `0 0 34px ${BRAND.blue}aa` }, [num(fa(d.balance))]),
+        say('سکه‌ی آیون', { fontSize: 28, fontWeight: 700, color: 'rgba(214,234,255,0.75)', marginBottom: 14 }),
+        el('div', { display: 'flex', marginRight: 'auto', marginBottom: 12 }, [wordmark(34)]),
       ]),
       el('div', { display: 'flex', flexDirection: 'column', gap: 12 }, [
         rift(inner, BRAND.blue, false),
-        el('div', { display: 'flex', justifyContent: 'space-between', fontSize: 19, color: BRAND.dim }, [
-          el('div', { display: 'flex' }, `${d.minutes}/${d.perCoin} min to next coin`),
-          el('div', { display: 'flex', whiteSpace: 'pre' },
-            `earned ${d.earned}  ·  invites ${d.invites}${d.pending ? `  ·  ${d.pending} order${d.pending > 1 ? 's' : ''} open` : ''}`),
+        el('div', { ...RTL_ROW, justifyContent: 'space-between' }, [
+          say(`${fa(d.minutes)} از ${fa(d.perCoin)} دقیقه تا سکه‌ی بعدی`, { fontSize: 20, color: BRAND.dim }),
+          // Each fact is its own phrase, dotted apart, so no number is ever read against the wrong word.
+          el('div', { ...RTL_ROW, alignItems: 'center', gap: 14 }, facts.flatMap((f, i) => [
+            ...(i ? [el('div', { display: 'flex', width: 5, height: 5, borderRadius: 5, background: BRAND.faint })] : []),
+            say(f, { fontSize: 20, color: BRAND.dim }),
+          ])),
         ]),
         bar(inner, d.minutes / d.perCoin),
       ]),
@@ -134,57 +149,62 @@ function tone(name: string): { color: string; mark: string } {
     [/playstation|psn/, '#2f6fde', 'P'], [/xbox/, '#2ea043', 'X'], [/vpn|neoxify/, '#22c3b6', 'N'],
   ];
   for (const [re, color, mark] of pick) if (re.test(n)) return { color, mark };
-  return { color: '#9b7cff', mark: '★' };   // server perks
+  // Server perks: the font has no star glyph, so the tile carries the product's own initial.
+  return { color: '#9b7cff', mark: (name.replace(/[^\p{L}]/gu, '')[0] ?? 'A').toUpperCase() };
 }
+
+const markTile = (name: string, size: number) => {
+  const t = tone(name);
+  return el('div', {
+    display: 'flex', width: size, height: size, minWidth: size, borderRadius: size * 0.28, alignItems: 'center', justifyContent: 'center',
+    fontSize: size * 0.47, fontWeight: 700, color: '#fff', backgroundImage: `linear-gradient(140deg, ${t.color}, ${t.color}66)`,
+    boxShadow: `0 0 22px ${t.color}55`,
+  }, t.mark);
+};
 
 export async function renderShop(items: ShopItem[]): Promise<Buffer | null> {
   try {
     const shown = items.slice(0, 12);
     const cols = 3, gap = 18;
     const rows = Math.max(1, Math.ceil(shown.length / cols));
-    const tileW = Math.floor((W - 172 - gap * (cols - 1)) / cols), tileH = 128;
-    const H = 230 + rows * tileH + (rows - 1) * gap + (items.length > shown.length ? 40 : 0) + 70;
+    const tileW = Math.floor((W - 172 - gap * (cols - 1)) / cols), tileH = 128, textW = tileW - 36 - 80;
+    const H = 236 + rows * tileH + (rows - 1) * gap + (items.length > shown.length ? 40 : 0) + 70;
     const tile = (p: ShopItem) => {
-      const t = tone(p.name);
       const soldOut = p.left !== null && p.left <= 0;
       return el('div', {
-        display: 'flex', width: tileW, height: tileH, borderRadius: 20, padding: 18, gap: 16, alignItems: 'center',
+        ...RTL_ROW, width: tileW, height: tileH, borderRadius: 20, padding: 18, gap: 16, alignItems: 'center',
         background: 'rgba(255,255,255,0.05)', border: `1px solid ${soldOut ? 'rgba(180,205,235,0.10)' : 'rgba(214,234,255,0.16)'}`,
         opacity: soldOut ? 0.55 : 1,
       }, [
-        el('div', {
-          display: 'flex', width: 64, height: 64, minWidth: 64, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
-          fontSize: 30, fontWeight: 700, color: '#fff', backgroundImage: `linear-gradient(140deg, ${t.color}, ${t.color}66)`,
-          boxShadow: `0 0 22px ${t.color}55`,
-        }, t.mark),
-        el('div', { display: 'flex', flexDirection: 'column', gap: 6, width: tileW - 36 - 80 }, [
-          say(p.name, { fontSize: 20, fontWeight: 700, maxWidth: tileW - 116, overflow: 'hidden' }),
-          el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between' }, [
-            el('div', { display: 'flex', fontSize: 22, fontWeight: 700, color: '#d6eaff', textShadow: `0 0 14px ${BRAND.blue}aa` }, `${p.price} coin`),
-            el('div', { display: 'flex', fontSize: 15, color: soldOut ? '#ff8c8c' : BRAND.dim },
-              soldOut ? 'sold out' : p.left === null ? '∞' : `${p.left} left`),
+        markTile(p.name, 64),
+        el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, width: textW }, [
+          say(p.name, { fontSize: 20, fontWeight: 700, maxWidth: textW, overflow: 'hidden' }),
+          el('div', { ...RTL_ROW, alignItems: 'center', justifyContent: 'space-between', width: textW }, [
+            say(`${fa(p.price)} سکه`, { fontSize: 22, fontWeight: 700, color: '#d6eaff', textShadow: `0 0 14px ${BRAND.blue}aa` }),
+            say(soldOut ? 'تمام شد' : p.left === null ? 'نامحدود' : `${fa(p.left)} عدد مانده`,
+              { fontSize: 15, color: soldOut ? '#ff8c8c' : BRAND.dim }),
           ]),
-          ...(p.stock ? [bar(tileW - 116, (p.left ?? 0) / p.stock, 6)] : []),
+          ...(p.stock ? [bar(textW, (p.left ?? 0) / p.stock, 6)] : []),
         ]),
       ]);
     };
-    return await draw(ground(H, [el('div', {
-      ...abs, top: 40, left: 40, width: W - 80, height: H - 80, padding: 46, flexDirection: 'column', gap: 22,
-    }, [
-      el('div', { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }, [
-        el('div', { display: 'flex', flexDirection: 'column', gap: 6 }, [
-          label('A I O N   S H O P', { color: BRAND.blue, fontWeight: 700 }),
-          el('div', { display: 'flex', alignItems: 'center', gap: 18 }, [
-            el('div', { display: 'flex', fontSize: 46, fontWeight: 700 }, 'Shop'),
-            say('فروشگاه آیون', { fontSize: 30, fontWeight: 700, color: BRAND.dim }),
-          ]),
+    // Tiles run right to left too: the first product sits top right.
+    const gridRows = Array.from({ length: rows }, (_, r) => shown.slice(r * cols, r * cols + cols));
+    return await draw(ground(H, [inside(H, { gap: 22 }, [
+      el('div', { ...RTL_ROW, alignItems: 'flex-end', justifyContent: 'space-between' }, [
+        el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }, [
+          kicker('AION SHOP'),
+          say('فروشگاه آیون', { fontSize: 46, fontWeight: 700 }),
+          say('با سکه‌ی آیون خرید کن — موجودی هر ماه دوباره پر می‌شه', { fontSize: 19, color: BRAND.dim }),
         ]),
         wordmark(36),
       ]),
       rift(W - 172, BRAND.blue),
-      el('div', { display: 'flex', flexWrap: 'wrap', gap, width: W - 172 }, shown.map(tile)),
-      ...(items.length > shown.length ? [label(`+ ${items.length - shown.length} more in the menu`, { fontSize: 15, letterSpacing: 3 })] : []),
-      ...(shown.length === 0 ? [say('فعلاً محصولی تو شاپ نیست', { fontSize: 24, color: BRAND.dim })] : []),
+      el('div', { display: 'flex', flexDirection: 'column', gap, width: W - 172 }, gridRows.map(row =>
+        el('div', { ...RTL_ROW, gap, width: W - 172 }, row.map(tile)))),
+      ...(items.length > shown.length
+        ? [say(`و ${fa(items.length - shown.length)} محصول دیگه توی منو`, { fontSize: 17, color: BRAND.dim, alignSelf: 'flex-end' })] : []),
+      ...(shown.length === 0 ? [say('فعلاً محصولی توی فروشگاه نیست', { fontSize: 24, color: BRAND.dim, alignSelf: 'flex-end' })] : []),
     ])]), W, H);
   } catch (e) { log.error('shop card failed', e); return null; }
 }
@@ -195,37 +215,32 @@ export async function renderReceipt(d: {
   orderId: number; product: string; price: number; balance: number; name: string; avatar: string | null; at: Date;
 }): Promise<Buffer | null> {
   try {
-    const H = 440, inner = W - 172;
-    const tone0 = tone(d.product);
-    return await draw(ground(H, [el('div', {
-      ...abs, top: 40, left: 40, width: W - 80, height: H - 80, padding: 46, flexDirection: 'column', justifyContent: 'space-between',
-    }, [
-      el('div', { display: 'flex', alignItems: 'center', gap: 20 }, [
+    const H = 450, inner = W - 172;
+    return await draw(ground(H, [inside(H, { justifyContent: 'space-between' }, [
+      el('div', { ...RTL_ROW, alignItems: 'center', gap: 20 }, [
         avatar(d.avatar, d.name, 64),
-        el('div', { display: 'flex', flexDirection: 'column', gap: 4 }, [
-          label('R E C E I P T', { color: BRAND.blue, fontWeight: 700, fontSize: 16 }),
-          say(d.name, { fontSize: 28, fontWeight: 700, maxWidth: 560, overflow: 'hidden' }),
+        el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }, [
+          kicker('RECEIPT'),
+          say('رسید خرید', { fontSize: 20, fontWeight: 700, color: BRAND.dim }),
+          say(d.name, { fontSize: 26, fontWeight: 700, maxWidth: 640, overflow: 'hidden' }),
         ]),
-        el('div', { display: 'flex', marginLeft: 'auto' }, [pill(`#${d.orderId}`)]),
+        el('div', { display: 'flex', marginRight: 'auto' }, [pill(`سفارش شماره‌ی ${fa(d.orderId)}`)]),
       ]),
-      el('div', { display: 'flex', alignItems: 'center', gap: 22 }, [
-        el('div', {
-          display: 'flex', width: 84, height: 84, borderRadius: 22, alignItems: 'center', justifyContent: 'center', fontSize: 40, fontWeight: 700,
-          backgroundImage: `linear-gradient(140deg, ${tone0.color}, ${tone0.color}66)`, boxShadow: `0 0 26px ${tone0.color}55`,
-        }, tone0.mark),
-        el('div', { display: 'flex', flexDirection: 'column', gap: 4 }, [
-          say(d.product, { fontSize: 36, fontWeight: 700, maxWidth: 700, overflow: 'hidden' }),
-          el('div', { display: 'flex', fontSize: 19, color: BRAND.dim }, 'Pending — a Dev will DM you the code'),
+      el('div', { ...RTL_ROW, alignItems: 'center', gap: 22 }, [
+        markTile(d.product, 84),
+        el('div', { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }, [
+          say(d.product, { fontSize: 34, fontWeight: 700, maxWidth: 680, overflow: 'hidden' }),
+          say('در انتظار تحویل — کد رو یکی از Devها برات DM می‌کنه', { fontSize: 19, color: BRAND.dim }),
         ]),
-        el('div', { display: 'flex', marginLeft: 'auto', flexDirection: 'column', alignItems: 'flex-end' }, [
-          el('div', { display: 'flex', fontSize: 54, fontWeight: 700, textShadow: `0 0 26px ${BRAND.blue}aa` }, `−${d.price}`),
-          label('C O I N', { fontSize: 15 }),
+        el('div', { display: 'flex', marginRight: 'auto', flexDirection: 'column', alignItems: 'center' }, [
+          el('div', { display: 'flex', fontSize: 54, fontWeight: 700, textShadow: `0 0 26px ${BRAND.blue}aa` }, [num(fa(d.price))]),
+          say('سکه کسر شد', { fontSize: 18, color: BRAND.dim }),
         ]),
       ]),
       el('div', { display: 'flex', flexDirection: 'column', gap: 12 }, [
         rift(inner, BRAND.blue, false),
-        el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 19, color: BRAND.dim }, [
-          el('div', { display: 'flex' }, `Balance after: ${d.balance} coin`),
+        el('div', { ...RTL_ROW, justifyContent: 'space-between', alignItems: 'center' }, [
+          say(`موجودی بعد از خرید: ${fa(d.balance)} سکه`, { fontSize: 20, color: BRAND.dim }),
           wordmark(24),
         ]),
       ]),
@@ -242,16 +257,19 @@ const CONFETTI = [[90, 70, 10, '#d6eaff'], [210, 140, 6, '#4aa6ff'], [1080, 90, 
 export async function renderBirthday(people: { name: string; avatar: string | null }[]): Promise<Buffer | null> {
   try {
     const shown = people.slice(0, 6);
-    const H = 540;
-    const size = shown.length <= 2 ? 150 : shown.length <= 4 ? 120 : 96;
+    const many = shown.length > 1;
+    const H = 560;
+    const size = shown.length <= 2 ? 150 : shown.length <= 4 ? 116 : 92;
     return await draw(ground(H, [
       ...CONFETTI.map(([x, y, r, c]) => el('div', { ...abs, left: x, top: y, width: r * 2, height: r * 2, borderRadius: r * 2, background: c, boxShadow: `0 0 ${r * 3}px ${c}` })),
-      el('div', { ...abs, top: 40, left: 40, width: W - 80, height: H - 80, padding: 40, flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }, [
-        el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }, [
-          label('H A P P Y   B I R T H D A Y', { color: BRAND.blue, fontWeight: 700, fontSize: 18, letterSpacing: 8 }),
-          say(shown.length > 1 ? 'تولدتون مبارک' : 'تولدت مبارک', { fontSize: 64, fontWeight: 700, textShadow: `0 0 34px ${BRAND.blue}cc` }),
+      inside(H, { padding: 36, alignItems: 'center', justifyContent: 'space-between' }, [
+        el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }, [
+          kicker('HAPPY BIRTHDAY', { fontSize: 17 }),
+          say(many ? 'تولدتون مبارک' : 'تولدت مبارک', { fontSize: 64, fontWeight: 700, textShadow: `0 0 34px ${BRAND.blue}cc` }),
+          say(many ? 'کل آیون بهتون تبریک می‌گه' : 'کل آیون بهت تبریک می‌گه', { fontSize: 22, color: BRAND.dim }),
         ]),
-        el('div', { display: 'flex', gap: 34, justifyContent: 'center', alignItems: 'flex-start' }, shown.map(p =>
+        // People in a row read from the right, like everything else on the card.
+        el('div', { ...RTL_ROW, gap: 34, justifyContent: 'center', alignItems: 'flex-start' }, shown.map(p =>
           el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: size + 60 }, [
             avatar(p.avatar, p.name, size),
             say(p.name, { fontSize: shown.length > 4 ? 18 : 22, fontWeight: 700, maxWidth: size + 60, overflow: 'hidden', justifyContent: 'center' }),

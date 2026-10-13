@@ -140,13 +140,21 @@ const PICTOGRAPHS = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu;
  * (tools/design/rtl-check.mjs, and test/cards.test.mjs), not by looking.
  *
  * Emoji are dropped: the font has none, and they rendered as empty gaps.
+ *
+ * Numbers are drawn digit by digit (see num), because satori also reverses a
+ * run of Persian digits: ۳۴۲ came out ۲۴۳.
  */
 export function say(text: string, style: Record<string, unknown> = {}): unknown {
   const plain = (plainName(text) || text).replace(PICTOGRAPHS, '').replace(/\s+/g, ' ').trim();
   const size = Number(style.fontSize ?? 20);
+  const piece = (p: string) => p.split(/([0-9۰-۹]+)/).filter(Boolean)
+    .map(part => /^[0-9۰-۹]+$/.test(part) ? num(part) : part);
   const word = (w: string) => el('div', { display: 'flex', alignItems: 'center', whiteSpace: 'pre' },
-    w.split('Λ').flatMap((p, i) => [...(i ? [lambda(size)] : []), ...(p ? [p] : [])]));
+    w.split('Λ').flatMap((p, i) => [...(i ? [lambda(size)] : []), ...(p ? piece(p) : [])]));
   if (RTL.test(plain)) {
+    // Single Latin words inside Persian ("Devها", "DM") come out right. A Latin
+    // phrase does not — "رسید خرید · Λ | Negin" put the name back to front even
+    // as one box — so cards keep a member's name on a line of its own.
     return el('div', { display: 'flex', flexDirection: 'row-reverse', alignItems: 'center', gap: size * 0.3, ...style },
       plain.split(' ').filter(Boolean).map(word));
   }
@@ -159,12 +167,38 @@ export async function draw(tree: unknown, w: number, h: number): Promise<Buffer>
   return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: w } }).render().asPng());
 }
 
-/** Title block on the left, AION lockup on the right. */
-const header = (opts: { kicker: string; title: string; subtitle: string; accent: string }) =>
+/** Western digits to Persian ones, for numbers set inside Persian text. */
+export const fa = (n: number | string): string => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]!);
+
+/**
+ * A number, one box per digit, left to right. Satori reverses a run of
+ * Persian digits — ۳۴۲ was drawn ۲۴۳, ۱۸۰ as ۰۸۱ — and digits that are each
+ * their own box cannot be reordered. Numbers read left to right in Persian
+ * too, so this is right for both scripts.
+ */
+export function num(n: number | string, style: Record<string, unknown> = {}): unknown {
+  return el('div', { display: 'flex', flexDirection: 'row', ...style },
+    [...String(n)].map(ch => el('div', { display: 'flex' }, ch)));
+}
+
+/**
+ * Title block on the left, AION lockup on the right — mirrored for a Persian
+ * card, which is read from the right. Persian is never letter-spaced: it is a
+ * joined script, and spacing it pulls every word apart into loose letters.
+ */
+const header = (opts: { kicker: string; title: string; subtitle: string; accent: string; rtl?: boolean }) =>
   el('div', {
     display: 'flex', width: CONTENT, justifyContent: 'space-between', alignItems: 'flex-start',
+    flexDirection: opts.rtl ? 'row-reverse' : 'row',
   }, [
-    el('div', { display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 820 }, [
+    el('div', { display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 820, alignItems: opts.rtl ? 'flex-end' : 'flex-start' }, opts.rtl ? [
+      // The small label over a Persian title may be English, spaced like every card's label.
+      RTL.test(opts.kicker)
+        ? say(opts.kicker, { fontSize: 20, fontWeight: 700, color: opts.accent })
+        : el('div', { display: 'flex', fontSize: 17, fontWeight: 700, letterSpacing: 7, color: opts.accent }, opts.kicker),
+      say(opts.title, { fontSize: 46, fontWeight: 700, color: BRAND.text }),
+      say(opts.subtitle, { fontSize: 20, color: BRAND.dim }),
+    ] : [
       el('div', {
         display: 'flex', fontSize: 17, fontWeight: 700, letterSpacing: 7, color: opts.accent,
       }, opts.kicker),
@@ -192,6 +226,7 @@ async function frame(opts: {
   subtitle: string;
   footer: string;
   body: unknown[];
+  rtl?: boolean;
 }): Promise<Buffer> {
   const tree = el('div', {
     display: 'flex', flexDirection: 'column', position: 'relative',
@@ -206,8 +241,11 @@ async function frame(opts: {
     el('div', {
       ...absolute, bottom: 26, left: PAD, width: CONTENT,
       justifyContent: 'space-between', alignItems: 'center',
+      flexDirection: opts.rtl ? 'row-reverse' : 'row',
     }, [
-      el('div', { display: 'flex', fontSize: 15, letterSpacing: 4, color: BRAND.faint }, opts.footer),
+      opts.rtl
+        ? say(opts.footer, { fontSize: 16, color: BRAND.faint })
+        : el('div', { display: 'flex', fontSize: 15, letterSpacing: 4, color: BRAND.faint }, opts.footer),
       el('div', {
         display: 'flex', alignItems: 'center', fontSize: 15, letterSpacing: 5, color: BRAND.faint,
       }, [lambda(15), el('div', { display: 'flex' }, WORDMARK)]),
@@ -237,10 +275,16 @@ export async function renderLeaderboardBanner(opts: {
   rows: BannerRow[];
   kicker?: string;
   footer?: string;
+  /** A Persian board: read from the right, ranks and bars mirrored, digits Persian. */
+  rtl?: boolean;
+  /** Shown when there are no rows. */
+  empty?: string;
 }): Promise<Buffer | null> {
   try {
     const rows = opts.rows.slice(0, 8);
     const max = Math.max(1, ...rows.map(r => r.amount));
+    const rtl = Boolean(opts.rtl);
+    const dir = rtl ? 'row-reverse' : 'row';
 
     // badge + gap, so the bars line up under the names rather than the ranks.
     const BADGE = 52, GAP = 20;
@@ -251,7 +295,7 @@ export async function renderLeaderboardBanner(opts: {
           const medal = MEDAL[i];
           const width = Math.max(28, Math.round((r.amount / max) * col));
           return el('div', {
-            display: 'flex', alignItems: 'center', gap: GAP, width: CONTENT, height: ROW_H,
+            display: 'flex', alignItems: 'center', gap: GAP, width: CONTENT, height: ROW_H, flexDirection: dir,
           }, [
             el('div', {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -264,21 +308,23 @@ export async function renderLeaderboardBanner(opts: {
                     boxShadow: `0 0 22px ${medal.from}59`,
                   }
                 : { background: BRAND.track, color: BRAND.faint }),
-            }, String(i + 1)),
+            }, [num(rtl ? fa(i + 1) : String(i + 1))]),
             el('div', { display: 'flex', flexDirection: 'column', width: col, gap: 8 }, [
               el('div', {
-                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', width: col,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', width: col, flexDirection: dir,
               }, [
                 say(r.name || '—', {
                   fontSize: 25, fontWeight: 700, maxWidth: col - 190,
                   overflow: 'hidden', color: i === 0 ? BRAND.text : '#dbe4f2',
                 }),
-                el('div', {
-                  display: 'flex', fontSize: 21, fontWeight: 700, color: opts.accent,
-                }, r.value),
+                rtl
+                  ? say(r.value, { fontSize: 21, fontWeight: 700, color: opts.accent })
+                  : el('div', {
+                      display: 'flex', fontSize: 21, fontWeight: 700, color: opts.accent,
+                    }, r.value),
               ]),
               el('div', {
-                display: 'flex', height: 9, borderRadius: 5, background: BRAND.track, width: col,
+                display: 'flex', height: 9, borderRadius: 5, background: BRAND.track, width: col, flexDirection: dir,
               }, [
                 el('div', {
                   display: 'flex', height: 9, borderRadius: 5, width,
@@ -293,7 +339,9 @@ export async function renderLeaderboardBanner(opts: {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           width: CONTENT, height: 140, borderRadius: 18, background: BRAND.track,
           fontSize: 23, color: BRAND.dim,
-        }, 'Hanooz kasi sabt nashode — emshab avvalin nafar bash.')];
+        }, [rtl
+          ? say(opts.empty ?? 'هنوز کسی ثبت نشده — اولین نفر باش', { fontSize: 23, color: BRAND.dim })
+          : (opts.empty ?? 'Hanooz kasi sabt nashode — emshab avvalin nafar bash.')])];
 
     const rowsH = rows.length ? rows.length * ROW_H + (rows.length - 1) * 14 : 140;
     return await frame({
@@ -304,6 +352,7 @@ export async function renderLeaderboardBanner(opts: {
       subtitle: opts.subtitle,
       footer: opts.footer ?? 'TOP ACTIVE',
       body,
+      rtl,
     });
   } catch (e) {
     // A failed banner must never block the text post.

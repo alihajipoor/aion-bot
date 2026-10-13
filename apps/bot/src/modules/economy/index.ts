@@ -4,7 +4,7 @@ import {
   type Guild, type GuildMember, type MessageCreateOptions, type PartialGuildMember, type TextChannel,
 } from 'discord.js';
 import { renderShop } from '../../lib/cards.js';
-import { renderLeaderboardBanner, BRAND } from '../../lib/banner.js';
+import { renderLeaderboardBanner, BRAND, fa } from '../../lib/banner.js';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { getDb, memberJoins, ecoInviteCredits } from '@aion/db';
 import * as L from '../../lib/economy/ledger.js';
@@ -341,9 +341,10 @@ export async function richestBody(g: Guild): Promise<MessageCreateOptions> {
     return `${medals[i] ?? `\`${i + 1}.\``} **${isolate(m?.displayName ?? r.userId)}** — **${r.coins}** coin`;
   });
   const png = top.length ? await renderLeaderboardBanner({
-    kicker: 'AION COIN', title: 'RICHEST', subtitle: 'Coin earned in the last 7 days — spending does not lower your rank',
-    footer: 'WEEKLY', accent: BRAND.blue,
-    rows: top.map(r => ({ name: g.members.cache.get(r.userId)?.displayName ?? r.userId, value: `${r.coins} coin`, amount: r.coins })),
+    rtl: true, kicker: 'WEEKLY RICHEST', title: 'پرسکه‌ترین‌ها',
+    subtitle: 'سکه‌ی کسب‌شده در ۷ روز گذشته — خرج کردن رتبه‌ات رو کم نمی‌کنه',
+    footer: 'سکه‌ی آیون', accent: BRAND.blue,
+    rows: top.map(r => ({ name: g.members.cache.get(r.userId)?.displayName ?? r.userId, value: `${fa(r.coins)} سکه`, amount: r.coins })),
   }) : null;
   const box = new ContainerBuilder().setAccentColor(ACCENT);
   if (png) {

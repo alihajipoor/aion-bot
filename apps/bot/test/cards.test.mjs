@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as C from '../dist/lib/cards.js';
-import { renderLeaderboardBanner, say } from '../dist/lib/banner.js';
+import { renderLeaderboardBanner, say, num } from '../dist/lib/banner.js';
 
 const PNG = [0x89, 0x50, 0x4e, 0x47];
 const isPng = (b) => b && [...b.subarray(0, 4)].every((x, i) => x === PNG[i]) && b.length > 10_000;
@@ -63,7 +63,7 @@ test('the Λ is drawn, not dropped', () => {
  * the first word written. Each word is drawn alone and compared with the right
  * end of the full line; the closest match is what a Persian reader sees first.
  */
-test('Persian reads right to left: the first word written is drawn rightmost', async () => {
+async function measurer() {
   const { default: satori } = await import('satori');
   const { Resvg } = await import('@resvg/resvg-js');
   const { default: sharp } = await import('sharp');
@@ -80,16 +80,43 @@ test('Persian reads right to left: the first word written is drawn rightmost', a
   };
   const crop = (r, x0, w) => { const o = []; for (let y = 0; y < r.info.height; y++) for (let x = x0; x < x0 + w; x++) o.push(r.data[y * r.info.width + x] < 128); return o; };
   const diff = (a, b) => a.filter((v, i) => v !== b[i]).length / a.length;
+  /** Which candidate is drawn at the given end of `line`. */
+  const atEnd = (line, candidates, end) => candidates.map(c => {
+    const w = c.img.right - c.img.left + 1;
+    const x0 = end === 'right' ? line.right - w + 1 : line.left;
+    return { label: c.label, d: diff(crop(line, x0, w), crop(c.img, c.img.left, w)) };
+  }).sort((x, y) => x.d - y.d)[0].label;
+  return { raster, atEnd };
+}
+const box = (s) => ({ type: 'div', props: { style: { display: 'flex' }, children: [s] } });
+
+test('Persian reads right to left: the first word written is drawn rightmost', async () => {
+  const { raster, atEnd } = await measurer();
   for (const phrase of ['کیف پول آیون', 'تولدتون مبارک', 'علی رضا']) {
     const words = phrase.split(' ');
     const line = await raster(say(phrase, { fontSize: 60, fontWeight: 700 }));
-    const alone = await Promise.all(words.map(w => raster({ type: 'div', props: { style: { display: 'flex' }, children: [w] } })));
-    const best = alone.map((a, i) => {
-      const w = a.right - a.left + 1;
-      return { word: words[i], d: diff(crop(line, line.right - w + 1, w), crop(a, a.left, w)) };
-    }).sort((x, y) => x.d - y.d)[0];
-    assert.equal(best.word, words[0], `"${phrase}" must start (rightmost) with ${words[0]}`);
+    const alone = await Promise.all(words.map(async w => ({ label: w, img: await raster(box(w)) })));
+    assert.equal(atEnd(line, alone, 'right'), words[0], `"${phrase}" must start (rightmost) with ${words[0]}`);
   }
+});
+
+/*
+ * Numbers read left to right in Persian too, and satori reverses a run of
+ * Persian digits — ۳۴۲ was drawn ۲۴۳ — so they are drawn digit by digit.
+ */
+test('Persian numbers keep their digits in order', async () => {
+  const { raster, atEnd } = await measurer();
+  const digits = await Promise.all(['۱', '۲', '۳', '۴', '۸', '۰'].map(async d => ({ label: d, img: await raster(box(d)) })));
+  for (const [n, first, last] of [['۳۴۲', '۳', '۲'], ['۱۸۰', '۱', '۰']]) {
+    const line = await raster(num(n));
+    assert.equal(atEnd(line, digits, 'left'), first, `${n} must start with ${first}`);
+    assert.equal(atEnd(line, digits, 'right'), last, `${n} must end with ${last}`);
+  }
+  // And inside Persian text: "۳۷ از ۶۰ دقیقه" starts, at the right, with ۳۷ — not ۷۳.
+  const line = await raster(say('۳۷ از ۶۰ دقیقه', { fontSize: 60, fontWeight: 700 }));
+  const ends = await Promise.all(['۳۷', '۷۳', 'دقیقه'].map(async s => ({ label: s, img: await raster(num(s === 'دقیقه' ? '' : s)) })));
+  ends[2].img = await raster(box('دقیقه'));
+  assert.equal(atEnd(line, ends, 'right'), '۳۷');
 });
 
 test('emoji are removed and letters are not', () => {
