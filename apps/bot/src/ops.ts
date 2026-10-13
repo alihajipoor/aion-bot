@@ -17,6 +17,8 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { getDb, giveaways, memberJoins, birthdays } from '@aion/db';
 import { isBirthdayToday } from './lib/birthday.js';
+import { createProduct, updateProduct, type ProductInput } from './modules/economy/service.js';
+import { loadSettings } from './lib/settings.js';
 import { config } from './config.js';
 import { openSeason, startSeason } from './lib/mafiaSeason.js';
 import { refreshSeasonBoard, finishSeason } from './modules/mafiaSeasonBoard.js';
@@ -178,6 +180,40 @@ async function birthdayStatus(): Promise<void> {
   console.log(`birthdays stored: ${rows.length} (persian ${by('persian')}, gregorian ${by('gregorian')})`);
   console.log(`next 7 days, today first: ${week.join(' ')}`);
   console.log(`wished at least once: ${rows.filter(r => r.lastWishedOn).length}`);
+}
+
+/**
+ * Add a shop product, or edit one when the JSON carries an id — the same
+ * service as the panel and /eco, so the shop card is redrawn and economy-log
+ * records it. For changes requested of an operator rather than made by a Dev
+ * in Discord. `--user` names who asked, for the log.
+ */
+async function ecoProduct(): Promise<void> {
+  const raw = flag('product');
+  if (!raw) { console.error('--product is required (base64 JSON)'); process.exitCode = 1; return; }
+  let input: Record<string, unknown>;
+  try { input = JSON.parse(Buffer.from(raw, 'base64').toString('utf8')) as Record<string, unknown>; }
+  catch { console.error('--product is not valid JSON'); process.exitCode = 1; return; }
+  // The shop post reads whether the economy is live from settings; a fresh
+  // process has only the defaults, which say it is not, until this loads them.
+  await loadSettings(true);
+  const actor = flag('user') ?? '';
+  const r = await withGuild(async g => {
+    const p: ProductInput = {
+      ...(input.name !== undefined ? { name: String(input.name) } : {}),
+      ...(input.price !== undefined ? { price: Number(input.price) } : {}),
+      ...('stockPerMonth' in input ? { stockPerMonth: input.stockPerMonth === null ? null : Number(input.stockPerMonth) } : {}),
+      ...('perUserMonth' in input ? { perUserMonth: input.perUserMonth === null ? null : Number(input.perUserMonth) } : {}),
+      ...('description' in input ? { description: input.description === null ? null : String(input.description) } : {}),
+      ...('note' in input ? { note: input.note === null ? null : String(input.note) } : {}),
+      ...(input.active !== undefined ? { active: Boolean(input.active) } : {}),
+      ...(input.sortOrder !== undefined ? { sortOrder: Number(input.sortOrder) } : {}),
+    };
+    return input.id ? updateProduct(g, Number(input.id), p, actor || g.client.user!.id)
+      : createProduct(g, p, actor || g.client.user!.id);
+  });
+  console.log(`${r.ok ? 'ok' : 'refused'}: ${r.message}`);
+  if (!r.ok) process.exitCode = 1;
 }
 
 async function close(): Promise<void> {
@@ -436,6 +472,7 @@ const tasks: Record<string, () => Promise<void>> = {
   'giveaway-start': start,
   'giveaway-close': close,
   birthdays: birthdayStatus,
+  'eco-product': ecoProduct,
 };
 
 const run = task ? tasks[task] : undefined;

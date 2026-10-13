@@ -30,6 +30,11 @@ on:
           - giveaway-start
           - giveaway-close
           - birthdays
+          - eco-product
+      product:
+        description: 'eco-product only — JSON: {"name","price","stockPerMonth","perUserMonth","description","note","sortOrder"}; add "id" to edit an existing one'
+        type: string
+        default: ""
       title:
         description: Giveaway title (start only)
         type: string
@@ -89,15 +94,19 @@ jobs:
           USERID: ${{ inputs.user }}
           OLDID: ${{ inputs.old }}
           NEWID: ${{ inputs.new }}
+          PRODUCT: ${{ inputs.product }}
         run: |
           set -euo pipefail
+          # The product JSON is full of quotes; base64 carries it through the
+          # single-quoted remote environment below without any of them mattering.
+          PRODUCT_B64=$(printf '%s' "$PRODUCT" | base64 -w0)
           if [ -z "$KEY" ]; then echo "VPS_SSH_KEY not set"; exit 1; fi
           mkdir -p ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=20 "root@$HOST" \
-            "TASK='$TASK' TITLE='$TITLE' DAYS='$DAYS' FLOORS='$FLOORS' BACK='$BACK' PRIZES='$PRIZES' EVENT='$EVENT' USERID='$USERID' OLDID='$OLDID' NEWID='$NEWID' bash -s" <<'EOSSH'
+            "TASK='$TASK' TITLE='$TITLE' DAYS='$DAYS' FLOORS='$FLOORS' BACK='$BACK' PRIZES='$PRIZES' EVENT='$EVENT' USERID='$USERID' OLDID='$OLDID' NEWID='$NEWID' PRODUCT_B64='$PRODUCT_B64' bash -s" <<'EOSSH'
           set -euo pipefail
           APP=/opt/aion
           cd "$APP"
@@ -142,5 +151,5 @@ jobs:
               --title "$TITLE" --days "$DAYS" --floors "$FLOORS" --back "$BACK" \
               ${PRIZES:+--prizes "$PRIZES"} \
               ${EVENT:+--event "$EVENT"} ${USERID:+--user "$USERID"} \
-              ${OLDID:+--old "$OLDID"} ${NEWID:+--new "$NEWID"}
+              ${OLDID:+--old "$OLDID"} ${NEWID:+--new "$NEWID"} ${PRODUCT_B64:+--product "$PRODUCT_B64"}
           EOSSH
