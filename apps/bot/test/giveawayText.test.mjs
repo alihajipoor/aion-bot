@@ -27,6 +27,9 @@ const row = (over = {}) => ({
   startsAt: new Date('2026-10-03T00:00:00Z'),
   endsAt: new Date('2026-10-10T00:00:00Z'),
   closedAt: null, results: null, createdAt: new Date(),
+  recruiterAt: null,
+  raffleFloor: null, rafflePrize: null, raffleMinEntrants: null,
+  raffleWinnerId: null, raffleDrawnAt: null,
   ...over,
 });
 
@@ -78,4 +81,54 @@ test('the stated duration follows the dates', () => {
   assert.ok(announcement(row()).includes('یک هفته'));
   const three = announcement(row({ endsAt: new Date('2026-10-24T00:00:00Z') }));
   assert.ok(three.includes('۳ هفته'), 'three weeks should say three weeks');
+});
+
+/* ── the raffle and the progress role ──────────────────────────── */
+
+const RAFFLE = {
+  raffleFloor: 10,
+  rafflePrize: '۵,۰۰۰,۰۰۰ تومان',
+  raffleMinEntrants: 10,
+};
+
+test('no raffle configured means no raffle section at all', () => {
+  const s = announcement(row());
+  assert.ok(!s.includes('قرعه‌کشی'), 'a raffle heading with no raffle behind it promises nothing real');
+});
+
+test('a raffle with a threshold is stated as a target, not a prize on offer', () => {
+  const s = announcement(row(RAFFLE));
+  assert.ok(s.includes('هدف گروهی'), 'it should read as something the room unlocks');
+  assert.ok(s.includes('۱۰'), 'both the floor and the threshold are ten here');
+  assert.ok(s.includes('۵,۰۰۰,۰۰۰'), 'the prize must be stated');
+  // The whole point of the threshold: your own invites cannot unlock it.
+  assert.ok(s.includes('به بقیه هم بگو'), 'it must ask them to recruit other entrants');
+});
+
+test('a raffle without a threshold does not claim one', () => {
+  const s = announcement(row({ ...RAFFLE, raffleMinEntrants: null }));
+  assert.ok(s.includes('قرعه‌کشی'));
+  // Not "کمتر از", which the main floor rule says too — the raffle's own
+  // cancellation sentence is the thing that must be absent.
+  assert.ok(!s.includes('قرعه‌کشی انجام نمی‌شه'),
+    'with no minimum the draw is unconditional, so it must not threaten not to happen');
+});
+
+test('the recruiter line appears only when the run has that role', () => {
+  assert.ok(!announcement(row()).includes('ʀᴇᴄʀᴜɪᴛᴇʀ'), 'null means no progress role');
+  assert.ok(announcement(row({ recruiterAt: 13 })).includes('ʀᴇᴄʀᴜɪᴛᴇʀ'));
+  assert.ok(announcement(row({ recruiterAt: 13 })).includes('۱۳'));
+});
+
+test('inviting is said to pay coins whether or not you win', () => {
+  assert.ok(announcement(row()).includes('سکه'), 'every invite earns a coin — worth saying');
+});
+
+test('the raffle lines are RTL-isolated like every other line', () => {
+  for (const line of announcement(row(RAFFLE)).split('\n')) {
+    if (!line.trim()) continue;
+    const body = line.slice(MD_PREFIX.exec(line)[0].length);
+    assert.ok(body.startsWith(RLI) && body.endsWith(PDI),
+      `raffle line not isolated: ${JSON.stringify(line)}`);
+  }
 });

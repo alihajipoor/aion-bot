@@ -28,8 +28,7 @@ const RECRUITER = 'ʀᴇᴄʀᴜɪᴛᴇʀ│𝙳𝙰𝚅𝙰𝚃│•';
  * to earn the badge for approaching it. Derived from the floors, it is always
  * the halfway mark of whatever is actually being run.
  */
-const recruiterAt = (floors: number[]): number =>
-  Math.max(1, Math.ceil(Math.min(...floors) / 2));
+const recruiterAt = (g: { recruiterAt: number | null }): number | null => g.recruiterAt;
 const PODIUM = ['ʟᴇɢᴇɴᴅ│𝙳𝙰𝚅𝙰𝚃│•', 'ᴇʟɪᴛᴇ│𝙳𝙰𝚅𝙰𝚃│•', 'ᴘɪsʜᴛᴀᴢ│𝙳𝙰𝚅𝙰𝚃│•'];
 
 interface Marks { lastGiveaway?: string; giveawayIds?: string[]; giveawayRun?: number; boardAt?: string }
@@ -216,8 +215,15 @@ async function sweepRecruiters(guild: Guild): Promise<void> {
   const scores = g ? await scoreInvites(guild.id, {
     from: g.startsAt, to: countsUntil(g), minAccountAgeDays: g.minAccountAgeDays,
   }) : [];
-  const at = g ? recruiterAt(g.floors) : Infinity;
-  const earned = new Set(scores.filter(s => s.qualified >= at).map(s => s.inviterId));
+  /*
+   * Null means this run has no progress role, and so does having no run at
+   * all. Both end up as "nobody has earned it", which is the same statement
+   * as "take it off everyone" — and that is what the loop below then does.
+   */
+  const at = g ? recruiterAt(g) : null;
+  const earned = at === null
+    ? new Set<string>()
+    : new Set(scores.filter(s => s.qualified >= at).map(s => s.inviterId));
 
   for (const id of earned) {
     const m = guild.members.cache.get(id);

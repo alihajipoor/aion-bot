@@ -30,9 +30,7 @@ const fa = (n: number | string) => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶
 const MEDALS = ['🥇', '🥈', '🥉'];
 const ORDINAL = ['نفر اول', 'نفر دوم', 'نفر سوم'];
 
-/** Halfway to the smallest prize — see `recruiterAt` in giveawayPoster.ts. */
-const recruiterLine = (floors: number[]): number =>
-  Math.max(1, Math.ceil(Math.min(...floors) / 2));
+
 
 /** "یک هفته" reads better than "۷ روز" when it divides evenly. */
 function span(startsAt: Date, endsAt: Date): string {
@@ -92,6 +90,29 @@ export function announcement(g: Row): string {
        })]
     : [];
 
+  /*
+   * The raffle, said as a target rather than as a prize.
+   *
+   * It only runs if enough separate people clear its floor, so announcing it
+   * as a prize on offer would make its cancellation read as a broken promise.
+   * Announced as something the room unlocks together, hitting it is a win and
+   * missing it is a target missed — and it gives entrants a reason to recruit
+   * other entrants, which their own invites alone cannot do.
+   */
+  const raffle = g.raffleFloor && g.rafflePrize
+    ? ['## 🎟️ هدف گروهی', '',
+       g.raffleMinEntrants
+         ? `اگه **${fa(g.raffleMinEntrants)} نفر** هر کدوم به **${fa(g.raffleFloor)} دعوت معتبر** برسن، `
+           + `یه قرعه‌کشی **${isolate(g.rafflePrize)}** بین همون نفرها باز می‌شه.`
+         : `هر کی به **${fa(g.raffleFloor)} دعوت معتبر** برسه، میره توی قرعه‌کشی **${isolate(g.rafflePrize)}**.`,
+       '',
+       ...(g.raffleMinEntrants
+         ? [`کمتر از ${fa(g.raffleMinEntrants)} نفر، قرعه‌کشی انجام نمی‌شه.`,
+            'پس فقط خودت دعوت نکن — به بقیه هم بگو.']
+         : []),
+       '']
+    : [];
+
   const permanent = one
     ? 'نفر اول یه **رول دائمی** مخصوص خودش می‌گیره که برای همیشه روی پروفایلش می‌مونه.'
     : `${fa(floors.length)} نفر اول یه **رول دائمی** مخصوص خودشون می‌گیرن که برای همیشه روی پروفایلشون می‌مونه.`;
@@ -110,8 +131,17 @@ export function announcement(g: Row): string {
     ...requirement,
     '',
     ...prizes,
+    ...raffle,
     permanent,
-    `هر کسی هم ${fa(recruiterLine(floors))} تا دعوت معتبر داشته باشه، تا آخر مسابقه رول **${isolate('ʀᴇᴄʀᴜɪᴛᴇʀ')}** رو می‌گیره.`,
+    // Only when this run actually has a progress role. Printing the line with
+    // no role behind it promises something nobody can earn.
+    ...(g.recruiterAt
+      ? [`هر کسی هم ${fa(g.recruiterAt)} تا دعوت معتبر داشته باشه، تا آخر مسابقه رول **${isolate('ʀᴇᴄʀᴜɪᴛᴇʀ')}** رو می‌گیره.`]
+      : []),
+    '',
+    // Worth saying: inviting pays even for the people who finish nowhere near
+    // the floor, which is most of them.
+    `-# هر دعوت معتبر **${fa(1)} سکه** هم برات داره — چه ببری چه نبری.`,
     '',
     '## ✅ چه دعوتی حساب می‌شه؟',
     '',

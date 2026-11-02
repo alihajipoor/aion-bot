@@ -29,6 +29,7 @@ on:
           - season-refresh
           - giveaway-start
           - giveaway-close
+          - giveaway-raffle
           - birthdays
           - eco-product
           - eco-images
@@ -48,6 +49,24 @@ on:
         default: "21"
       prizes:
         description: "Prizes (start only) — places split by ; options by |"
+        type: string
+        default: ""
+      recruiter:
+        description: "Progress role at N invites (start only, blank = no role)"
+        type: string
+        default: ""
+      rafflefloor:
+        description: "Raffle: invites needed for a ticket (start only)"
+        type: string
+        default: ""
+      raffleprize:
+        description: "Raffle: what the draw pays (start only)"
+        type: string
+        default: ""
+      rafflemin:
+        description: "Raffle: distinct people who must qualify, else no draw"
+        type: string
+        default: ""
         type: string
         default: ""
       back:
@@ -93,6 +112,10 @@ jobs:
           FLOORS: ${{ inputs.floors }}
           BACK: ${{ inputs.back }}
           PRIZES: ${{ inputs.prizes }}
+          RECRUITER: ${{ inputs.recruiter }}
+          RAFFLEFLOOR: ${{ inputs.rafflefloor }}
+          RAFFLEPRIZE: ${{ inputs.raffleprize }}
+          RAFFLEMIN: ${{ inputs.rafflemin }}
           EVENT: ${{ inputs.event }}
           USERID: ${{ inputs.user }}
           OLDID: ${{ inputs.old }}
@@ -109,7 +132,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=20 "root@$HOST" \
-            "TASK='$TASK' TITLE='$TITLE' DAYS='$DAYS' FLOORS='$FLOORS' BACK='$BACK' PRIZES='$PRIZES' EVENT='$EVENT' USERID='$USERID' OLDID='$OLDID' NEWID='$NEWID' PRODUCT_B64='$PRODUCT_B64' bash -s" <<'EOSSH'
+            "TASK='$TASK' TITLE='$TITLE' DAYS='$DAYS' FLOORS='$FLOORS' BACK='$BACK' PRIZES='$PRIZES' RECRUITER='$RECRUITER' RAFFLEFLOOR='$RAFFLEFLOOR' RAFFLEPRIZE='$RAFFLEPRIZE' RAFFLEMIN='$RAFFLEMIN' EVENT='$EVENT' USERID='$USERID' OLDID='$OLDID' NEWID='$NEWID' PRODUCT_B64='$PRODUCT_B64' bash -s" <<'EOSSH'
           set -euo pipefail
           APP=/opt/aion
           cd "$APP"
@@ -153,6 +176,10 @@ jobs:
             node "$APP/apps/bot/dist/ops.js" "$TASK" \
               --title "$TITLE" --days "$DAYS" --floors "$FLOORS" --back "$BACK" \
               ${PRIZES:+--prizes "$PRIZES"} \
+              ${RECRUITER:+--recruiter "$RECRUITER"} \
+              ${RAFFLEFLOOR:+--rafflefloor "$RAFFLEFLOOR"} \
+              ${RAFFLEPRIZE:+--raffleprize "$RAFFLEPRIZE"} \
+              ${RAFFLEMIN:+--rafflemin "$RAFFLEMIN"} \
               ${EVENT:+--event "$EVENT"} ${USERID:+--user "$USERID"} \
               ${OLDID:+--old "$OLDID"} ${NEWID:+--new "$NEWID"} ${PRODUCT_B64:+--product "$PRODUCT_B64"}
           EOSSH

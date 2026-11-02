@@ -85,6 +85,13 @@
       "when": 1791914136777,
       "tag": "0011_fast_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793578998603,
+      "tag": "0012_complete_ben_parker",
+      "breakpoints": true
     }
   ]
 }

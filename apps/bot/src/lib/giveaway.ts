@@ -95,7 +95,8 @@ export async function personalInvite(guild: Guild, userId: string): Promise<stri
 /* ── rendering ─────────────────────────────────────────────────── */
 
 export function boardContainer(
-  g: Pick<Giveaway, 'title' | 'floors' | 'endsAt' | 'closedAt'>,
+  g: Pick<Giveaway, 'title' | 'floors' | 'endsAt' | 'closedAt'
+    | 'raffleFloor' | 'rafflePrize' | 'raffleMinEntrants'>,
   scores: Score[], nameOf: (id: string) => string, file?: string,
 ): ContainerBuilder {
   const c = new ContainerBuilder().setAccentColor(ACCENT);
@@ -128,6 +129,26 @@ export function boardContainer(
     c.addSeparatorComponents(new SeparatorBuilder());
     c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
       rest.map((s, i) => `\`${i + g.floors.length + 1}.\` ${isolate(nameOf(s.inviterId))} — **${num(s.qualified)}** نفر`).join('\n')));
+  }
+
+  /*
+   * Raffle progress, as its own line.
+   *
+   * This number is the thing entrants are being asked to recruit *for* — they
+   * cannot unlock it alone — so it has to be visible and seen to move. A
+   * threshold nobody can watch approaching motivates nobody.
+   */
+  if (g.raffleFloor && g.rafflePrize) {
+    const reached = scores.filter(s => s.qualified >= g.raffleFloor!).length;
+    const need = g.raffleMinEntrants ?? 0;
+    c.addSeparatorComponents(new SeparatorBuilder());
+    c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      `🎟️ **قرعه‌کشی ${isolate(g.rafflePrize)}** — `
+      + (need
+          ? (reached >= need
+              ? `باز شد! ${num(reached)} نفر به ${num(g.raffleFloor)} دعوت رسیدن`
+              : `${num(reached)} / ${num(need)} نفر به ${num(g.raffleFloor)} دعوت رسیدن`)
+          : `${num(reached)} نفر واجد شرایطن`)));
   }
 
   c.addSeparatorComponents(new SeparatorBuilder());

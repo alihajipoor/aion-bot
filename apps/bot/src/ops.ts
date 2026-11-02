@@ -14,7 +14,7 @@
  *   node dist/ops.js giveaway-close
  */
 import { Client, GatewayIntentBits } from 'discord.js';
-import { eq, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { getDb, giveaways, memberJoins, birthdays } from '@aion/db';
 import { isBirthdayToday } from './lib/birthday.js';
 import { createProduct, updateProduct, setProductImage, setLaunch, type ProductInput } from './modules/economy/service.js';
@@ -119,6 +119,46 @@ async function review(): Promise<void> {
   }
 }
 
+/**
+ * Draws the raffle.
+ *
+ * Deliberately a separate command rather than something `close` does on its
+ * own. A draw cannot be undone, so it should be an act someone takes with the
+ * entrant count in front of them — and refusing to run twice is what stops a
+ * re-run quietly producing a second winner.
+ */
+async function raffle(): Promise<void> {
+  const g = await openGiveaway(config.guildId)
+    ?? (await getDb().select().from(giveaways)
+      .where(eq(giveaways.guildId, config.guildId))
+      .orderBy(desc(giveaways.id)).limit(1))[0];
+  if (!g) { console.error('no giveaway to draw for'); process.exitCode = 1; return; }
+  if (!g.raffleFloor) { console.error(`#${g.id} has no raffle configured`); process.exitCode = 1; return; }
+  if (g.raffleWinnerId) {
+    console.error(`#${g.id} was already drawn: ${g.raffleWinnerId} at ${g.raffleDrawnAt?.toISOString()}`);
+    process.exitCode = 1; return;
+  }
+
+  const scores = await scoreInvites(config.guildId, {
+    from: g.startsAt, to: g.closedAt ?? new Date(), minAccountAgeDays: g.minAccountAgeDays,
+  });
+  const entrants = scores.filter(s => s.qualified >= g.raffleFloor!);
+  console.log(`#${g.id} raffle — floor ${g.raffleFloor}, ${entrants.length} entrant(s)`);
+  for (const e of entrants) console.log(`  ${e.inviterId}  ${e.qualified}`);
+
+  const need = g.raffleMinEntrants ?? 1;
+  if (entrants.length < need) {
+    console.log(`\nnot drawn: needs ${need} entrants, has ${entrants.length}. Nothing written.`);
+    return;
+  }
+
+  const winner = entrants[Math.floor(Math.random() * entrants.length)]!;
+  await getDb().update(giveaways)
+    .set({ raffleWinnerId: winner.inviterId, raffleDrawnAt: new Date() })
+    .where(eq(giveaways.id, g.id));
+  console.log(`\nwinner: ${winner.inviterId} (${winner.qualified} invites), drawn from ${entrants.length}`);
+}
+
 async function start(): Promise<void> {
   if (await openGiveaway(config.guildId)) {
     console.error('a giveaway is already open — close or cancel it first');
@@ -159,12 +199,40 @@ async function start(): Promise<void> {
     .slice(0, floors.length);
   while (prizes.length < floors.length) prizes.push([]);
 
+  /*
+   * The progress role is off unless asked for. It used to be derived from the
+   * floors, which meant a run could not choose to have none — and on a contest
+   * with one low floor the derived value sat just under the winning line,
+   * where it marked nothing worth marking.
+   */
+  const recruiter = flag('recruiter') ? Number(flag('recruiter')) : null;
+  if (recruiter !== null && (!Number.isFinite(recruiter) || recruiter < 1)) {
+    console.error(`bad --recruiter: ${flag('recruiter')}`); process.exitCode = 1; return;
+  }
+
+  const raffleFloor = flag('rafflefloor') ? Number(flag('rafflefloor')) : null;
+  const rafflePrize = flag('raffleprize') || null;
+  const raffleMin = flag('rafflemin') ? Number(flag('rafflemin')) : null;
+  if (raffleFloor !== null && (!Number.isFinite(raffleFloor) || raffleFloor < 1)) {
+    console.error(`bad --rafflefloor: ${flag('rafflefloor')}`); process.exitCode = 1; return;
+  }
+  // A floor with nothing to win, or a prize nobody can qualify for, is a
+  // half-configured raffle — and the announcement would print one of them.
+  if ((raffleFloor === null) !== (rafflePrize === null)) {
+    console.error('--rafflefloor and --raffleprize go together'); process.exitCode = 1; return;
+  }
+
   const endsAt = new Date(Date.now() + days * 86_400_000);
   const [row] = await getDb().insert(giveaways)
-    .values({ guildId: config.guildId, title, floors, prizes, endsAt, minAccountAgeDays: minAge })
+    .values({
+      guildId: config.guildId, title, floors, prizes, endsAt, minAccountAgeDays: minAge,
+      recruiterAt: recruiter, raffleFloor, rafflePrize, raffleMinEntrants: raffleMin,
+    })
     .returning();
   console.log(`started #${row?.id} "${title}" — ${days} days, floors ${floors.join('/')}, ends ${endsAt.toISOString()}`);
   console.log(`prizes: ${prizes.map((p, i) => `${i + 1}:[${p.join(' | ')}]`).join('  ') || '(none)'}`);
+  console.log(`recruiter role: ${recruiter ?? 'off'}`);
+  console.log(`raffle: ${raffleFloor ? `${rafflePrize} at ${raffleFloor}+ invites, needs ${raffleMin ?? 1} entrants` : 'none'}`);
 
   // Posted here rather than left to the poster's ten-minute tick, so the run
   // and its announcement begin at the same moment. The date mark it writes is
@@ -558,6 +626,7 @@ const tasks: Record<string, () => Promise<void>> = {
   'giveaway-window': setWindow,
   'giveaway-start': start,
   'giveaway-close': close,
+  'giveaway-raffle': raffle,
   birthdays: birthdayStatus,
   'eco-product': ecoProduct,
   'eco-images': ecoImages,

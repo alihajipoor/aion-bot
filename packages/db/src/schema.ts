@@ -257,6 +257,40 @@ export const giveaways = pgTable('giveaways', {
   /** Set when the board is frozen; the result below is then the record. */
   closedAt:  timestamp('closed_at', { withTimezone: true }),
   results:   jsonb('results').$type<{ userId: string; count: number }[]>(),
+  /**
+   * Qualified invites that earn the temporary progress role, or null for none.
+   *
+   * It used to be derived as half the smallest floor, which meant a run could
+   * not choose to have no progress role at all. Null is that choice, and the
+   * sweep then takes the role off everybody.
+   */
+  recruiterAt: integer('recruiter_at'),
+  /* ── the raffle, a second way to win that is not about placing first ──
+   *
+   * A knockout on invite count pays the one person who was always going to
+   * win it. The raffle pays somebody who merely cleared a much lower bar, so
+   * the contest still has something in it for the fifteenth-best inviter —
+   * which is most of the people whose invites you actually wanted.
+   *
+   * All four are null when a run has no raffle, and the announcement, the
+   * board and the draw each check `raffleFloor` before saying anything.
+   */
+  /** Qualified invites that earn a ticket. */
+  raffleFloor:       integer('raffle_floor'),
+  /** What the draw pays, as the announcement prints it. */
+  rafflePrize:       text('raffle_prize'),
+  /**
+   * How many distinct people must reach the floor before the draw happens.
+   *
+   * The point of a threshold is that it makes entrants recruit *other*
+   * entrants: your own invites cannot unlock it alone. Null means draw
+   * regardless of how few qualify.
+   */
+  raffleMinEntrants: integer('raffle_min_entrants'),
+  /** Written when the draw is made, so it is auditable and cannot run twice. */
+  raffleWinnerId:    snowflake('raffle_winner_id'),
+  /** When it was drawn, and by whom. */
+  raffleDrawnAt:     timestamp('raffle_drawn_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [index('giveaways_guild_idx').on(t.guildId, t.closedAt)]);
 
