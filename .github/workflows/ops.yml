@@ -67,8 +67,6 @@ on:
         description: "Raffle: distinct people who must qualify, else no draw"
         type: string
         default: ""
-        type: string
-        default: ""
       back:
         description: Hours to reach back (window only)
         type: string
